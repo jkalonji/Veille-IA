@@ -16,7 +16,7 @@ from time import mktime
 
 import aiohttp
 import feedparser
-from groq import Groq
+from groq import AsyncGroq # <--- Version Async
 from notion_client import AsyncClient as NotionClient
 import requests
 
@@ -279,9 +279,8 @@ VALID_CATEGORIES = {
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 
-def classify_articles(articles: list[Article]) -> list[Article]:
-    """Classify each article with Groq (category + sentiment)."""
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+async def classify_articles(articles: list[Article]) -> list[Article]:
+    client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"]) # Client Async
     model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     for i, article in enumerate(articles):
@@ -290,7 +289,7 @@ def classify_articles(articles: list[Article]) -> list[Article]:
             user_msg += f"\nDescription: {article.description}"
 
         try:
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create( # Note le await
                 model=model,
                 messages=[
                     {"role": "system", "content": GROQ_SYSTEM_PROMPT},
@@ -310,11 +309,11 @@ def classify_articles(articles: list[Article]) -> list[Article]:
             article.category = "Innovation / Tech"
             article.sentiment = "Neutre"
 
-        # Rate limiting: pause every 5 articles
         if (i + 1) % 5 == 0:
-            time.sleep(2)
-
+            await asyncio.sleep(1) # sleep non-bloquant
     return articles
+
+
 
 # ---------------------------------------------------------------------------
 # 5. Push to Notion
@@ -327,44 +326,27 @@ SENTIMENT_MAP = {
 }
 
 
-def push_to_notion(notion: NotionClient, database_id: str, articles: list[Article]) -> int:
-    """Create a Notion page for each article. Returns count of successfully pushed articles."""
+async def push_to_notion(notion: NotionClient, database_id: str, articles: list[Article]) -> int:
     pushed = 0
     for article in articles:
         try:
-            notion.pages.create(
+            await notion.pages.create( # Note le await
                 parent={"database_id": database_id},
                 properties={
-                    "Titre": {
-                        "title": [{"text": {"content": article.title[:2000]}}]
-                    },
-                    "URL": {
-                        "url": article.url
-                    },
-                    "Date": {
-                        "date": {"start": article.published}
-                    },
-                    "Source": {
-                        "rich_text": [{"text": {"content": article.source}}]
-                    },
-                    "Pays d'origine": {
-                        "rich_text": [{"text": {"content": article.country}}]
-                    },
-                    "Categorie IA": {
-                        "select": {"name": article.category}
-                    },
-                    "Sentiment": {
-                        "select": {"name": SENTIMENT_MAP.get(article.sentiment, "\u26aa Neutre")}
-                    },
+                    "Titre": {"title": [{"text": {"content": article.title[:2000]}}]},
+                    "URL": {"url": article.url},
+                    "Date": {"date": {"start": article.published}},
+                    "Source": {"rich_text": [{"text": {"content": article.source}}]},
+                    "Pays d'origine": {"rich_text": [{"text": {"content": article.country}}]},
+                    "Categorie IA": {"select": {"name": article.category}},
+                    "Sentiment": {"select": {"name": SENTIMENT_MAP.get(article.sentiment, "⚪ Neutre")}},
                 },
             )
             pushed += 1
         except Exception as e:
             logging.error(f"Notion push failed for '{article.title[:60]}': {e}")
-
-        # Respect Notion rate limit (3 req/s)
-        time.sleep(0.35)
-
+        
+        await asyncio.sleep(0.35) # Respect des 3 req/s de Notion
     return pushed
 
 # ---------------------------------------------------------------------------
@@ -412,54 +394,56 @@ def send_telegram(total: int, stats: dict[str, int]) -> None:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def main():
+async def main():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    # Check required env vars
+    # Vérification des variables d'environnement
     required_vars = ["GROQ_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
     missing = [v for v in required_vars if not os.environ.get(v)]
     if missing:
         logging.error(f"Missing environment variables: {', '.join(missing)}")
         sys.exit(1)
 
-    # 1. Load sources
+    # 1. Chargement des sources
     sources = load_sources("sources.json")
 
-    # 2. Fetch all articles
-    raw_articles = asyncio.run(fetch_all(sources))
+    # 2. Collecte des articles (Async)
+    raw_articles = await fetch_all(sources)
     logging.info(f"Fetched {len(raw_articles)} unique articles")
 
-    # 3. Deduplicate against Notion
+    # 3. Déduplication Notion (Async)
     notion = NotionClient(auth=os.environ["NOTION_TOKEN"])
     database_id = os.environ["NOTION_DATABASE_ID"]
-    existing_urls = get_existing_urls(notion, database_id)
+    
+    # On attend la résolution de la coroutine ici
+    existing_urls = await get_existing_urls(notion, database_id)
+    
     new_articles = [a for a in raw_articles if a.url not in existing_urls]
-    logging.info(f"{len(new_articles)} new articles after deduplication ({len(existing_urls)} existing)")
+    logging.info(f"{len(new_articles)} new articles after deduplication ({len(existing_urls)} existing in Notion)")
 
     if not new_articles:
+        logging.info("No new articles to process.")
         send_telegram(0, {})
         return
 
-    # 4. Classify with Groq
+    # 4. Classification (Async)
     logging.info(f"Classifying {len(new_articles)} articles with Groq...")
-    classified = classify_articles(new_articles)
+    classified = await classify_articles(new_articles)
 
-    # 5. Push to Notion
+    # 5. Push vers Notion (Async)
     logging.info("Pushing articles to Notion...")
-    pushed = push_to_notion(notion, database_id, classified)
+    pushed = await push_to_notion(notion, database_id, classified)
     logging.info(f"Pushed {pushed}/{len(classified)} articles to Notion")
 
-    # 6. Send Telegram notification
+    # 6. Notification Telegram (Synchrone via requests, c'est OK pour un seul appel)
     stats = compute_stats(classified)
     send_telegram(pushed, stats)
 
     logging.info("AI Radar pipeline complete.")
 
-
 if __name__ == "__main__":
-    main()
-
-
+    # Point d'entrée unique pour la boucle d'événements
+    asyncio.run(main())
