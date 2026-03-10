@@ -17,7 +17,7 @@ from time import mktime
 import aiohttp
 import feedparser
 from groq import Groq
-from notion_client import Client as NotionClient
+from notion_client import AsyncClient as NotionClient
 import requests
 
 # ---------------------------------------------------------------------------
@@ -461,4 +461,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
