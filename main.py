@@ -225,7 +225,7 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # 3. Deduplication against Notion
 # ---------------------------------------------------------------------------
 
-def get_existing_urls(notion: NotionClient, database_id: str) -> set[str]:
+async def get_existing_urls(notion: NotionClient, database_id: str) -> set[str]:
     """Fetch URLs from the last 48h in Notion to avoid duplicates."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%d")
     urls: set[str] = set()
@@ -244,7 +244,7 @@ def get_existing_urls(notion: NotionClient, database_id: str) -> set[str]:
         if start_cursor:
             kwargs["start_cursor"] = start_cursor
 
-        response = notion.databases.query(**kwargs)
+        response = await notion.databases.query(**kwargs)
 
         for page in response.get("results", []):
             url_prop = page.get("properties", {}).get("URL", {})
@@ -461,3 +461,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
