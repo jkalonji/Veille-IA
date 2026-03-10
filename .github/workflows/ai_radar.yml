@@ -33,6 +33,6 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           # Variables optionnelles
-          GROQ_MODEL: ${{ 'llama-3.1-70b-versatile' }}
+          GROQ_MODEL: ${{ 'llama-3.1-8b-instant' }}
           NOTION_DASHBOARD_URL: ${{ vars.NOTION_DASHBOARD_URL }}
         run: python main.py
