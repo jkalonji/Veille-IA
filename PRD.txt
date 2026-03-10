@@ -1,0 +1,64 @@
+📄 Document de Spécifications : Outil de Veille IA Automatisé ("AI Radar") 
+
+1. Objectif du Projet
+Créer un système automatisé hébergé dans le Cloud qui collecte, classifie et stocke quotidiennement l'actualité mondiale de l'Intelligence Artificielle à partir d'une liste dynamique de sources. L'utilisateur reçoit chaque jour à heure fixe une notification Telegram contenant un lien vers un tableau de bord mobile (Notion/Airtable) regroupant les actualités classées par sentiment et par catégorie, sans résumé de contenu.
+
+2. Architecture Technique Recommandée (Stack 100% Cloud & Gratuite)
+Orchestrateur & Code : GitHub Actions exécutant un script Python. Permet de lancer le script tous les jours à la même heure gratuitement.
+Moteur de Classification : API Groq (utilisant un modèle open-source ultra-rapide comme Llama-3-70b ou Mixtral). Idéal car extrêmement rapide et disposant d'un niveau de gratuité très généreux.
+Base de données & Dashboard : Notion (via l'API Notion). 100% gratuit, gère l'historique de manière illimitée, dispose d'une excellente application Android.
+Notification : API Telegram Bot. Gratuit, instantané et parfaitement adapté aux mobiles.
+
+3. Périmètre Fonctionnel
+
+A. Gestion et Collecte des données (Sources)
+Le système s'appuiera sur un fichier de configuration JSON (celui fourni) contenant le registre des sources. Le script devra :
+Lire le fichier JSON et ignorer les sources dont la clé "enabled" est à false (ex: Meta AI Research, Usine Digitale).
+Traiter les flux RSS standards ("type": "rss") : Extraire les articles des dernières 24 heures. Cela inclut les médias spécialisés (MIT, The Verge), les blogs d'entreprises (OpenAI, Google), les flux académiques (ArXiv), les médias français (Le Monde, 01net) et géopolitiques (SCMP, Nikkei).
+Traiter les flux Reddit ("type": "rss") : Extraire le top quotidien des subreddits configurés (r/MachineLearning, r/LocalLLaMA, r/artificial).
+Traiter les requêtes API ("type": "hn_api") : Interroger l'API Algolia de Hacker News avec les paramètres définis dans le JSON (mots-clés spécifiques, minimum de 30 points).
+
+B. Traitement et Classification par l'IA (Groq)
+Pour chaque article collecté, le système enverra le Titre et la Source (et éventuellement la courte description RSS) à l'API Groq.
+Prompt de l'IA : Le prompt demandera formellement à Groq de renvoyer uniquement un objet JSON contenant la catégorie et le sentiment, sans aucun texte supplémentaire, ni résumé.
+Sentiment : Positif, Négatif, Neutre (ou Non Applicable).
+Catégorie principale : (Une seule étiquette parmi la liste)
+Innovation / Tech
+Politique / Régulation
+Business / Industrie
+Société / Éthique
+Recherche Académique
+Drama / Controverses
+Géopolitique
+
+C. Base de données et Historique (Notion)
+Les résultats sont poussés dans une base de données Notion avec les propriétés suivantes :
+Titre (Texte)
+URL (Lien cliquable)
+Date (Date de publication)
+Source (Texte ou Tag, ex: Ars Technica, Hacker News)
+Pays d'origine (Tag / Emoji, basé sur le JSON : 🇺🇸, 🇫🇷, 🇪🇺, 🇨🇳...)
+Catégorie IA (Tag à sélection unique)
+Sentiment (Tag à sélection unique : 🟢 Positif, 🔴 Négatif, ⚪ Neutre)
+
+D. Restitution (Dashboard Android)
+Le tableau de bord (page Notion) comportera :
+Une vue par défaut "Veille du Jour" filtrée sur les ajouts des dernières 24 heures.
+Des Vues par onglets facilement cliquables sur Android : "Géopolitique", "Recherche", "Dramas & Business".
+Une vue "Base de données complète" (Historique) pour chercher d'anciens articles par mots-clés.
+
+E. Notification (Telegram)
+À la fin de l'exécution du script, un message récapitulatif est envoyé sur Telegram.
+Format : "🤖 Radar IA terminé : [X] nouveaux articles collectés aujourd'hui !
+🚀 Innovation : [X]
+⚖️ Éthique & Politique : [X]
+📊 Consulter le Dashboard :[Lien Notion]"
+
+4. Workflow Détaillé du Script Python
+Cron Job : GitHub Actions lance le script main.py à 08h00 CET tous les jours.
+Initialisation : Chargement du fichier sources.json.
+Fetch : Boucle asynchrone pour télécharger les RSS et requêter l'API Hacker News.
+Dédoublonnage : Comparaison des URL récupérées avec les URL déjà présentes dans Notion (ou conservation d'un fichier cache/historique sur GitHub) pour éviter les doublons.
+Classification Groq : Envoi des nouveaux articles par lots (batchs) ou requêtes asynchrones à l'API Groq pour assignation Catégorie/Sentiment.
+Push Notion : Insertion des lignes qualifiées dans la base de données Notion.
+Notification : Calcul des statistiques du jour et envoi du message via l'API Telegram.

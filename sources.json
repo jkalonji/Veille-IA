@@ -1,0 +1,137 @@
+{
+  "sources": [
+    {
+      "name": "MIT Technology Review",
+      "type": "rss",
+      "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "The Verge AI",
+      "type": "rss",
+      "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "Ars Technica AI",
+      "type": "rss",
+      "url": "https://arstechnica.com/ai/feed/",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "OpenAI Blog",
+      "type": "rss",
+      "url": "https://openai.com/news/rss.xml",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "Google DeepMind",
+      "type": "rss",
+      "url": "https://deepmind.google/blog/rss.xml",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "Google AI Blog",
+      "type": "rss",
+      "url": "https://blog.google/technology/ai/rss/",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "ArXiv cs.AI",
+      "type": "rss",
+      "url": "https://rss.arxiv.org/rss/cs.AI",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true
+    },
+    {
+      "name": "Le Monde IA",
+      "type": "rss",
+      "url": "https://www.lemonde.fr/intelligence-artificielle/rss_full.xml",
+      "country": "\ud83c\uddeb\ud83c\uddf7",
+      "enabled": true
+    },
+    {
+      "name": "01net",
+      "type": "rss",
+      "url": "https://www.01net.com/actualites/feed/",
+      "country": "\ud83c\uddeb\ud83c\uddf7",
+      "enabled": true
+    },
+    {
+      "name": "SCMP Tech",
+      "type": "rss",
+      "url": "https://www.scmp.com/rss/36/feed",
+      "country": "\ud83c\udde8\ud83c\uddf3",
+      "enabled": true
+    },
+    {
+      "name": "Nikkei Asia Tech",
+      "type": "rss",
+      "url": "https://asia.nikkei.com/rss/feed/nar",
+      "country": "\ud83c\uddef\ud83c\uddf5",
+      "enabled": true
+    },
+    {
+      "name": "r/MachineLearning",
+      "type": "reddit",
+      "url": "https://www.reddit.com/r/MachineLearning/top/.rss?sort=top&t=day&limit=15",
+      "country": "\ud83c\udf10",
+      "enabled": true
+    },
+    {
+      "name": "r/LocalLLaMA",
+      "type": "reddit",
+      "url": "https://www.reddit.com/r/LocalLLaMA/top/.rss?sort=top&t=day&limit=15",
+      "country": "\ud83c\udf10",
+      "enabled": true
+    },
+    {
+      "name": "r/artificial",
+      "type": "reddit",
+      "url": "https://www.reddit.com/r/artificial/top/.rss?sort=top&t=day&limit=15",
+      "country": "\ud83c\udf10",
+      "enabled": true
+    },
+    {
+      "name": "Hacker News",
+      "type": "hn_api",
+      "url": "https://hn.algolia.com/api/v1/search",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": true,
+      "keywords": [
+        "AI",
+        "LLM",
+        "GPT",
+        "artificial intelligence",
+        "machine learning",
+        "neural network",
+        "deep learning",
+        "OpenAI",
+        "Anthropic",
+        "Google AI",
+        "transformer"
+      ],
+      "min_points": 30
+    },
+    {
+      "name": "Meta AI Research",
+      "type": "rss",
+      "url": "https://ai.meta.com/blog/rss/",
+      "country": "\ud83c\uddfa\ud83c\uddf8",
+      "enabled": false
+    },
+    {
+      "name": "Usine Digitale",
+      "type": "rss",
+      "url": "https://www.usine-digitale.fr/rss",
+      "country": "\ud83c\uddeb\ud83c\uddf7",
+      "enabled": false
+    }
+  ]
+}
