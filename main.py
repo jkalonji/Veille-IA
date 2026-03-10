@@ -226,36 +226,43 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # ---------------------------------------------------------------------------
 
 async def get_existing_urls(notion: NotionClient, database_id: str) -> set[str]:
-    """Fetch URLs from the last 48h in Notion to avoid duplicates."""
+    """Récupère les URLs existantes avec le client asynchrone."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%d")
     urls: set[str] = set()
     has_more = True
     start_cursor = None
 
     while has_more:
-        kwargs: dict = {
+        # Construction propre des arguments
+        query_params = {
             "database_id": database_id,
             "filter": {
-                "property": "Date",
+                "property": "Date", # Vérifie bien que le nom exact dans Notion est "Date"
                 "date": {"on_or_after": cutoff},
             },
             "page_size": 100,
         }
         if start_cursor:
-            kwargs["start_cursor"] = start_cursor
+            query_params["start_cursor"] = start_cursor
 
-        response = await notion.databases.query(**kwargs)
+        try:
+            # L'appel à la méthode query
+            response = await notion.databases.query(**query_params)
+            
+            for page in response.get("results", []):
+                # On récupère l'URL (vérifie que la propriété s'appelle bien "URL")
+                url_prop = page.get("properties", {}).get("URL", {})
+                if url_prop.get("url"):
+                    urls.add(url_prop["url"])
 
-        for page in response.get("results", []):
-            url_prop = page.get("properties", {}).get("URL", {})
-            if url_prop.get("url"):
-                urls.add(url_prop["url"])
-
-        has_more = response.get("has_more", False)
-        start_cursor = response.get("next_cursor")
+            has_more = response.get("has_more", False)
+            start_cursor = response.get("next_cursor")
+            
+        except Exception as e:
+            logging.error(f"Erreur lors de la lecture de Notion : {e}")
+            break # On arrête la boucle en cas d'erreur pour éviter un crash total
 
     return urls
-
 # ---------------------------------------------------------------------------
 # 4. Classification with Groq
 # ---------------------------------------------------------------------------
@@ -447,3 +454,4 @@ async def main():
 if __name__ == "__main__":
     # Point d'entrée unique pour la boucle d'événements
     asyncio.run(main())
+
