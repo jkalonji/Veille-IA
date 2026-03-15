@@ -217,7 +217,23 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             seen.add(a.url)
             unique.append(a)
 
-    return unique
+    # Filter: keep only AI-related articles
+    ai_keywords = {
+        "ai", "artificial intelligence", "machine learning", "deep learning",
+        "llm", "large language model", "neural network", "chatgpt", "gpt",
+        "generative ai", "openai", "anthropic", "gemini", "deepmind",
+        "nvidia", "robot", "automation", "algorithm", "data center",
+        "semiconductor", "chip", "model", "chatbot", "autonomous",
+        "intelligence artificielle", "apprentissage automatique",
+    }
+    filtered = []
+    for a in unique:
+        text = (a.title + " " + a.description).lower()
+        if any(kw in text for kw in ai_keywords):
+            filtered.append(a)
+
+    logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
+    return filtered
 
 # ---------------------------------------------------------------------------
 # 3. Classification with Groq
