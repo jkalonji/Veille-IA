@@ -244,7 +244,7 @@ VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 async def classify_articles(articles: list[Article]) -> list[Article]:
     client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
 
     for i, article in enumerate(articles):
         user_msg = f"Titre: {article.title}\nSource: {article.source}"
