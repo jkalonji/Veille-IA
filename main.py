@@ -1,6 +1,6 @@
 """
 AI Radar - Outil de Veille IA Automatise
-Collecte, classifie et stocke quotidiennement l'actualite IA.
+Collecte, classifie et envoie quotidiennement l'actualite IA sur Telegram.
 """
 
 import asyncio
@@ -9,15 +9,13 @@ import logging
 import os
 import re
 import sys
-import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import mktime
 
 import aiohttp
 import feedparser
-from groq import AsyncGroq # <--- Version Async
-from notion_client import AsyncClient as NotionClient
+from groq import AsyncGroq
 import requests
 
 # ---------------------------------------------------------------------------
@@ -105,7 +103,7 @@ async def fetch_rss(session: aiohttp.ClientSession, source: dict) -> list[Articl
             source=source["name"],
             country=source["country"],
             published=pub_date.strftime("%Y-%m-%d") if pub_date else datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            description=clean_html(entry.get("summary", ""))[:300],
+            description=clean_html(entry.get("summary", ""))[:200],
         ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -138,7 +136,7 @@ async def fetch_reddit(session: aiohttp.ClientSession, source: dict) -> list[Art
             source=source["name"],
             country=source["country"],
             published=pub_date.strftime("%Y-%m-%d") if pub_date else datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            description=clean_html(entry.get("summary", ""))[:300],
+            description=clean_html(entry.get("summary", ""))[:200],
         ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -183,7 +181,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
                 source=source["name"],
                 country=source["country"],
                 published=datetime.fromtimestamp(hit.get("created_at_i", 0), tz=timezone.utc).strftime("%Y-%m-%d"),
-                description=(hit.get("story_text") or "")[:300],
+                description=(hit.get("story_text") or "")[:200],
             ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -222,49 +220,7 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
     return unique
 
 # ---------------------------------------------------------------------------
-# 3. Deduplication against Notion
-# ---------------------------------------------------------------------------
-
-async def get_existing_urls(notion: NotionClient, database_id: str) -> set[str]:
-    """Récupère les URLs existantes avec le client asynchrone."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).strftime("%Y-%m-%d")
-    urls: set[str] = set()
-    has_more = True
-    start_cursor = None
-
-    while has_more:
-        # Construction propre des arguments
-        query_params = {
-            "database_id": database_id,
-            "filter": {
-                "property": "Date", # Vérifie bien que le nom exact dans Notion est "Date"
-                "date": {"on_or_after": cutoff},
-            },
-            "page_size": 100,
-        }
-        if start_cursor:
-            query_params["start_cursor"] = start_cursor
-
-        try:
-            # L'appel à la méthode query
-            response = await notion.databases.query(**query_params)
-            
-            for page in response.get("results", []):
-                # On récupère l'URL (vérifie que la propriété s'appelle bien "URL")
-                url_prop = page.get("properties", {}).get("URL", {})
-                if url_prop.get("url"):
-                    urls.add(url_prop["url"])
-
-            has_more = response.get("has_more", False)
-            start_cursor = response.get("next_cursor")
-            
-        except Exception as e:
-            logging.error(f"Erreur lors de la lecture de Notion : {e}")
-            break # On arrête la boucle en cas d'erreur pour éviter un crash total
-
-    return urls
-# ---------------------------------------------------------------------------
-# 4. Classification with Groq
+# 3. Classification with Groq
 # ---------------------------------------------------------------------------
 
 GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec deux cles :
@@ -287,7 +243,7 @@ VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 
 async def classify_articles(articles: list[Article]) -> list[Article]:
-    client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"]) # Client Async
+    client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
 
     for i, article in enumerate(articles):
@@ -296,7 +252,7 @@ async def classify_articles(articles: list[Article]) -> list[Article]:
             user_msg += f"\nDescription: {article.description}"
 
         try:
-            response = await client.chat.completions.create( # Note le await
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": GROQ_SYSTEM_PROMPT},
@@ -317,85 +273,90 @@ async def classify_articles(articles: list[Article]) -> list[Article]:
             article.sentiment = "Neutre"
 
         if (i + 1) % 5 == 0:
-            await asyncio.sleep(1) # sleep non-bloquant
+            await asyncio.sleep(1)
+
     return articles
 
-
-
 # ---------------------------------------------------------------------------
-# 5. Push to Notion
+# 4. Telegram
 # ---------------------------------------------------------------------------
 
-SENTIMENT_MAP = {
-    "Positif": "\U0001f7e2 Positif",
-    "Negatif": "\U0001f534 Negatif",
-    "Neutre": "\u26aa Neutre",
+SENTIMENT_EMOJI = {"Positif": "🟢", "Negatif": "🔴", "Neutre": "⚪"}
+CATEGORY_EMOJI = {
+    "Innovation / Tech":      "🚀",
+    "Politique / Regulation": "⚖️",
+    "Business / Industrie":   "💼",
+    "Societe / Ethique":      "🤝",
+    "Recherche Academique":   "🎓",
+    "Drama / Controverses":   "💥",
+    "Geopolitique":           "🌍",
 }
 
 
-async def push_to_notion(notion: NotionClient, database_id: str, articles: list[Article]) -> int:
-    pushed = 0
-    for article in articles:
-        try:
-            await notion.pages.create( # Note le await
-                parent={"database_id": database_id},
-                properties={
-                    "Titre": {"title": [{"text": {"content": article.title[:2000]}}]},
-                    "URL": {"url": article.url},
-                    "Date": {"date": {"start": article.published}},
-                    "Source": {"rich_text": [{"text": {"content": article.source}}]},
-                    "Pays d'origine": {"rich_text": [{"text": {"content": article.country}}]},
-                    "Categorie IA": {"select": {"name": article.category}},
-                    "Sentiment": {"select": {"name": SENTIMENT_MAP.get(article.sentiment, "⚪ Neutre")}},
-                },
-            )
-            pushed += 1
-        except Exception as e:
-            logging.error(f"Notion push failed for '{article.title[:60]}': {e}")
-        
-        await asyncio.sleep(0.35) # Respect des 3 req/s de Notion
-    return pushed
+def _post_telegram(token: str, chat_id: str, text: str) -> None:
+    """Send a single Telegram message."""
+    resp = requests.post(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
+        timeout=10,
+    )
+    if not resp.ok:
+        logging.error(f"Telegram error: {resp.status_code} {resp.text}")
 
-# ---------------------------------------------------------------------------
-# 6. Telegram notification
-# ---------------------------------------------------------------------------
 
-def send_telegram(total: int, stats: dict[str, int]) -> None:
-    """Send a summary message via Telegram Bot API."""
+def send_telegram(articles: list[Article]) -> None:
+    """Send a header summary then all articles in batches to Telegram."""
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
-    dashboard_url = os.environ.get("NOTION_DASHBOARD_URL", "")
+    today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
 
-    if total == 0:
-        text = "\U0001f916 Radar IA : 0 nouveaux articles aujourd'hui."
-    else:
-        lines = [
-            f"\U0001f916 *Radar IA termine* : {total} nouveaux articles !",
-            "",
-            f"\U0001f680 Innovation / Tech : {stats.get('Innovation / Tech', 0)}",
-            f"\u2696\ufe0f Politique / Regulation : {stats.get('Politique / Regulation', 0)}",
-            f"\U0001f4bc Business / Industrie : {stats.get('Business / Industrie', 0)}",
-            f"\U0001f91d Societe / Ethique : {stats.get('Societe / Ethique', 0)}",
-            f"\U0001f393 Recherche Academique : {stats.get('Recherche Academique', 0)}",
-            f"\U0001f4a5 Drama / Controverses : {stats.get('Drama / Controverses', 0)}",
-            f"\U0001f30d Geopolitique : {stats.get('Geopolitique', 0)}",
-            "",
-            f"\U0001f4ca [Consulter le Dashboard]({dashboard_url})",
+    if not articles:
+        _post_telegram(token, chat_id, "🤖 Radar IA : 0 nouveaux articles aujourd'hui.")
+        return
+
+    # Header with stats
+    stats = compute_stats(articles)
+    header_lines = [f"🤖 <b>Radar IA — {today}</b>", f"📰 {len(articles)} articles collectés", ""]
+    for cat, emoji in CATEGORY_EMOJI.items():
+        count = stats.get(cat, 0)
+        if count:
+            header_lines.append(f"{emoji} {cat} : {count}")
+    _post_telegram(token, chat_id, "\n".join(header_lines))
+
+    # Articles in batches of 10
+    batch: list[str] = []
+    batch_chars = 0
+
+    for article in articles:
+        sent_emoji = SENTIMENT_EMOJI.get(article.sentiment, "⚪")
+        cat_emoji = CATEGORY_EMOJI.get(article.category, "📌")
+        desc = article.description.strip()
+        if desc and not desc.endswith((".", "!", "?")):
+            desc += "…"
+
+        entry_lines = [
+            f"{sent_emoji} <b>{article.title}</b>",
+            f"{cat_emoji} {article.category} | {article.country} {article.source}",
         ]
-        text = "\n".join(lines)
+        if desc:
+            entry_lines.append(f"<i>{desc}</i>")
+        entry_lines.append(f'<a href="{article.url}">🔗 Lire l\'article</a>')
+        entry = "\n".join(entry_lines)
 
-    try:
-        resp = requests.post(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
-            timeout=10,
-        )
-        if resp.ok:
-            logging.info("Telegram notification sent")
-        else:
-            logging.error(f"Telegram error: {resp.status_code} {resp.text}")
-    except Exception as e:
-        logging.error(f"Telegram send failed: {e}")
+        # Flush batch if adding this entry would exceed Telegram's 4096-char limit
+        if batch and batch_chars + len(entry) + 2 > 4000:
+            _post_telegram(token, chat_id, "\n\n".join(batch))
+            batch = []
+            batch_chars = 0
+            import time; time.sleep(0.5)  # avoid Telegram rate limit
+
+        batch.append(entry)
+        batch_chars += len(entry) + 2
+
+    if batch:
+        _post_telegram(token, chat_id, "\n\n".join(batch))
+
+    logging.info(f"Telegram: sent {len(articles)} articles")
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -407,51 +368,34 @@ async def main():
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
 
-    # Vérification des variables d'environnement
-    required_vars = ["GROQ_API_KEY", "NOTION_TOKEN", "NOTION_DATABASE_ID", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+    required_vars = ["GROQ_API_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
     missing = [v for v in required_vars if not os.environ.get(v)]
     if missing:
         logging.error(f"Missing environment variables: {', '.join(missing)}")
         sys.exit(1)
 
-    # 1. Chargement des sources
+    # 1. Load sources
     sources = load_sources("sources.json")
 
-    # 2. Collecte des articles (Async)
-    raw_articles = await fetch_all(sources)
-    logging.info(f"Fetched {len(raw_articles)} unique articles")
+    # 2. Fetch articles
+    articles = await fetch_all(sources)
+    logging.info(f"Fetched {len(articles)} unique articles")
 
-    # 3. Déduplication Notion (Async)
-    notion = NotionClient(auth=os.environ["NOTION_TOKEN"])
-    database_id = os.environ["NOTION_DATABASE_ID"]
-    
-    # On attend la résolution de la coroutine ici
-    existing_urls = await get_existing_urls(notion, database_id)
-    
-    new_articles = [a for a in raw_articles if a.url not in existing_urls]
-    logging.info(f"{len(new_articles)} new articles after deduplication ({len(existing_urls)} existing in Notion)")
-
-    if not new_articles:
-        logging.info("No new articles to process.")
-        send_telegram(0, {})
+    if not articles:
+        logging.info("No articles fetched.")
+        send_telegram([])
         return
 
-    # 4. Classification (Async)
-    logging.info(f"Classifying {len(new_articles)} articles with Groq...")
-    classified = await classify_articles(new_articles)
+    # 3. Classify with Groq
+    logging.info(f"Classifying {len(articles)} articles with Groq...")
+    classified = await classify_articles(articles)
 
-    # 5. Push vers Notion (Async)
-    logging.info("Pushing articles to Notion...")
-    pushed = await push_to_notion(notion, database_id, classified)
-    logging.info(f"Pushed {pushed}/{len(classified)} articles to Notion")
-
-    # 6. Notification Telegram (Synchrone via requests, c'est OK pour un seul appel)
-    stats = compute_stats(classified)
-    send_telegram(pushed, stats)
+    # 4. Send to Telegram
+    logging.info("Sending articles to Telegram...")
+    send_telegram(classified)
 
     logging.info("AI Radar pipeline complete.")
 
-if __name__ == "__main__":
-    # Point d'entrée unique pour la boucle d'événements
-    asyncio.run(main())
 
+if __name__ == "__main__":
+    asyncio.run(main())
