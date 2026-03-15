@@ -87,7 +87,7 @@ async def fetch_rss(session: aiohttp.ClientSession, source: dict) -> list[Articl
     cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
     articles = []
 
-    for entry in feed.entries[:20]:
+    for entry in feed.entries[:15]:
         pub_date = parse_feed_date(entry)
         if pub_date and pub_date < cutoff:
             continue
