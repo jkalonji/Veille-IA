@@ -259,38 +259,45 @@ VALID_CATEGORIES = {
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 
-async def classify_articles(articles: list[Article]) -> list[Article]:
+async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None:
+    """Classify a single article in-place."""
+    user_msg = f"Titre: {article.title}\nSource: {article.source}"
+    if article.description:
+        user_msg += f"\nDescription: {article.description}"
+
+    try:
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": GROQ_SYSTEM_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.1,
+            max_tokens=100,
+            response_format={"type": "json_object"},
+        )
+        result = json.loads(response.choices[0].message.content)
+        cat = result.get("category", "Innovation / Tech")
+        sent = result.get("sentiment", "Neutre")
+        article.category = cat if cat in VALID_CATEGORIES else "Innovation / Tech"
+        article.sentiment = sent if sent in VALID_SENTIMENTS else "Neutre"
+    except Exception as e:
+        logging.warning(f"Groq error for '{article.title[:60]}': {e}")
+        article.category = "Innovation / Tech"
+        article.sentiment = "Neutre"
+
+
+async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
     client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
 
-    for i, article in enumerate(articles):
-        user_msg = f"Titre: {article.title}\nSource: {article.source}"
-        if article.description:
-            user_msg += f"\nDescription: {article.description}"
-
-        try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": GROQ_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.1,
-                max_tokens=100,
-                response_format={"type": "json_object"},
-            )
-            result = json.loads(response.choices[0].message.content)
-            cat = result.get("category", "Innovation / Tech")
-            sent = result.get("sentiment", "Neutre")
-            article.category = cat if cat in VALID_CATEGORIES else "Innovation / Tech"
-            article.sentiment = sent if sent in VALID_SENTIMENTS else "Neutre"
-        except Exception as e:
-            logging.warning(f"Groq error for '{article.title[:60]}': {e}")
-            article.category = "Innovation / Tech"
-            article.sentiment = "Neutre"
-
-        if (i + 1) % 5 == 0:
-            await asyncio.sleep(1)
+    batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
+    for batch_idx, batch in enumerate(batches):
+        logging.info(f"Groq: classifying batch {batch_idx + 1}/{len(batches)} ({len(batch)} articles)")
+        await asyncio.gather(*[_classify_one(client, model, a) for a in batch])
+        if batch_idx < len(batches) - 1:
+            logging.info(f"Groq: sleeping {batch_pause}s before next batch")
+            await asyncio.sleep(batch_pause)
 
     return articles
 
