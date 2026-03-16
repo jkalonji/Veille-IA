@@ -1,20 +1,7 @@
 {
   "sources": [
     {
-      "name": "Nikkei Asia Tech",
-      "type": "rss",
-      "url": "https://asia.nikkei.com/rss/feed/nar",
-      "country": "🇯🇵",
-      "enabled": true
-    },
-    {
-      "name": "SCMP Tech",
-      "type": "rss",
-      "url": "https://www.scmp.com/rss/36/feed",
-      "country": "🇨🇳",
-      "enabled": true
-    },
-    {
+      "comment": "=== AMÉRIQUE DU NORD ===",
       "name": "Hacker News",
       "type": "hn_api",
       "url": "https://hn.algolia.com/api/v1/search",
@@ -35,33 +22,118 @@
       "type": "rss",
       "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed",
       "country": "🇺🇸",
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "The Verge AI",
       "type": "rss",
       "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml",
       "country": "🇺🇸",
-      "enabled": false
-    },
-    {
-      "name": "Ars Technica AI",
-      "type": "rss",
-      "url": "https://arstechnica.com/ai/feed/",
-      "country": "🇺🇸",
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "OpenAI Blog",
       "type": "rss",
       "url": "https://openai.com/news/rss.xml",
       "country": "🇺🇸",
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "Google DeepMind",
       "type": "rss",
       "url": "https://deepmind.google/blog/rss.xml",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "comment": "=== AMÉRIQUE DU SUD ===",
+      "name": "Contxto",
+      "type": "rss",
+      "url": "https://contxto.com/en/feed/",
+      "country": "🌎",
+      "enabled": true
+    },
+    {
+      "comment": "=== EUROPE ===",
+      "name": "Le Monde IA",
+      "type": "rss",
+      "url": "https://www.lemonde.fr/intelligence-artificielle/rss_full.xml",
+      "country": "🇫🇷",
+      "enabled": true
+    },
+    {
+      "comment": "=== AFRIQUE ===",
+      "name": "TechCabal",
+      "type": "rss",
+      "url": "https://techcabal.com/feed/",
+      "country": "🇳🇬",
+      "enabled": true
+    },
+    {
+      "name": "IT News Africa",
+      "type": "rss",
+      "url": "https://www.itnewsafrica.com/feed/",
+      "country": "🌍",
+      "enabled": true
+    },
+    {
+      "name": "Disrupt Africa",
+      "type": "rss",
+      "url": "https://old.disruptafrica.com/feed/",
+      "country": "🌍",
+      "enabled": true
+    },
+    {
+      "name": "Jeune Afrique",
+      "type": "rss",
+      "url": "https://www.jeuneafrique.com/feed/",
+      "country": "🌍",
+      "enabled": true
+    },
+    {
+      "comment": "=== MOYEN-ORIENT / ÉMIRATS ===",
+      "name": "Wamda",
+      "type": "rss",
+      "url": "https://www.wamda.com/feed",
+      "country": "🇦🇪",
+      "enabled": true
+    },
+    {
+      "comment": "=== ASIE DU SUD ===",
+      "name": "Inc42",
+      "type": "rss",
+      "url": "https://inc42.com/feed/",
+      "country": "🇮🇳",
+      "enabled": true
+    },
+    {
+      "comment": "=== ASIE DE L'EST ===",
+      "name": "Nikkei Asia Tech",
+      "type": "rss",
+      "url": "https://asia.nikkei.com/rss/feed/nar",
+      "country": "🇯🇵",
+      "enabled": true
+    },
+    {
+      "name": "SCMP Tech",
+      "type": "rss",
+      "url": "https://www.scmp.com/rss/36/feed",
+      "country": "🇨🇳",
+      "enabled": true
+    },
+    {
+      "comment": "=== ASIE DU SUD-EST ===",
+      "name": "KrASIA",
+      "type": "rss",
+      "url": "https://console.kr-asia.com/feed",
+      "country": "🌏",
+      "enabled": true
+    },
+    {
+      "comment": "=== DÉSACTIVÉES ===",
+      "name": "Ars Technica AI",
+      "type": "rss",
+      "url": "https://arstechnica.com/ai/feed/",
       "country": "🇺🇸",
       "enabled": false
     },
@@ -77,13 +149,6 @@
       "type": "rss",
       "url": "https://rss.arxiv.org/rss/cs.AI",
       "country": "🇺🇸",
-      "enabled": false
-    },
-    {
-      "name": "Le Monde IA",
-      "type": "rss",
-      "url": "https://www.lemonde.fr/intelligence-artificielle/rss_full.xml",
-      "country": "🇫🇷",
       "enabled": false
     },
     {
