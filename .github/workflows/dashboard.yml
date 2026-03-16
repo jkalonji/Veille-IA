@@ -11,10 +11,6 @@ on:
         description: "Nombre de sources à afficher"
         required: false
         default: '10'
-      latest:
-        description: "Nombre de derniers articles"
-        required: false
-        default: '10'
 
 jobs:
   dashboard:
@@ -34,12 +30,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run Dashboard
+      - name: Generate dashboard HTML
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: >
-          python dashboard.py
+          python dashboard.py --export
           --days ${{ github.event.inputs.days }}
-          --top ${{ github.event.inputs.top }}
-          --latest ${{ github.event.inputs.latest }}
+          --top  ${{ github.event.inputs.top }}
+          --output dashboard.html
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-radar-dashboard
+          path: dashboard.html
+          retention-days: 7
