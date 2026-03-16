@@ -17,6 +17,7 @@ import aiohttp
 import feedparser
 from groq import AsyncGroq
 import requests
+from supabase import create_client
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -294,7 +295,41 @@ async def classify_articles(articles: list[Article]) -> list[Article]:
     return articles
 
 # ---------------------------------------------------------------------------
-# 4. Telegram
+# 4. Supabase
+# ---------------------------------------------------------------------------
+
+def save_to_supabase(articles: list[Article]) -> None:
+    """Upsert articles into Supabase, ignoring duplicates by URL."""
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        logging.warning("SUPABASE_URL or SUPABASE_KEY not set — skipping Supabase save")
+        return
+
+    client = create_client(url, key)
+    rows = [
+        {
+            "title": a.title,
+            "url": a.url,
+            "source": a.source,
+            "country": a.country,
+            "published": a.published,
+            "description": a.description,
+            "category": a.category,
+            "sentiment": a.sentiment,
+        }
+        for a in articles
+    ]
+
+    try:
+        client.table("articles").upsert(rows, on_conflict="url").execute()
+        logging.info(f"Supabase: upserted {len(rows)} articles")
+    except Exception as e:
+        logging.error(f"Supabase upsert error: {e}")
+
+
+# ---------------------------------------------------------------------------
+# 5. Telegram
 # ---------------------------------------------------------------------------
 
 SENTIMENT_EMOJI = {"Positif": "🟢", "Negatif": "🔴", "Neutre": "⚪"}
@@ -406,7 +441,10 @@ async def main():
     logging.info(f"Classifying {len(articles)} articles with Groq...")
     classified = await classify_articles(articles)
 
-    # 4. Send to Telegram
+    # 4. Save to Supabase
+    save_to_supabase(classified)
+
+    # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
     send_telegram(classified)
 
