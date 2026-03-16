@@ -3,3 +3,5 @@ feedparser>=6.0,<7
 groq>=1.0,<2
 requests>=2.31,<3
 supabase>=2.0,<3
+rich>=13.0,<14
+python-dotenv>=1.0,<2
