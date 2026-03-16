@@ -1,0 +1,45 @@
+name: AI Radar - Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "Fenêtre d'analyse (jours)"
+        required: false
+        default: '7'
+      top:
+        description: "Nombre de sources à afficher"
+        required: false
+        default: '10'
+      latest:
+        description: "Nombre de derniers articles"
+        required: false
+        default: '10'
+
+jobs:
+  dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Dashboard
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: >
+          python dashboard.py
+          --days ${{ github.event.inputs.days }}
+          --top ${{ github.event.inputs.top }}
+          --latest ${{ github.event.inputs.latest }}
