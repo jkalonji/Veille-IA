@@ -136,26 +136,35 @@ def fig_sentiments(articles: list[dict]) -> go.Figure:
 
 
 def fig_trend(articles: list[dict]) -> go.Figure:
-    # FIX 2 (downstream): published is now always YYYY-MM-DD, grouping is safe
-    by_date: dict[str, int] = defaultdict(int)
+    """Stacked area chart: articles per day broken down by sentiment."""
+    sentiments = ["Positif", "Neutre", "Negatif"]  # stacking order bottom→top
+
+    # Count by (date, sentiment)
+    by_date_sent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for a in articles:
-        by_date[a["published"]] += 1
+        by_date_sent[a["published"]][a.get("sentiment", "Neutre")] += 1
 
-    dates  = sorted(by_date)
-    values = [by_date[d] for d in dates]
+    dates = sorted(by_date_sent)
 
-    fig = go.Figure(go.Scatter(
-        x=dates, y=values,
-        mode="lines+markers",
-        fill="tozeroy",
-        line=dict(color="#00b4d8", width=2),
-        marker=dict(size=6),
-    ))
+    fig = go.Figure()
+    for sent in sentiments:
+        values = [by_date_sent[d][sent] for d in dates]
+        fig.add_trace(go.Scatter(
+            x=dates, y=values,
+            name=sent,
+            mode="lines",
+            stackgroup="one",          # enables stacked area
+            fillcolor=SENTIMENT_COLORS[sent],
+            line=dict(color=SENTIMENT_COLORS[sent], width=1),
+            hovertemplate="%{y} " + sent + "<extra></extra>",
+        ))
+
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        title="Tendance quotidienne",
+        title="Tendance quotidienne (par sentiment)",
         xaxis_title="Date",
         yaxis_title="Articles",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=10, r=10, t=50, b=20),
         height=260,
     )
