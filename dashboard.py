@@ -234,7 +234,7 @@ def run_streamlit() -> None:
         page_icon="🤖",
     )
 
-    # FIX 1: cached wrapper so slider moves don't re-fetch Supabase
+    # FIX 1: cached wrapper — one Supabase call per (days*2) window, split client-side
     @st.cache_data(ttl=300)
     def _cached_load(days: int) -> list[dict]:
         return load_articles(days)
@@ -246,19 +246,24 @@ def run_streamlit() -> None:
         days  = st.slider("Fenêtre d'analyse (jours)", 1, 90, 7)
         top_n = st.slider("Nb de sources", 5, 20, 10)
 
-    # Load
+    # Load current + previous period in one query for delta KPIs
     with st.spinner("Chargement des données..."):
         try:
-            articles = _cached_load(days)
+            all_articles = _cached_load(days * 2)
         except RuntimeError as e:
             st.error(str(e))
             return
+
+    # Split current / previous period
+    cutoff_str   = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    articles      = [a for a in all_articles if a["published"] >= cutoff_str]
+    prev_articles = [a for a in all_articles if a["published"] <  cutoff_str]
 
     if not articles:
         st.warning(f"Aucun article trouvé sur les {days} derniers jours.")
         return
 
-    # FIX 4: filters in sidebar — rendered after data load so options are data-driven
+    # FIX 4: filters in sidebar — data-driven options
     with st.sidebar:
         st.markdown("---")
         all_cats      = sorted({a["category"] for a in articles if a.get("category")})
@@ -270,32 +275,47 @@ def run_streamlit() -> None:
         )
         sel_countries = st.multiselect("Pays / Région", all_countries, default=all_countries)
         st.markdown("---")
+        # FIX 6: refresh button clears cache and reruns
+        if st.button("🔄 Rafraîchir", use_container_width=True):
+            _cached_load.clear()
+            st.rerun()
         st.caption("Données : Supabase · Classif : Groq")
 
-    # Apply filters
-    filtered = [
-        a for a in articles
-        if a.get("category") in sel_cats and a.get("country") in sel_countries
-    ]
+    # Apply filters to both periods
+    def _apply_filters(pool: list[dict]) -> list[dict]:
+        return [
+            a for a in pool
+            if a.get("category") in sel_cats and a.get("country") in sel_countries
+        ]
+
+    filtered      = _apply_filters(articles)
+    prev_filtered = _apply_filters(prev_articles)
 
     if not filtered:
         st.warning("Aucun article ne correspond aux filtres sélectionnés.")
         return
 
-    # KPIs
-    total    = len(filtered)
-    pos_pct  = round(sum(1 for a in filtered if a["sentiment"] == "Positif") / total * 100)
-    neg_pct  = round(sum(1 for a in filtered if a["sentiment"] == "Negatif") / total * 100)
-    nb_src   = len({a["source"] for a in filtered})
-    dates    = sorted({a["published"] for a in filtered})
-    date_lbl = f"{dates[0]} → {dates[-1]}" if dates else "—"
+    # KPIs — FIX 5: add top_cat + deltas vs previous period
+    total     = len(filtered)
+    prev_total = len(prev_filtered)
+    pos_pct   = round(sum(1 for a in filtered if a["sentiment"] == "Positif") / total * 100)
+    neg_pct   = round(sum(1 for a in filtered if a["sentiment"] == "Negatif") / total * 100)
+    nb_src    = len({a["source"] for a in filtered})
+    top_cat   = Counter(a["category"] for a in filtered).most_common(1)[0][0]
+    dates     = sorted({a["published"] for a in filtered})
+    date_lbl  = f"{dates[0]} → {dates[-1]}" if dates else "—"
+
+    prev_pos_pct  = round(sum(1 for a in prev_filtered if a["sentiment"] == "Positif") / max(prev_total, 1) * 100)
+    prev_neg_pct  = round(sum(1 for a in prev_filtered if a["sentiment"] == "Negatif") / max(prev_total, 1) * 100)
+    prev_nb_src   = len({a["source"] for a in prev_filtered})
 
     st.markdown(f"## 📰 {total} articles · {date_lbl}")
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total articles",    total)
-    k2.metric("Sentiment positif", f"{pos_pct} %")
-    k3.metric("Sentiment négatif", f"{neg_pct} %")
-    k4.metric("Sources actives",   nb_src)
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Total articles",    total,         delta=total - prev_total)
+    k2.metric("Sentiment positif", f"{pos_pct} %", delta=f"{pos_pct - prev_pos_pct} pts")
+    k3.metric("Sentiment négatif", f"{neg_pct} %", delta=f"{neg_pct - prev_neg_pct} pts", delta_color="inverse")
+    k4.metric("Sources actives",   nb_src,         delta=nb_src - prev_nb_src)
+    k5.metric("Catégorie dominante", f"{CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
 
     st.markdown("---")
 
@@ -385,13 +405,13 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     ]
 
     # Combine all figures into a single self-contained HTML
+    # FIX 8: embed Plotly bundle locally (first fig only) — works offline/CI without CDN
     html_parts = []
     for i, fig in enumerate(figs):
-        include_js = "cdn" if i == 0 else False
         html_parts.append(pio.to_html(
             fig,
             full_html=False,
-            include_plotlyjs=include_js,
+            include_plotlyjs=True if i == 0 else False,
             config={"responsive": True},
         ))
 
