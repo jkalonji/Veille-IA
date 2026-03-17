@@ -430,19 +430,22 @@ def run_streamlit() -> None:
 # ---------------------------------------------------------------------------
 
 def _articles_to_html_table(articles: list[dict]) -> str:
-    """Build a self-contained HTML table of articles for the CI export."""
+    """Build HTML table rows with data-* attributes for JS filtering."""
     rows = []
     for a in articles:
         cat   = a.get("category", "")
         emoji = CATEGORY_EMOJI.get(cat, "📌")
         title = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
         url   = a.get("url", "#")
+        sent  = a.get("sentiment", "")
+        src   = a.get("source", "")
         rows.append(
-            f"<tr>"
+            f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
+            f'data-category="{cat}" data-source="{src}">'
             f"<td>{a.get('published', '')}</td>"
-            f"<td>{a.get('sentiment', '')}</td>"
-            f"<td><a href=\"{url}\" target=\"_blank\">{title}</a></td>"
-            f"<td>{a.get('source', '')}</td>"
+            f"<td>{sent}</td>"
+            f'<td><a href="{url}" target="_blank">{title}</a></td>'
+            f"<td>{src}</td>"
             f"<td>{a.get('country', '')}</td>"
             f"<td>{emoji} {cat}</td>"
             f"</tr>"
@@ -486,8 +489,15 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
             config={"responsive": True},
         ))
 
-    # FIX 3: build articles table for CI export
     table_rows = _articles_to_html_table(articles)
+
+    # Build filter option lists for the HTML selects
+    def _options(values: list[str]) -> str:
+        return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
+
+    opt_sent = _options([a.get("sentiment", "") for a in articles if a.get("sentiment")])
+    opt_cat  = _options([a.get("category",  "") for a in articles if a.get("category")])
+    opt_src  = _options([a.get("source",    "") for a in articles if a.get("source")])
 
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     full_html = f"""<!DOCTYPE html>
@@ -497,20 +507,29 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Radar — Dashboard</title>
   <style>
-    body  {{ background: #0e1117; color: #fafafa; font-family: sans-serif; margin: 0; padding: 20px; }}
-    h1    {{ color: #00b4d8; margin-bottom: 4px; }}
-    h2    {{ color: #fafafa; margin-top: 32px; }}
-    p     {{ color: #888; margin-top: 0; }}
-    .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
-    .full {{ grid-column: 1 / -1; }}
-    .card {{ background: #1a1d27; border-radius: 8px; padding: 8px; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    th    {{ background: #1a1d27; color: #00b4d8; text-align: left; padding: 8px 10px; position: sticky; top: 0; }}
-    td    {{ padding: 6px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
+    body       {{ background: #0e1117; color: #fafafa; font-family: sans-serif; margin: 0; padding: 20px; }}
+    h1         {{ color: #00b4d8; margin-bottom: 4px; }}
+    h2         {{ color: #fafafa; margin-top: 32px; }}
+    p          {{ color: #888; margin-top: 0; }}
+    .grid      {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
+    .full      {{ grid-column: 1 / -1; }}
+    .card      {{ background: #1a1d27; border-radius: 8px; padding: 8px; }}
+    table      {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+    th         {{ background: #1a1d27; color: #00b4d8; text-align: left; padding: 8px 10px; position: sticky; top: 0; z-index: 1; }}
+    td         {{ padding: 6px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
     tr:hover td {{ background: #1a1d27; }}
-    a     {{ color: #00b4d8; text-decoration: none; }}
-    a:hover {{ text-decoration: underline; }}
-    .table-wrap {{ max-height: 520px; overflow-y: auto; border-radius: 8px; background: #0e1117; }}
+    a          {{ color: #00b4d8; text-decoration: none; }}
+    a:hover    {{ text-decoration: underline; }}
+    .table-wrap {{ max-height: 560px; overflow-y: auto; border-radius: 8px; background: #0e1117; }}
+    .toolbar   {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+                  background: #1a1d27; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; }}
+    .toolbar input, .toolbar select {{
+      background: #0e1117; color: #fafafa; border: 1px solid #2a2d3a;
+      border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none; }}
+    .toolbar input  {{ flex: 1; min-width: 200px; }}
+    .toolbar select {{ min-width: 140px; }}
+    .toolbar input::placeholder {{ color: #555; }}
+    #count     {{ margin-left: auto; color: #888; font-size: 12px; white-space: nowrap; }}
   </style>
 </head>
 <body>
@@ -523,19 +542,55 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     <div class="card">{html_parts[3]}</div>
     <div class="card full">{html_parts[4]}</div>
   </div>
+
   <h2>📋 Derniers articles</h2>
+  <div class="toolbar">
+    <input  id="f-search" type="text"   placeholder="🔍 Recherche dans les titres…">
+    <select id="f-sent">  <option value="">Tous les sentiments</option>{opt_sent}</select>
+    <select id="f-cat">   <option value="">Toutes les catégories</option>{opt_cat}</select>
+    <select id="f-src">   <option value="">Toutes les sources</option>{opt_src}</select>
+    <span   id="count"></span>
+  </div>
   <div class="table-wrap">
-    <table>
+    <table id="articles-table">
       <thead>
-        <tr>
-          <th>Date</th><th>Sent.</th><th>Titre</th><th>Source</th><th>Pays</th><th>Catégorie</th>
-        </tr>
+        <tr><th>Date</th><th>Sent.</th><th>Titre</th><th>Source</th><th>Pays</th><th>Catégorie</th></tr>
       </thead>
       <tbody>
 {table_rows}
       </tbody>
     </table>
   </div>
+
+  <script>
+    const rows    = Array.from(document.querySelectorAll('#articles-table tbody tr'));
+    const search  = document.getElementById('f-search');
+    const fSent   = document.getElementById('f-sent');
+    const fCat    = document.getElementById('f-cat');
+    const fSrc    = document.getElementById('f-src');
+    const counter = document.getElementById('count');
+
+    function applyFilters() {{
+      const q    = search.value.toLowerCase();
+      const sent = fSent.value;
+      const cat  = fCat.value;
+      const src  = fSrc.value;
+      let visible = 0;
+      rows.forEach(row => {{
+        const match =
+          (!q    || row.dataset.title.includes(q))     &&
+          (!sent || row.dataset.sentiment === sent)     &&
+          (!cat  || row.dataset.category  === cat)      &&
+          (!src  || row.dataset.source    === src);
+        row.style.display = match ? '' : 'none';
+        if (match) visible++;
+      }});
+      counter.textContent = visible + ' article' + (visible !== 1 ? 's' : '') + ' affiché' + (visible !== 1 ? 's' : '');
+    }}
+
+    [search, fSent, fCat, fSrc].forEach(el => el.addEventListener('input', applyFilters));
+    applyFilters();
+  </script>
 </body>
 </html>"""
 
