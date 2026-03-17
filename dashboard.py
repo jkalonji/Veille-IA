@@ -195,25 +195,33 @@ def fig_trend(articles: list[dict]) -> go.Figure:
     return fig
 
 
-def fig_sources(articles: list[dict], top_n: int = 10) -> go.Figure:
-    counts = Counter(f"{a['country']} {a['source']}" for a in articles)
-    top    = counts.most_common(top_n)
-    labels = [t[0] for t in reversed(top)]
-    values = [t[1] for t in reversed(top)]
-
-    fig = go.Figure(go.Bar(
-        x=values, y=labels, orientation="h",
-        marker_color="#f4a261",
-        text=values, textposition="outside",
-    ))
-    fig.update_layout(
-        template=PLOTLY_TEMPLATE,
-        title=f"Top {top_n} sources",
-        xaxis_title="Articles",
-        margin=dict(l=10, r=30, t=50, b=20),
-        height=max(280, top_n * 30),
-    )
-    return fig
+def _render_hot_articles(articles: list[dict], container) -> None:
+    """Render hot topic articles as styled cards in a Streamlit container."""
+    import streamlit as st
+    hot = [a for a in articles if a.get("hot_topic")]
+    container.markdown("#### 🔥 Hot Articles")
+    if not hot:
+        container.info("Aucun article hot topic sur la période sélectionnée.")
+        return
+    cards_html = ""
+    for a in hot:
+        cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
+        sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
+        title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        cards_html += f"""
+        <div style="background:#1a1d27;border-left:4px solid #f4a261;border-radius:6px;
+                    padding:10px 14px;margin-bottom:8px;">
+          <div style="font-size:14px;font-weight:600;margin-bottom:5px;">
+            <a href="{a.get('url','#')}" target="_blank"
+               style="color:#fafafa;text-decoration:none;">{title}</a>
+          </div>
+          <div style="font-size:12px;color:#888;">
+            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {a.get('published','')}
+            &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
+            &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
+          </div>
+        </div>"""
+    container.markdown(cards_html, unsafe_allow_html=True)
 
 
 def fig_heatmap(articles: list[dict]) -> go.Figure:
@@ -286,8 +294,7 @@ def run_streamlit() -> None:
         if p3.button("30j", use_container_width=True): st.session_state["days"] = 30
         if p4.button("90j", use_container_width=True): st.session_state["days"] = 90
 
-        days  = st.slider("Fenêtre d'analyse (jours)", 1, 90, key="days")
-        top_n = st.slider("Nb de sources", 5, 20, 10)
+        days = st.slider("Fenêtre d'analyse (jours)", 1, 90, key="days")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
@@ -382,7 +389,7 @@ def run_streamlit() -> None:
     c3.plotly_chart(fig_trend(filtered),   use_container_width=True)
     c4.plotly_chart(fig_heatmap(filtered), use_container_width=True)
 
-    st.plotly_chart(fig_sources(filtered, top_n), use_container_width=True)
+    _render_hot_articles(filtered, st)
 
     # ── Table — local filters ─────────────────────────────────────────────────
     st.markdown("### 📋 Derniers articles")
@@ -463,7 +470,31 @@ def _articles_to_html_table(articles: list[dict]) -> str:
     return "\n".join(rows)
 
 
-def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
+def _hot_articles_html(articles: list[dict]) -> str:
+    """Build hot articles cards for the CI HTML export."""
+    hot = [a for a in articles if a.get("hot_topic")]
+    if not hot:
+        return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
+    cards = ""
+    for a in hot:
+        cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
+        sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
+        title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        cards += f"""
+        <div class="hot-card">
+          <div class="hot-title">
+            <a href="{a.get('url','#')}" target="_blank">{title}</a>
+          </div>
+          <div class="hot-meta">
+            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {a.get('published','')}
+            &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
+            &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
+          </div>
+        </div>"""
+    return cards
+
+
+def run_export(days: int, output: str = "dashboard.html") -> None:
     print(f"Chargement des articles ({days} derniers jours)...")
     try:
         articles = load_articles(days)
@@ -485,7 +516,6 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
         fig_sentiments(articles),
         fig_trend(articles),
         fig_heatmap(articles),
-        fig_sources(articles, top_n),
     ]
 
     # Combine all figures into a single self-contained HTML
@@ -499,6 +529,7 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
             config={"responsive": True},
         ))
 
+    hot_cards  = _hot_articles_html(articles)
     table_rows = _articles_to_html_table(articles)
 
     # Build filter option lists for the HTML selects
@@ -541,6 +572,12 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     .toolbar select {{ min-width: 140px; }}
     .toolbar input::placeholder {{ color: #555; }}
     #count     {{ margin-left: auto; color: #888; font-size: 12px; white-space: nowrap; }}
+    .hot-card  {{ background: #1a1d27; border-left: 4px solid #f4a261; border-radius: 6px;
+                  padding: 10px 14px; margin-bottom: 8px; }}
+    .hot-title {{ font-size: 14px; font-weight: 600; margin-bottom: 5px; }}
+    .hot-title a {{ color: #fafafa; text-decoration: none; }}
+    .hot-title a:hover {{ text-decoration: underline; }}
+    .hot-meta  {{ font-size: 12px; color: #888; }}
   </style>
 </head>
 <body>
@@ -551,8 +588,10 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     <div class="card">{html_parts[1]}</div>
     <div class="card">{html_parts[2]}</div>
     <div class="card">{html_parts[3]}</div>
-    <div class="card full">{html_parts[4]}</div>
   </div>
+
+  <h2>🔥 Hot Articles</h2>
+  {hot_cards}
 
   <h2>📋 Derniers articles</h2>
   <div class="toolbar">
@@ -620,12 +659,11 @@ else:
     parser = argparse.ArgumentParser(description="AI Radar Dashboard")
     parser.add_argument("--export", action="store_true", help="Générer un fichier HTML statique")
     parser.add_argument("--days",   type=int, default=7,  help="Fenêtre d'analyse en jours")
-    parser.add_argument("--top",    type=int, default=10, help="Nb de sources à afficher")
     parser.add_argument("--output", type=str, default="dashboard.html", help="Fichier de sortie")
     args = parser.parse_args()
 
     if args.export:
-        run_export(args.days, args.top, args.output)
+        run_export(args.days, args.output)
     else:
         print("Usage :")
         print("  Local     : streamlit run dashboard.py")
