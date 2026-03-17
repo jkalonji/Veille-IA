@@ -287,9 +287,10 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # 3. Classification with Groq
 # ---------------------------------------------------------------------------
 
-GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec deux cles :
+GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec trois cles :
 - "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses", "Geopolitique"]
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
+- "country": le pays ou la region principalement concerne(e) par le contenu de l'article (ex: "USA", "Chine", "France", "Europe", "Inde", "Global"). Si l'article est generique ou mondial, utilise "Global".
 
 Ne renvoie AUCUN texte supplementaire, AUCUN resume, AUCUNE explication. Uniquement l'objet JSON."""
 
@@ -320,7 +321,7 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.1,
-            max_tokens=100,
+            max_tokens=120,
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
@@ -328,10 +329,12 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
         sent = result.get("sentiment", "Neutre")
         article.category = cat if cat in VALID_CATEGORIES else "Innovation / Tech"
         article.sentiment = sent if sent in VALID_SENTIMENTS else "Neutre"
+        article.country = result.get("country", "Global") or "Global"
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
         article.category = "Innovation / Tech"
         article.sentiment = "Neutre"
+        article.country = "Global"
 
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
