@@ -7,3 +7,4 @@ streamlit>=1.30,<2
 plotly>=5.0,<6
 pandas>=2.0,<3
 python-dotenv>=1.0,<2
+pytrends>=4.9,<5

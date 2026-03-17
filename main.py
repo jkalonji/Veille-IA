@@ -64,18 +64,21 @@ def compute_stats(articles: list[Article]) -> dict[str, int]:
 # 0. Hot keywords (via Google Trends / fallback static list)
 # ---------------------------------------------------------------------------
 
-# Fallback list — update manually when major AI topics shift
+# Fallback list — update manually when major AI topics shift.
+# Use terms broad enough to appear in article titles/descriptions.
 HOT_KEYWORDS_FALLBACK = {
     # Models & releases
-    "gpt-5", "claude 4", "gemini 2", "deepseek r2", "llama 4", "grok 3",
-    "qwen 3", "mistral large", "o3", "o4",
+    "gpt-5", "claude 4", "gemini 2", "deepseek", "llama 4", "grok",
+    "qwen", "mistral", "o3", "o4", "reasoning model",
     # Techniques in the spotlight
-    "vibe coding", "reasoning model", "test-time compute", "inference scaling",
-    "model context protocol", "mcp", "computer use", "multimodal agent",
+    "vibe coding", "agentic", "ai agent", "model context protocol", "mcp",
+    "test-time compute", "inference scaling", "computer use",
     # Regulation & societal
-    "ai act", "openai drama", "sam altman",
+    "ai act", "sam altman", "openai", "anthropic",
     # Hardware
-    "blackwell", "gb200", "tsmc 2nm",
+    "blackwell", "nvidia", "tsmc", "h100", "h200",
+    # General hot signals
+    "benchmark", "open source model", "open weights", "jailbreak",
 }
 
 
