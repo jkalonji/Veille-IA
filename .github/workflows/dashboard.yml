@@ -7,10 +7,6 @@ on:
         description: "Fenêtre d'analyse (jours)"
         required: false
         default: '7'
-      top:
-        description: "Nombre de sources à afficher"
-        required: false
-        default: '10'
 
 jobs:
   dashboard:
@@ -37,7 +33,6 @@ jobs:
         run: >
           python dashboard.py --export
           --days ${{ github.event.inputs.days }}
-          --top  ${{ github.event.inputs.top }}
           --output dashboard.html
 
       - name: Upload dashboard artifact
