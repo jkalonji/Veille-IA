@@ -10,7 +10,7 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-import plotly.express as px
+import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
 from supabase import create_client
@@ -64,6 +64,11 @@ def _supabase_client():
     return create_client(url, key)
 
 
+def _normalize_date(s: str) -> str:
+    """Keep only the YYYY-MM-DD part of any ISO date string."""
+    return s[:10] if s else s
+
+
 def load_articles(days: int) -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -74,7 +79,12 @@ def load_articles(days: int) -> list[dict]:
         .order("published", desc=True)
         .execute()
     )
-    return resp.data or []
+    articles = resp.data or []
+    # FIX 2: normalize published to YYYY-MM-DD regardless of what Supabase returns
+    for a in articles:
+        if a.get("published"):
+            a["published"] = _normalize_date(a["published"])
+    return articles
 
 # ---------------------------------------------------------------------------
 # Figures
@@ -126,6 +136,7 @@ def fig_sentiments(articles: list[dict]) -> go.Figure:
 
 
 def fig_trend(articles: list[dict]) -> go.Figure:
+    # FIX 2 (downstream): published is now always YYYY-MM-DD, grouping is safe
     by_date: dict[str, int] = defaultdict(int)
     for a in articles:
         by_date[a["published"]] += 1
@@ -185,7 +196,7 @@ def fig_heatmap(articles: list[dict]) -> go.Figure:
         except (ValueError, KeyError):
             pass
 
-    z      = [matrix[c] for c in cats]
+    z       = [matrix[c] for c in cats]
     ylabels = [f"{CATEGORY_EMOJI[c]} {c}" for c in cats]
 
     fig = go.Figure(go.Heatmap(
@@ -223,19 +234,22 @@ def run_streamlit() -> None:
         page_icon="🤖",
     )
 
-    # Sidebar
+    # FIX 1: cached wrapper so slider moves don't re-fetch Supabase
+    @st.cache_data(ttl=300)
+    def _cached_load(days: int) -> list[dict]:
+        return load_articles(days)
+
+    # Sidebar — sliders
     with st.sidebar:
         st.title("🤖 AI Radar")
         st.markdown("---")
         days  = st.slider("Fenêtre d'analyse (jours)", 1, 90, 7)
         top_n = st.slider("Nb de sources", 5, 20, 10)
-        st.markdown("---")
-        st.caption("Données : Supabase · Classif : Groq")
 
     # Load
     with st.spinner("Chargement des données..."):
         try:
-            articles = load_articles(days)
+            articles = _cached_load(days)
         except RuntimeError as e:
             st.error(str(e))
             return
@@ -244,41 +258,63 @@ def run_streamlit() -> None:
         st.warning(f"Aucun article trouvé sur les {days} derniers jours.")
         return
 
+    # FIX 4: filters in sidebar — rendered after data load so options are data-driven
+    with st.sidebar:
+        st.markdown("---")
+        all_cats      = sorted({a["category"] for a in articles if a.get("category")})
+        all_countries = sorted({a["country"]  for a in articles if a.get("country")})
+
+        sel_cats = st.multiselect(
+            "Catégories", all_cats, default=all_cats,
+            format_func=lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}",
+        )
+        sel_countries = st.multiselect("Pays / Région", all_countries, default=all_countries)
+        st.markdown("---")
+        st.caption("Données : Supabase · Classif : Groq")
+
+    # Apply filters
+    filtered = [
+        a for a in articles
+        if a.get("category") in sel_cats and a.get("country") in sel_countries
+    ]
+
+    if not filtered:
+        st.warning("Aucun article ne correspond aux filtres sélectionnés.")
+        return
+
     # KPIs
-    total    = len(articles)
-    pos_pct  = round(sum(1 for a in articles if a["sentiment"] == "Positif") / total * 100)
-    neg_pct  = round(sum(1 for a in articles if a["sentiment"] == "Negatif") / total * 100)
-    top_cat  = Counter(a["category"] for a in articles).most_common(1)[0][0]
-    nb_src   = len({a["source"] for a in articles})
-    dates    = sorted({a["published"] for a in articles})
+    total    = len(filtered)
+    pos_pct  = round(sum(1 for a in filtered if a["sentiment"] == "Positif") / total * 100)
+    neg_pct  = round(sum(1 for a in filtered if a["sentiment"] == "Negatif") / total * 100)
+    nb_src   = len({a["source"] for a in filtered})
+    dates    = sorted({a["published"] for a in filtered})
     date_lbl = f"{dates[0]} → {dates[-1]}" if dates else "—"
 
     st.markdown(f"## 📰 {total} articles · {date_lbl}")
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Total articles",     total)
-    k2.metric("Sentiment positif",  f"{pos_pct} %")
-    k3.metric("Sentiment négatif",  f"{neg_pct} %")
-    k4.metric("Sources actives",    nb_src)
+    k1.metric("Total articles",    total)
+    k2.metric("Sentiment positif", f"{pos_pct} %")
+    k3.metric("Sentiment négatif", f"{neg_pct} %")
+    k4.metric("Sources actives",   nb_src)
 
     st.markdown("---")
 
     # Row 1: categories + sentiments
     c1, c2 = st.columns([3, 2])
-    c1.plotly_chart(fig_categories(articles), use_container_width=True)
-    c2.plotly_chart(fig_sentiments(articles), use_container_width=True)
+    c1.plotly_chart(fig_categories(filtered), use_container_width=True)
+    c2.plotly_chart(fig_sentiments(filtered), use_container_width=True)
 
     # Row 2: trend + heatmap
     c3, c4 = st.columns([2, 3])
-    c3.plotly_chart(fig_trend(articles),   use_container_width=True)
-    c4.plotly_chart(fig_heatmap(articles), use_container_width=True)
+    c3.plotly_chart(fig_trend(filtered),   use_container_width=True)
+    c4.plotly_chart(fig_heatmap(filtered), use_container_width=True)
 
     # Row 3: sources
-    st.plotly_chart(fig_sources(articles, top_n), use_container_width=True)
+    st.plotly_chart(fig_sources(filtered, top_n), use_container_width=True)
 
     # Row 4: latest articles table
-    st.markdown(f"### 📋 Derniers articles")
-    import pandas as pd
-    df = pd.DataFrame(articles)
+    st.markdown("### 📋 Derniers articles")
+    df = pd.DataFrame(filtered)
     df["category"] = df["category"].apply(
         lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}"
     )
@@ -288,19 +324,40 @@ def run_streamlit() -> None:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "published":  st.column_config.DateColumn("Date"),
-            "sentiment":  st.column_config.TextColumn("Sent."),
-            "title":      st.column_config.TextColumn("Titre", width="large"),
-            "source":     st.column_config.TextColumn("Source"),
-            "country":    st.column_config.TextColumn(""),
-            "category":   st.column_config.TextColumn("Catégorie"),
-            "lien":       st.column_config.LinkColumn("Lien", width="small"),
+            "published": st.column_config.DateColumn("Date"),
+            "sentiment": st.column_config.TextColumn("Sent."),
+            "title":     st.column_config.TextColumn("Titre", width="large"),
+            "source":    st.column_config.TextColumn("Source"),
+            "country":   st.column_config.TextColumn(""),
+            "category":  st.column_config.TextColumn("Catégorie"),
+            "lien":      st.column_config.LinkColumn("Lien", display_text="↗", width="small"),
         },
     )
 
 # ---------------------------------------------------------------------------
 # HTML export (CI mode)
 # ---------------------------------------------------------------------------
+
+def _articles_to_html_table(articles: list[dict]) -> str:
+    """Build a self-contained HTML table of articles for the CI export."""
+    rows = []
+    for a in articles:
+        cat   = a.get("category", "")
+        emoji = CATEGORY_EMOJI.get(cat, "📌")
+        title = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        url   = a.get("url", "#")
+        rows.append(
+            f"<tr>"
+            f"<td>{a.get('published', '')}</td>"
+            f"<td>{a.get('sentiment', '')}</td>"
+            f"<td><a href=\"{url}\" target=\"_blank\">{title}</a></td>"
+            f"<td>{a.get('source', '')}</td>"
+            f"<td>{a.get('country', '')}</td>"
+            f"<td>{emoji} {cat}</td>"
+            f"</tr>"
+        )
+    return "\n".join(rows)
+
 
 def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     print(f"Chargement des articles ({days} derniers jours)...")
@@ -314,8 +371,8 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
         print("Aucun article trouvé.")
         sys.exit(0)
 
-    total   = len(articles)
-    dates   = sorted({a["published"] for a in articles})
+    total    = len(articles)
+    dates    = sorted({a["published"] for a in articles})
     date_lbl = f"{dates[0]} → {dates[-1]}" if dates else "—"
     print(f"{total} articles trouvés ({date_lbl})")
 
@@ -338,6 +395,9 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
             config={"responsive": True},
         ))
 
+    # FIX 3: build articles table for CI export
+    table_rows = _articles_to_html_table(articles)
+
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     full_html = f"""<!DOCTYPE html>
 <html lang="fr">
@@ -346,12 +406,20 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AI Radar — Dashboard</title>
   <style>
-    body {{ background: #0e1117; color: #fafafa; font-family: sans-serif; margin: 0; padding: 20px; }}
-    h1   {{ color: #00b4d8; margin-bottom: 4px; }}
-    p    {{ color: #888; margin-top: 0; }}
+    body  {{ background: #0e1117; color: #fafafa; font-family: sans-serif; margin: 0; padding: 20px; }}
+    h1    {{ color: #00b4d8; margin-bottom: 4px; }}
+    h2    {{ color: #fafafa; margin-top: 32px; }}
+    p     {{ color: #888; margin-top: 0; }}
     .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
     .full {{ grid-column: 1 / -1; }}
     .card {{ background: #1a1d27; border-radius: 8px; padding: 8px; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
+    th    {{ background: #1a1d27; color: #00b4d8; text-align: left; padding: 8px 10px; position: sticky; top: 0; }}
+    td    {{ padding: 6px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
+    tr:hover td {{ background: #1a1d27; }}
+    a     {{ color: #00b4d8; text-decoration: none; }}
+    a:hover {{ text-decoration: underline; }}
+    .table-wrap {{ max-height: 520px; overflow-y: auto; border-radius: 8px; background: #0e1117; }}
   </style>
 </head>
 <body>
@@ -363,6 +431,19 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     <div class="card">{html_parts[2]}</div>
     <div class="card">{html_parts[3]}</div>
     <div class="card full">{html_parts[4]}</div>
+  </div>
+  <h2>📋 Derniers articles</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th><th>Sent.</th><th>Titre</th><th>Source</th><th>Pays</th><th>Catégorie</th>
+        </tr>
+      </thead>
+      <tbody>
+{table_rows}
+      </tbody>
+    </table>
   </div>
 </body>
 </html>"""
