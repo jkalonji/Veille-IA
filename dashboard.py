@@ -97,8 +97,9 @@ def load_articles(days: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     resp = (
         client.table("articles")
-        .select("title, source, country, published, category, sentiment, url")
+        .select("title, source, country, published, category, sentiment, url, hot_topic")
         .gte("published", cutoff)
+        .order("hot_topic", desc=True)
         .order("published", desc=True)
         .execute()
     )
@@ -407,8 +408,13 @@ def run_streamlit() -> None:
         st.info("Aucun article ne correspond aux filtres du tableau.")
     else:
         df = pd.DataFrame(table_rows)
-        df["category"] = df["category"].apply(lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}")
-        df["lien"]     = df["url"].apply(lambda u: f"[↗]({u})")
+        df["category"]  = df["category"].apply(lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}")
+        df["lien"]      = df["url"].apply(lambda u: f"[↗]({u})")
+        df["hot_topic"] = df.get("hot_topic", False).fillna(False)
+        # Hot topic articles are already first (ordered by Supabase); add 🔥 badge in title
+        df["title"] = df.apply(
+            lambda r: f"🔥 {r['title']}" if r["hot_topic"] else r["title"], axis=1
+        )
         st.dataframe(
             df[["published", "sentiment", "title", "source", "country", "category", "lien"]],
             use_container_width=True,
@@ -423,7 +429,8 @@ def run_streamlit() -> None:
                 "lien":      st.column_config.LinkColumn("Lien", display_text="↗", width="small"),
             },
         )
-        st.caption(f"{len(table_rows)} articles affichés")
+        nb_hot = int(df["hot_topic"].sum())
+        st.caption(f"{len(table_rows)} articles affichés · {nb_hot} 🔥 hot topics")
 
 # ---------------------------------------------------------------------------
 # HTML export (CI mode)
@@ -439,12 +446,15 @@ def _articles_to_html_table(articles: list[dict]) -> str:
         url   = a.get("url", "#")
         sent  = a.get("sentiment", "")
         src   = a.get("source", "")
+        hot      = a.get("hot_topic", False)
+        hot_badge = "🔥 " if hot else ""
+        hot_class = ' class="hot"' if hot else ""
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
-            f'data-category="{cat}" data-source="{src}">'
+            f'data-category="{cat}" data-source="{src}"{hot_class}>'
             f"<td>{a.get('published', '')}</td>"
             f"<td>{sent}</td>"
-            f'<td><a href="{url}" target="_blank">{title}</a></td>'
+            f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
             f"<td>{src}</td>"
             f"<td>{a.get('country', '')}</td>"
             f"<td>{emoji} {cat}</td>"
@@ -521,6 +531,7 @@ def run_export(days: int, top_n: int, output: str = "dashboard.html") -> None:
     a          {{ color: #00b4d8; text-decoration: none; }}
     a:hover    {{ text-decoration: underline; }}
     .table-wrap {{ max-height: 560px; overflow-y: auto; border-radius: 8px; background: #0e1117; }}
+    tr.hot td  {{ background: #1f1a10; border-left: 3px solid #f4a261; }}
     .toolbar   {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
                   background: #1a1d27; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; }}
     .toolbar input, .toolbar select {{
