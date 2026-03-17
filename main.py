@@ -220,12 +220,59 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 
     # Filter: keep only AI-related articles
     ai_keywords = {
+        # Core AI concepts
         "ai", "artificial intelligence", "machine learning", "deep learning",
         "llm", "large language model", "neural network", "chatgpt", "gpt",
-        "generative ai", "openai", "anthropic", "gemini", "deepmind",
-        "nvidia", "robot", "automation", "algorithm", "data center",
-        "semiconductor", "chip", "model", "chatbot", "autonomous",
+        "generative ai", "chatbot", "autonomous", "agi", "artificial general intelligence",
         "intelligence artificielle", "apprentissage automatique",
+
+        # Architectures & techniques
+        "transformer", "mixture of experts", "moe", "diffusion model",
+        "multimodal", "vision language model", "vlm", "reasoning model",
+        "context window", "sparse model", "embedding", "vector database",
+        "retrieval augmented generation", "rag", "fine-tuning", "rlhf",
+        "test-time compute", "inference scaling",
+
+        # Prompt & context engineering
+        "prompt engineering", "context engineering", "system prompt",
+        "few-shot", "zero-shot", "chain of thought", "prompt optimization",
+        "prompt injection", "jailbreak",
+
+        # Vibe coding & AI-assisted dev
+        "vibe coding", "ai coding", "code generation", "copilot", "cursor",
+        "devin", "github copilot",
+
+        # Model optimization
+        "quantization", "pruning", "distillation", "knowledge distillation",
+        "lora", "qlora", "peft", "model compression", "speculative decoding",
+        "flash attention", "inference optimization", "efficient inference",
+
+        # Hardware: Nvidia, competitors & TSMC
+        "nvidia", "amd", "intel", "qualcomm", "tsmc", "h100", "h200", "b200",
+        "blackwell", "hopper", "tpu", "cerebras", "graphcore", "tenstorrent",
+        "gaudi", "arm chip",
+
+        # Major players (established)
+        "openai", "anthropic", "deepmind", "gemini", "meta ai", "mistral",
+        "xai", "grok", "cohere", "hugging face", "stability ai", "runway",
+
+        # Emerging players
+        "deepseek", "qwen", "perplexity", "together ai",
+
+        # Agents & autonomy
+        "ai agent", "agentic", "model context protocol", "mcp", "autonomous agent",
+
+        # Safety, ethics & regulation
+        "ai safety", "alignment", "hallucination", "ai regulation", "eu ai act",
+        "responsible ai", "interpretability", "explainability", "deepfake",
+        "ai governance", "bias",
+
+        # Performance & benchmarks
+        "benchmark", "evals", "open source model", "open weights", "edge ai",
+        "on-device ai",
+
+        # Infrastructure
+        "data center", "semiconductor", "chip", "robot", "automation",
     }
     filtered = []
     for a in unique:
