@@ -33,6 +33,7 @@ class Article:
     description: str = ""
     category: str = ""
     sentiment: str = ""
+    hot_topic: bool = False
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,6 +59,54 @@ def compute_stats(articles: list[Article]) -> dict[str, int]:
     for a in articles:
         stats[a.category] = stats.get(a.category, 0) + 1
     return stats
+
+# ---------------------------------------------------------------------------
+# 0. Hot keywords (via Google Trends / fallback static list)
+# ---------------------------------------------------------------------------
+
+# Fallback list — update manually when major AI topics shift
+HOT_KEYWORDS_FALLBACK = {
+    # Models & releases
+    "gpt-5", "claude 4", "gemini 2", "deepseek r2", "llama 4", "grok 3",
+    "qwen 3", "mistral large", "o3", "o4",
+    # Techniques in the spotlight
+    "vibe coding", "reasoning model", "test-time compute", "inference scaling",
+    "model context protocol", "mcp", "computer use", "multimodal agent",
+    # Regulation & societal
+    "ai act", "openai drama", "sam altman",
+    # Hardware
+    "blackwell", "gb200", "tsmc 2nm",
+}
+
+
+def fetch_hot_keywords() -> set[str]:
+    """Try to fetch trending AI queries from Google Trends (7-day window).
+    Falls back to HOT_KEYWORDS_FALLBACK if pytrends or network is unavailable."""
+    try:
+        from pytrends.request import TrendReq  # optional dependency
+
+        pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 25))
+        pytrends.build_payload(["generative AI"], timeframe="now 7-d", geo="")
+        related = pytrends.related_queries()
+
+        top_df = related.get("generative AI", {}).get("top")
+        rising_df = related.get("generative AI", {}).get("rising")
+
+        keywords: set[str] = set()
+        if top_df is not None:
+            keywords.update(top_df["query"].str.lower().head(10).tolist())
+        if rising_df is not None:
+            keywords.update(rising_df["query"].str.lower().head(10).tolist())
+
+        if keywords:
+            logging.info(f"Hot keywords fetched from Google Trends: {keywords}")
+            return keywords
+
+    except Exception as e:
+        logging.warning(f"Google Trends unavailable ({e}), using fallback hot keywords")
+
+    return HOT_KEYWORDS_FALLBACK
+
 
 # ---------------------------------------------------------------------------
 # 1. Load sources
@@ -281,6 +330,17 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             filtered.append(a)
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
+
+    # Tag hot topics
+    hot_keywords = fetch_hot_keywords()
+    hot_count = 0
+    for a in filtered:
+        text = (a.title + " " + a.description).lower()
+        if any(kw in text for kw in hot_keywords):
+            a.hot_topic = True
+            hot_count += 1
+    logging.info(f"{hot_count} articles tagged as hot topic")
+
     return filtered
 
 # ---------------------------------------------------------------------------
@@ -374,6 +434,7 @@ def save_to_supabase(articles: list[Article]) -> None:
             "description": a.description,
             "category": a.category,
             "sentiment": a.sentiment,
+            "hot_topic": a.hot_topic,
         }
         for a in articles
     ]
