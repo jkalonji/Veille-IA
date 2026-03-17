@@ -52,6 +52,29 @@ SENTIMENT_COLORS = {
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
+# Mapping emoji-flag → world region (covers all sources in sources.json)
+COUNTRY_TO_REGION: dict[str, str] = {
+    "🇺🇸": "Amérique du Nord",
+    "🌎": "Amérique du Sud",
+    "🇫🇷": "Europe",
+    "🇬🇧": "Europe",
+    "🇩🇪": "Europe",
+    "🇳🇱": "Europe",
+    "🇳🇬": "Afrique",
+    "🌍": "Afrique",
+    "🇦🇪": "Moyen-Orient",
+    "🇸🇦": "Moyen-Orient",
+    "🇮🇳": "Asie du Sud",
+    "🇯🇵": "Asie de l'Est",
+    "🇨🇳": "Asie de l'Est",
+    "🇰🇷": "Asie de l'Est",
+    "🌏": "Asie du Sud-Est",
+    "🌐": "International",
+}
+
+def _region(country: str) -> str:
+    return COUNTRY_TO_REGION.get(country, "Autre")
+
 # ---------------------------------------------------------------------------
 # Data
 # ---------------------------------------------------------------------------
@@ -243,19 +266,29 @@ def run_streamlit() -> None:
         page_icon="🤖",
     )
 
-    # FIX 1: cached wrapper — one Supabase call per (days*2) window, split client-side
     @st.cache_data(ttl=300)
     def _cached_load(days: int) -> list[dict]:
         return load_articles(days)
 
-    # Sidebar — sliders
+    # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
         st.title("🤖 AI Radar")
         st.markdown("---")
-        days  = st.slider("Fenêtre d'analyse (jours)", 1, 90, 7)
+
+        # Période rapide — preset buttons update the slider via session_state
+        if "days" not in st.session_state:
+            st.session_state["days"] = 7
+        st.caption("Période rapide")
+        p1, p2, p3, p4 = st.columns(4)
+        if p1.button("1j",  use_container_width=True): st.session_state["days"] = 1
+        if p2.button("7j",  use_container_width=True): st.session_state["days"] = 7
+        if p3.button("30j", use_container_width=True): st.session_state["days"] = 30
+        if p4.button("90j", use_container_width=True): st.session_state["days"] = 90
+
+        days  = st.slider("Fenêtre d'analyse (jours)", 1, 90, key="days")
         top_n = st.slider("Nb de sources", 5, 20, 10)
 
-    # Load current + previous period in one query for delta KPIs
+    # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
         try:
             all_articles = _cached_load(days * 2)
@@ -263,8 +296,8 @@ def run_streamlit() -> None:
             st.error(str(e))
             return
 
-    # Split current / previous period
-    cutoff_str   = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    # Split current / previous period for delta KPIs
+    cutoff_str    = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     articles      = [a for a in all_articles if a["published"] >= cutoff_str]
     prev_articles = [a for a in all_articles if a["published"] <  cutoff_str]
 
@@ -272,96 +305,125 @@ def run_streamlit() -> None:
         st.warning(f"Aucun article trouvé sur les {days} derniers jours.")
         return
 
-    # FIX 4: filters in sidebar — data-driven options
+    # ── Sidebar — global filters (data-driven) ────────────────────────────────
     with st.sidebar:
         st.markdown("---")
-        all_cats      = sorted({a["category"] for a in articles if a.get("category")})
-        all_countries = sorted({a["country"]  for a in articles if a.get("country")})
+
+        all_cats     = sorted({a["category"] for a in articles if a.get("category")})
+        all_sents    = ["Positif", "Neutre", "Negatif"]
+        all_regions  = sorted({_region(a["country"]) for a in articles if a.get("country")})
+        all_countries= sorted({a["country"] for a in articles if a.get("country")})
 
         sel_cats = st.multiselect(
             "Catégories", all_cats, default=all_cats,
             format_func=lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}",
         )
-        sel_countries = st.multiselect("Pays / Région", all_countries, default=all_countries)
+        sel_sents = st.multiselect(
+            "Sentiment", all_sents, default=all_sents,
+            format_func=lambda s: {"Positif": "🟢 Positif", "Neutre": "⚪ Neutre", "Negatif": "🔴 Négatif"}[s],
+        )
+        sel_regions = st.multiselect("Région du monde", all_regions, default=all_regions)
+        sel_countries = st.multiselect("Pays", all_countries, default=all_countries)
+
         st.markdown("---")
-        # FIX 6: refresh button clears cache and reruns
         if st.button("🔄 Rafraîchir", use_container_width=True):
             _cached_load.clear()
             st.rerun()
         st.caption("Données : Supabase · Classif : Groq")
 
-    # Apply filters to both periods
-    def _apply_filters(pool: list[dict]) -> list[dict]:
+    # ── Apply global filters to both periods ──────────────────────────────────
+    def _apply_global(pool: list[dict]) -> list[dict]:
         return [
             a for a in pool
-            if a.get("category") in sel_cats and a.get("country") in sel_countries
+            if  a.get("category")  in sel_cats
+            and a.get("sentiment") in sel_sents
+            and _region(a.get("country", "")) in sel_regions
+            and a.get("country")   in sel_countries
         ]
 
-    filtered      = _apply_filters(articles)
-    prev_filtered = _apply_filters(prev_articles)
+    filtered      = _apply_global(articles)
+    prev_filtered = _apply_global(prev_articles)
 
     if not filtered:
         st.warning("Aucun article ne correspond aux filtres sélectionnés.")
         return
 
-    # KPIs — FIX 5: add top_cat + deltas vs previous period
-    total     = len(filtered)
+    # ── KPIs ──────────────────────────────────────────────────────────────────
+    total      = len(filtered)
     prev_total = len(prev_filtered)
-    pos_pct   = round(sum(1 for a in filtered if a["sentiment"] == "Positif") / total * 100)
-    neg_pct   = round(sum(1 for a in filtered if a["sentiment"] == "Negatif") / total * 100)
-    nb_src    = len({a["source"] for a in filtered})
-    top_cat   = Counter(a["category"] for a in filtered).most_common(1)[0][0]
-    dates     = sorted({a["published"] for a in filtered})
-    date_lbl  = f"{dates[0]} → {dates[-1]}" if dates else "—"
+    pos_pct    = round(sum(1 for a in filtered if a["sentiment"] == "Positif") / total * 100)
+    neg_pct    = round(sum(1 for a in filtered if a["sentiment"] == "Negatif") / total * 100)
+    nb_src     = len({a["source"] for a in filtered})
+    top_cat    = Counter(a["category"] for a in filtered).most_common(1)[0][0]
+    dates      = sorted({a["published"] for a in filtered})
+    date_lbl   = f"{dates[0]} → {dates[-1]}" if dates else "—"
 
-    prev_pos_pct  = round(sum(1 for a in prev_filtered if a["sentiment"] == "Positif") / max(prev_total, 1) * 100)
-    prev_neg_pct  = round(sum(1 for a in prev_filtered if a["sentiment"] == "Negatif") / max(prev_total, 1) * 100)
-    prev_nb_src   = len({a["source"] for a in prev_filtered})
+    prev_pos_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Positif") / max(prev_total, 1) * 100)
+    prev_neg_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Negatif") / max(prev_total, 1) * 100)
+    prev_nb_src  = len({a["source"] for a in prev_filtered})
 
     st.markdown(f"## 📰 {total} articles · {date_lbl}")
     k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total articles",    total,         delta=total - prev_total)
-    k2.metric("Sentiment positif", f"{pos_pct} %", delta=f"{pos_pct - prev_pos_pct} pts")
-    k3.metric("Sentiment négatif", f"{neg_pct} %", delta=f"{neg_pct - prev_neg_pct} pts", delta_color="inverse")
-    k4.metric("Sources actives",   nb_src,         delta=nb_src - prev_nb_src)
+    k1.metric("Total articles",      total,          delta=total - prev_total)
+    k2.metric("Sentiment positif",   f"{pos_pct} %", delta=f"{pos_pct - prev_pos_pct} pts")
+    k3.metric("Sentiment négatif",   f"{neg_pct} %", delta=f"{neg_pct - prev_neg_pct} pts", delta_color="inverse")
+    k4.metric("Sources actives",     nb_src,         delta=nb_src - prev_nb_src)
     k5.metric("Catégorie dominante", f"{CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
 
     st.markdown("---")
 
-    # Row 1: categories + sentiments
+    # ── Charts ────────────────────────────────────────────────────────────────
     c1, c2 = st.columns([3, 2])
     c1.plotly_chart(fig_categories(filtered), use_container_width=True)
     c2.plotly_chart(fig_sentiments(filtered), use_container_width=True)
 
-    # Row 2: trend + heatmap
     c3, c4 = st.columns([2, 3])
     c3.plotly_chart(fig_trend(filtered),   use_container_width=True)
     c4.plotly_chart(fig_heatmap(filtered), use_container_width=True)
 
-    # Row 3: sources
     st.plotly_chart(fig_sources(filtered, top_n), use_container_width=True)
 
-    # Row 4: latest articles table
+    # ── Table — local filters ─────────────────────────────────────────────────
     st.markdown("### 📋 Derniers articles")
-    df = pd.DataFrame(filtered)
-    df["category"] = df["category"].apply(
-        lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}"
-    )
-    df["lien"] = df["url"].apply(lambda u: f"[↗]({u})")
-    st.dataframe(
-        df[["published", "sentiment", "title", "source", "country", "category", "lien"]],
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "published": st.column_config.DateColumn("Date"),
-            "sentiment": st.column_config.TextColumn("Sent."),
-            "title":     st.column_config.TextColumn("Titre", width="large"),
-            "source":    st.column_config.TextColumn("Source"),
-            "country":   st.column_config.TextColumn(""),
-            "category":  st.column_config.TextColumn("Catégorie"),
-            "lien":      st.column_config.LinkColumn("Lien", display_text="↗", width="small"),
-        },
-    )
+
+    fa, fb, fc, fd = st.columns([3, 2, 1, 1])
+    search   = fa.text_input("🔍 Recherche dans les titres", placeholder="ex: GPT, OpenAI, Mistral…")
+    all_srcs = sorted({a["source"] for a in filtered})
+    sel_srcs = fb.multiselect("Source", all_srcs, default=all_srcs, label_visibility="visible")
+    only_new = fc.checkbox("Nouveautés 24h", value=False)
+    only_top = fd.checkbox("Catégorie dominante", value=False)
+
+    # Apply local filters to the display dataframe only
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    table_rows = [
+        a for a in filtered
+        if  (not search   or search.lower() in a.get("title", "").lower())
+        and (a["source"]  in sel_srcs)
+        and (not only_new or a["published"] >= today_str)
+        and (not only_top or a.get("category") == top_cat)
+    ]
+
+    if not table_rows:
+        st.info("Aucun article ne correspond aux filtres du tableau.")
+    else:
+        df = pd.DataFrame(table_rows)
+        df["category"] = df["category"].apply(lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}")
+        df["lien"]     = df["url"].apply(lambda u: f"[↗]({u})")
+        st.dataframe(
+            df[["published", "sentiment", "title", "source", "country", "category", "lien"]],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "published": st.column_config.DateColumn("Date"),
+                "sentiment": st.column_config.TextColumn("Sent."),
+                "title":     st.column_config.TextColumn("Titre", width="large"),
+                "source":    st.column_config.TextColumn("Source"),
+                "country":   st.column_config.TextColumn(""),
+                "category":  st.column_config.TextColumn("Catégorie"),
+                "lien":      st.column_config.LinkColumn("Lien", display_text="↗", width="small"),
+            },
+        )
+        st.caption(f"{len(table_rows)} articles affichés")
 
 # ---------------------------------------------------------------------------
 # HTML export (CI mode)
