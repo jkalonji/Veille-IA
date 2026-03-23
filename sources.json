@@ -130,6 +130,61 @@
       "enabled": true
     },
     {
+      "comment": "=== TWITTER / X ===",
+      "name": "Twitter - AI Agents",
+      "type": "twitter",
+      "query": "AI agent agentic -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 200,
+      "count": 20
+    },
+    {
+      "name": "Twitter - LLM & Benchmarks",
+      "type": "twitter",
+      "query": "LLM benchmark release -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 150,
+      "count": 20
+    },
+    {
+      "name": "Twitter - OpenAI & Anthropic",
+      "type": "twitter",
+      "query": "(OpenAI OR Anthropic OR Claude OR GPT) -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 300,
+      "count": 20
+    },
+    {
+      "name": "Twitter - Open Source Models",
+      "type": "twitter",
+      "query": "(DeepSeek OR Llama OR Mistral OR Qwen) AI -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 150,
+      "count": 20
+    },
+    {
+      "name": "Twitter - AI Regulation",
+      "type": "twitter",
+      "query": "AI regulation policy safety -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 100,
+      "count": 15
+    },
+    {
+      "name": "Twitter - Vibe Coding & Dev",
+      "type": "twitter",
+      "query": "(vibe coding OR cursor AI OR copilot OR devin) -filter:retweets lang:en",
+      "country": "🌐",
+      "enabled": true,
+      "min_likes": 150,
+      "count": 15
+    },
+    {
       "comment": "=== DÉSACTIVÉES ===",
       "name": "Ars Technica AI",
       "type": "rss",

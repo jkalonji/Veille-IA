@@ -18,6 +18,7 @@ import feedparser
 from groq import AsyncGroq
 import requests
 from supabase import create_client
+from twitter_scraper import fetch_all_twitter
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -262,6 +263,18 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
         else:
             articles.extend(result)
 
+    # Fetch Twitter sources (sequential, twikit has its own HTTP client)
+    twitter_dicts = await fetch_all_twitter(sources)
+    for d in twitter_dicts:
+        articles.append(Article(
+            title=d["title"],
+            url=d["url"],
+            source=d["source"],
+            country=d["country"],
+            published=d["published"],
+            description=d.get("description", ""),
+        ))
+
     # Deduplicate by URL
     seen: set[str] = set()
     unique = []
@@ -476,7 +489,7 @@ def _post_telegram(token: str, chat_id: str, text: str) -> None:
         logging.error(f"Telegram error: {resp.status_code} {resp.text}")
 
 
-def send_telegram(articles: list[Article]) -> None:
+def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
     """Send a header summary then all articles in batches to Telegram."""
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
@@ -493,6 +506,8 @@ def send_telegram(articles: list[Article]) -> None:
         count = stats.get(cat, 0)
         if count:
             header_lines.append(f"{emoji} {cat} : {count}")
+    if dashboard_url:
+        header_lines.append(f'\n📊 <a href="{dashboard_url}">Voir le Dashboard</a>')
     _post_telegram(token, chat_id, "\n".join(header_lines))
 
     # Articles in batches of 10
@@ -567,7 +582,8 @@ async def main():
 
     # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
-    send_telegram(classified)
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    send_telegram(classified, dashboard_url=dashboard_url)
 
     logging.info("AI Radar pipeline complete.")
 
