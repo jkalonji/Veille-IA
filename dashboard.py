@@ -462,8 +462,8 @@ def _articles_to_html_table(articles: list[dict]) -> str:
             f"<td>{a.get('published', '')}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
-            f"<td>{src}</td>"
-            f"<td>{a.get('country', '')}</td>"
+            f'<td class="col-source">{src}</td>'
+            f'<td class="col-country">{a.get("country", "")}</td>'
             f"<td>{emoji} {cat}</td>"
             f"</tr>"
         )
@@ -545,44 +545,89 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e1117">
   <title>AI Radar — Dashboard</title>
   <style>
-    body       {{ background: #0e1117; color: #fafafa; font-family: sans-serif; margin: 0; padding: 20px; }}
-    h1         {{ color: #00b4d8; margin-bottom: 4px; }}
-    h2         {{ color: #fafafa; margin-top: 32px; }}
-    p          {{ color: #888; margin-top: 0; }}
-    .grid      {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }}
-    .full      {{ grid-column: 1 / -1; }}
-    .card      {{ background: #1a1d27; border-radius: 8px; padding: 8px; }}
-    table      {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    th         {{ background: #1a1d27; color: #00b4d8; text-align: left; padding: 8px 10px; position: sticky; top: 0; z-index: 1; }}
-    td         {{ padding: 6px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
-    tr:hover td {{ background: #1a1d27; }}
-    a          {{ color: #00b4d8; text-decoration: none; }}
-    a:hover    {{ text-decoration: underline; }}
-    .table-wrap {{ max-height: 560px; overflow-y: auto; border-radius: 8px; background: #0e1117; }}
-    tr.hot td  {{ background: #1f1a10; border-left: 3px solid #f4a261; }}
-    .toolbar   {{ display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-                  background: #1a1d27; padding: 10px 12px; border-radius: 8px; margin-bottom: 8px; }}
+    /* ── Reset & base ───────────────────────────────────── */
+    *, *::before, *::after {{ box-sizing: border-box; }}
+    body {{
+      background: #0e1117; color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      margin: 0; padding: 12px 12px env(safe-area-inset-bottom, 12px);
+      -webkit-text-size-adjust: 100%;
+    }}
+    h1 {{ color: #00b4d8; margin: 0 0 4px; font-size: 1.25rem; line-height: 1.3; }}
+    h2 {{ color: #fafafa; margin: 28px 0 12px; font-size: 1.05rem; }}
+    p  {{ color: #888; margin: 0 0 16px; font-size: 0.82rem; }}
+    a  {{ color: #00b4d8; text-decoration: none; }}
+    a:active {{ opacity: 0.7; }}
+
+    /* ── Charts grid — 1 col mobile, 2 col desktop ──────── */
+    .grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
+    .card {{ background: #1a1d27; border-radius: 10px; padding: 6px; overflow: hidden; }}
+
+    /* ── Hot articles ────────────────────────────────────── */
+    .hot-card {{
+      background: #1a1d27; border-left: 4px solid #f4a261;
+      border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+    }}
+    .hot-title {{ font-size: 15px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }}
+    .hot-title a {{ color: #fafafa; }}
+    .hot-meta   {{ font-size: 12px; color: #888; line-height: 1.6; }}
+
+    /* ── Toolbar — stacks vertically on mobile ───────────── */
+    .toolbar {{
+      display: flex; flex-direction: column; gap: 8px;
+      background: #1a1d27; padding: 12px; border-radius: 10px; margin-bottom: 10px;
+    }}
     .toolbar input, .toolbar select {{
-      background: #0e1117; color: #fafafa; border: 1px solid #2a2d3a;
-      border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none; }}
-    .toolbar input  {{ flex: 1; min-width: 200px; }}
-    .toolbar select {{ min-width: 140px; }}
+      width: 100%; background: #0e1117; color: #fafafa;
+      border: 1px solid #2a2d3a; border-radius: 8px;
+      padding: 11px 12px; font-size: 15px; outline: none;
+      -webkit-appearance: none; appearance: none;
+    }}
     .toolbar input::placeholder {{ color: #555; }}
-    #count     {{ margin-left: auto; color: #888; font-size: 12px; white-space: nowrap; }}
-    .hot-card  {{ background: #1a1d27; border-left: 4px solid #f4a261; border-radius: 6px;
-                  padding: 10px 14px; margin-bottom: 8px; }}
-    .hot-title {{ font-size: 14px; font-weight: 600; margin-bottom: 5px; }}
-    .hot-title a {{ color: #fafafa; text-decoration: none; }}
-    .hot-title a:hover {{ text-decoration: underline; }}
-    .hot-meta  {{ font-size: 12px; color: #888; }}
+    #count {{ color: #888; font-size: 12px; text-align: right; }}
+
+    /* ── Table — scrolls horizontally on small screens ───── */
+    .table-wrap {{
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      max-height: 70vh; overflow-y: auto;
+      border-radius: 10px; background: #0e1117;
+    }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 460px; }}
+    th {{
+      background: #1a1d27; color: #00b4d8; text-align: left;
+      padding: 10px 10px; position: sticky; top: 0; z-index: 1; white-space: nowrap;
+    }}
+    td {{ padding: 9px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
+    td:first-child {{ white-space: nowrap; }}
+    tr:active td {{ background: #1a1d27; }}
+    tr.hot td {{ background: #1f1a10; border-left: 3px solid #f4a261; }}
+
+    /* Hide country & source columns on mobile to save space */
+    .col-country, .col-source {{ display: none; }}
+
+    /* ── Desktop overrides (≥ 640px) ─────────────────────── */
+    @media (min-width: 640px) {{
+      body  {{ padding: 20px; }}
+      h1    {{ font-size: 1.6rem; }}
+      h2    {{ font-size: 1.2rem; }}
+      .grid {{ grid-template-columns: 1fr 1fr; gap: 16px; }}
+      .toolbar {{ flex-direction: row; flex-wrap: wrap; align-items: center; }}
+      .toolbar input  {{ flex: 1; min-width: 180px; width: auto; }}
+      .toolbar select {{ min-width: 140px; width: auto; }}
+      #count {{ margin-left: auto; }}
+      tr:hover td {{ background: #1a1d27; }}
+      .col-country, .col-source {{ display: table-cell; }}
+    }}
   </style>
 </head>
 <body>
   <h1>🤖 AI Radar — Dashboard de Veille</h1>
   <p>{total} articles · {date_lbl} · généré le {now}</p>
+
   <div class="grid">
     <div class="card">{html_parts[0]}</div>
     <div class="card">{html_parts[1]}</div>
@@ -595,16 +640,23 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 
   <h2>📋 Derniers articles</h2>
   <div class="toolbar">
-    <input  id="f-search" type="text"   placeholder="🔍 Recherche dans les titres…">
-    <select id="f-sent">  <option value="">Tous les sentiments</option>{opt_sent}</select>
-    <select id="f-cat">   <option value="">Toutes les catégories</option>{opt_cat}</select>
-    <select id="f-src">   <option value="">Toutes les sources</option>{opt_src}</select>
-    <span   id="count"></span>
+    <input  id="f-search" type="search" placeholder="🔍 Recherche dans les titres…" autocomplete="off">
+    <select id="f-sent"><option value="">Tous les sentiments</option>{opt_sent}</select>
+    <select id="f-cat"><option value="">Toutes les catégories</option>{opt_cat}</select>
+    <select id="f-src"><option value="">Toutes les sources</option>{opt_src}</select>
+    <span id="count"></span>
   </div>
   <div class="table-wrap">
     <table id="articles-table">
       <thead>
-        <tr><th>Date</th><th>Sent.</th><th>Titre</th><th>Source</th><th>Pays</th><th>Catégorie</th></tr>
+        <tr>
+          <th>Date</th>
+          <th>Sent.</th>
+          <th>Titre</th>
+          <th class="col-source">Source</th>
+          <th class="col-country">Pays</th>
+          <th>Catégorie</th>
+        </tr>
       </thead>
       <tbody>
 {table_rows}
@@ -628,9 +680,9 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       let visible = 0;
       rows.forEach(row => {{
         const match =
-          (!q    || row.dataset.title.includes(q))     &&
-          (!sent || row.dataset.sentiment === sent)     &&
-          (!cat  || row.dataset.category  === cat)      &&
+          (!q    || row.dataset.title.includes(q))    &&
+          (!sent || row.dataset.sentiment === sent)    &&
+          (!cat  || row.dataset.category  === cat)     &&
           (!src  || row.dataset.source    === src);
         row.style.display = match ? '' : 'none';
         if (match) visible++;
