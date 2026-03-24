@@ -185,6 +185,51 @@
       "count": 15
     },
     {
+      "comment": "=== BUSINESS / INDUSTRIE ===",
+      "name": "TechCrunch AI",
+      "type": "rss",
+      "url": "https://techcrunch.com/category/artificial-intelligence/feed/",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "VentureBeat AI",
+      "type": "rss",
+      "url": "https://venturebeat.com/ai/feed/",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "comment": "=== RECHERCHE ACADÉMIQUE ===",
+      "name": "Hugging Face Blog",
+      "type": "rss",
+      "url": "https://huggingface.co/blog/feed.xml",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Papers with Code",
+      "type": "rss",
+      "url": "https://paperswithcode.com/latest.rss",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "comment": "=== GÉOPOLITIQUE ===",
+      "name": "War on the Rocks",
+      "type": "rss",
+      "url": "https://warontherocks.com/feed/",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Belfer Center",
+      "type": "rss",
+      "url": "https://www.belfercenter.org/rss.xml",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
       "comment": "=== DÉSACTIVÉES ===",
       "name": "Ars Technica AI",
       "type": "rss",
@@ -203,8 +248,8 @@
       "name": "ArXiv cs.AI",
       "type": "rss",
       "url": "https://rss.arxiv.org/rss/cs.AI",
-      "country": "🇺🇸",
-      "enabled": false
+      "country": "🌐",
+      "enabled": true
     },
     {
       "name": "01net",
