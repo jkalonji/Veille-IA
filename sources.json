@@ -63,6 +63,20 @@
     },
     {
       "comment": "=== AFRIQUE ===",
+      "name": "Techpoint Africa",
+      "type": "rss",
+      "url": "https://techpoint.africa/feed/",
+      "country": "🇳🇬",
+      "enabled": true
+    },
+    {
+      "name": "Ventureburn",
+      "type": "rss",
+      "url": "https://ventureburn.com/feed/",
+      "country": "🇿🇦",
+      "enabled": true
+    },
+    {
       "name": "TechCabal",
       "type": "rss",
       "url": "https://techcabal.com/feed/",
@@ -118,6 +132,27 @@
       "name": "SCMP Tech",
       "type": "rss",
       "url": "https://www.scmp.com/rss/36/feed",
+      "country": "🇨🇳",
+      "enabled": true
+    },
+    {
+      "name": "TechNode",
+      "type": "rss",
+      "url": "https://technode.com/feed/",
+      "country": "🇨🇳",
+      "enabled": true
+    },
+    {
+      "name": "Pandaily",
+      "type": "rss",
+      "url": "https://pandaily.com/feed/",
+      "country": "🇨🇳",
+      "enabled": true
+    },
+    {
+      "name": "36Kr Global",
+      "type": "rss",
+      "url": "https://36kr.com/feed",
       "country": "🇨🇳",
       "enabled": true
     },
