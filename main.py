@@ -38,6 +38,7 @@ class Article:
     hot_topic: bool = False
     mention_count: int = 0
     supa_hot: bool = False
+    hot_source: str = ""   # pipe-separated: "trends|hn|github|db"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -468,15 +469,22 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             _fetch_github_trending_keywords(kw_session),
         )
     db_kw = _fetch_db_trending_keywords()
-    hot_keywords |= hn_kw | gh_kw | db_kw
-    logging.info(f"Hot keywords total: {len(hot_keywords)} terms (Trends + HN debate + GitHub + DB self-bootstrap)")
+    logging.info(f"Hot keywords: trends={len(hot_keywords)} hn={len(hn_kw)} github={len(gh_kw)} db={len(db_kw)}")
 
-    # Tag hot topics
+    # Tag hot topics — track which source(s) triggered each article
+    keywords_by_source = [
+        ("trends", hot_keywords),
+        ("hn",     hn_kw),
+        ("github", gh_kw),
+        ("db",     db_kw),
+    ]
     hot_count = 0
     for a in filtered:
         text = (a.title + " " + a.description).lower()
-        if any(kw in text for kw in hot_keywords):
+        reasons = [src for src, kws in keywords_by_source if any(kw in text for kw in kws)]
+        if reasons:
             a.hot_topic = True
+            a.hot_source = "|".join(reasons)
             hot_count += 1
     logging.info(f"{hot_count} articles tagged as hot topic")
 
@@ -574,6 +582,7 @@ def save_to_supabase(articles: list[Article]) -> None:
             "category": a.category,
             "sentiment": a.sentiment,
             "hot_topic": a.hot_topic,
+            "hot_source": a.hot_source,
         }
         for a in articles
     ]
@@ -582,7 +591,18 @@ def save_to_supabase(articles: list[Article]) -> None:
         client.table("articles").upsert(rows, on_conflict="url").execute()
         logging.info(f"Supabase: upserted {len(rows)} articles")
     except Exception as e:
-        logging.error(f"Supabase upsert error: {e}")
+        # Fallback: retry without hot_source if column doesn't exist yet
+        if "hot_source" in str(e):
+            logging.warning("hot_source column missing — run migration. Retrying without it.")
+            for row in rows:
+                row.pop("hot_source", None)
+            try:
+                client.table("articles").upsert(rows, on_conflict="url").execute()
+                logging.info(f"Supabase: upserted {len(rows)} articles (without hot_source)")
+            except Exception as e2:
+                logging.error(f"Supabase upsert error: {e2}")
+        else:
+            logging.error(f"Supabase upsert error: {e}")
 
 
 # ---------------------------------------------------------------------------

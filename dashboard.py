@@ -56,6 +56,16 @@ SENTIMENT_COLORS = {
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
+# Hot source groups — order = display priority
+HOT_SOURCE_META: list[dict] = [
+    {"key": "hn",      "label": "Sujets en débat",       "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
+    {"key": "trends",  "label": "Tendances montantes",   "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
+    {"key": "github",  "label": "Tech viral",            "icon": "⭐", "color": "#238636", "border": "#3fb950"},
+    {"key": "db",      "label": "Signal éditorial",      "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
+    {"key": "unknown", "label": "Hot topics",            "icon": "🔥", "color": "#92400e", "border": "#f4a261"},
+]
+_SOURCE_ORDER = {m["key"]: i for i, m in enumerate(HOT_SOURCE_META)}
+
 # Mapping emoji-flag → world region (covers all sources in sources.json)
 COUNTRY_TO_REGION: dict[str, str] = {
     "🇺🇸": "Amérique du Nord",
@@ -189,6 +199,15 @@ def _deduplicate_articles(articles: list[dict]) -> list[dict]:
     return result
 
 
+def _primary_hot_source(a: dict) -> str:
+    """Return the highest-priority hot source key for an article."""
+    raw = a.get("hot_source") or ""
+    parts = [p for p in raw.split("|") if p]
+    if not parts:
+        return "unknown"
+    return min(parts, key=lambda s: _SOURCE_ORDER.get(s, 99))
+
+
 def _hot_sort_key(a: dict):
     """Sort key: supa_hot first, then newest, then most mentioned."""
     supa = 0 if a.get("supa_hot") else 1
@@ -205,7 +224,7 @@ def load_articles(days: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     resp = (
         client.table("articles")
-        .select("title, source, country, published, category, sentiment, url, hot_topic")
+        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source")
         .gte("published", cutoff)
         .order("hot_topic", desc=True)
         .order("published", desc=True)
@@ -318,48 +337,31 @@ def fig_trend(articles: list[dict]) -> go.Figure:
 
 
 def _render_hot_articles(articles: list[dict], container) -> None:
-    """Render hot topic articles as styled cards in a Streamlit container."""
+    """Render hot articles grouped by detection source in a Streamlit container."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-    hot = sorted(
-        _deduplicate_articles([
-            a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
-        ]),
-        key=_hot_sort_key,
-    )
+    hot = _deduplicate_articles([
+        a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
+    ])
     container.markdown("#### 🔥 Hot Articles")
     if not hot:
         container.info("Aucun article hot topic sur la période sélectionnée.")
         return
-    cards_html = ""
+
+    groups: dict[str, list[dict]] = {m["key"]: [] for m in HOT_SOURCE_META}
     for a in hot:
-        cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
-        sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
-        title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-        mentions   = a.get("mention_count", 0)
-        is_supra   = a.get("supa_hot", False)
-        n_src      = a.get("source_count", 1)
-        src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
-        src_badge  = f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">{n_src} sources</span>' if n_src > 1 else ""
-        if is_supra:
-            card_bg     = "background:linear-gradient(135deg,#2a0a00,#1a0d00);border-left:4px solid #ff4500;box-shadow:0 0 12px rgba(255,69,0,0.4);"
-            title_color = "#ff6b35"
-            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>'
-        else:
-            card_bg     = "background:#1a1d27;border-left:4px solid #f4a261;"
-            title_color = "#fafafa"
-            badge_html  = '<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
-        cards_html += f"""
-        <div style="border-radius:6px;padding:10px 14px;margin-bottom:8px;{card_bg}">
-          <div style="font-size:14px;font-weight:600;margin-bottom:5px;">
-            {badge_html}<a href="{a.get('url','#')}" target="_blank"
-               style="color:{title_color};text-decoration:none;">{title}</a>
-          </div>
-          <div style="font-size:12px;color:#888;">
-            {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
-            &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
-            &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
-          </div>
-        </div>"""
+        groups[_primary_hot_source(a)].append(a)
+
+    cards_html = ""
+    for meta in HOT_SOURCE_META:
+        group = sorted(groups[meta["key"]], key=_hot_sort_key)
+        if not group:
+            continue
+        cards_html += (f'<div style="margin:18px 0 8px;font-size:13px;font-weight:700;'
+                       f'color:{meta["color"]};letter-spacing:0.05em;">'
+                       f'{meta["icon"]} {meta["label"].upper()} '
+                       f'<span style="font-weight:400;color:#888;font-size:11px;">({len(group)})</span></div>')
+        for a in group:
+            cards_html += _render_hot_card_html(a, meta)
     container.markdown(cards_html, unsafe_allow_html=True)
 
 
@@ -615,49 +617,68 @@ def _articles_to_html_table(articles: list[dict]) -> str:
     return "\n".join(rows)
 
 
+def _render_hot_card_html(a: dict, meta: dict) -> str:
+    """Build one hot article card HTML for a given source group."""
+    cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
+    sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
+    title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+    mentions   = a.get("mention_count", 0)
+    is_supra   = a.get("supa_hot", False)
+    n_src      = a.get("source_count", 1)
+    src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
+    src_badge  = (f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;'
+                  f'border-radius:3px;margin-left:4px;">{n_src} sources</span>') if n_src > 1 else ""
+    if is_supra:
+        card_style  = ("background:linear-gradient(135deg,#2a0a00,#1a0d00);"
+                       "border-left:4px solid #ff4500;"
+                       "box-shadow:0 0 12px rgba(255,69,0,0.4);")
+        title_color = "#ff6b35"
+        badge_html  = (f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;'
+                       f'padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>')
+    else:
+        border      = meta["border"]
+        card_style  = f"background:#1a1d27;border-left:4px solid {border};"
+        title_color = "#fafafa"
+        badge_html  = ""
+    return f"""
+    <div style="border-radius:8px;padding:12px 14px;margin-bottom:8px;{card_style}">
+      <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
+        {badge_html}<a href="{a.get('url','#')}" target="_blank"
+           style="color:{title_color};text-decoration:none;">{title}</a>
+      </div>
+      <div style="font-size:12px;color:#888;line-height:1.6;">
+        {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
+        &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
+        &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
+      </div>
+    </div>"""
+
+
 def _hot_articles_html(articles: list[dict]) -> str:
-    """Build hot articles cards for the CI HTML export."""
+    """Build hot articles grouped by detection source for the CI HTML export."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-    hot = sorted(
-        _deduplicate_articles([
-            a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
-        ]),
-        key=_hot_sort_key,
-    )
+    hot = _deduplicate_articles([
+        a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
+    ])
     if not hot:
         return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
-    cards = ""
+
+    # Group by primary source
+    groups: dict[str, list[dict]] = {m["key"]: [] for m in HOT_SOURCE_META}
     for a in hot:
-        cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
-        sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
-        title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-        mentions   = a.get("mention_count", 0)
-        is_supra   = a.get("supa_hot", False)
-        n_src      = a.get("source_count", 1)
-        src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
-        src_badge  = f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">{n_src} sources</span>' if n_src > 1 else ""
-        if is_supra:
-            card_style  = ("background:linear-gradient(135deg,#2a0a00,#1a0d00);"
-                           "border-left:4px solid #ff4500;"
-                           "box-shadow:0 0 12px rgba(255,69,0,0.4);")
-            title_style = "#ff6b35"
-            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>'
-        else:
-            card_style  = "background:#1a1d27;border-left:4px solid #f4a261;"
-            title_style = "#fafafa"
-            badge_html  = '<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
-        cards += f"""
-        <div style="border-radius:8px;padding:12px 14px;margin-bottom:10px;{card_style}">
-          <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
-            {badge_html}<a href="{a.get('url','#')}" target="_blank" style="color:{title_style};text-decoration:none;">{title}</a>
-          </div>
-          <div style="font-size:12px;color:#888;line-height:1.6;">
-            {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
-            &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
-            &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
-          </div>
-        </div>"""
-    return cards
+        groups[_primary_hot_source(a)].append(a)
+
+    html = ""
+    for meta in HOT_SOURCE_META:
+        group = sorted(groups[meta["key"]], key=_hot_sort_key)
+        if not group:
+            continue
+        html += (f'<div style="margin:18px 0 8px;font-size:13px;font-weight:700;color:{meta["color"]};'
+                 f'letter-spacing:0.05em;">{meta["icon"]} {meta["label"].upper()} '
+                 f'<span style="font-weight:400;color:#888;font-size:11px;">({len(group)})</span></div>')
+        for a in group:
+            html += _render_hot_card_html(a, meta)
+    return html
 
 
 def run_export(days: int, output: str = "dashboard.html") -> None:

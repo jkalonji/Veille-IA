@@ -61,6 +61,22 @@ Un article est tagué `hot_topic = True` si son titre/description contient au mo
 - Mots apparaissant dans ≥ 3 titres différents = signal de saturation éditoriale
 - Auto-alimenté : plus on collecte de sources, plus ce signal est précis
 
+### Groupage visuel dans le dashboard
+Chaque article hot est assigné à un groupe selon sa source prioritaire (ordre : hn > trends > github > db).
+Les groupes s'affichent dans cet ordre avec des couleurs et icônes distinctes :
+- 💬 **Sujets en débat** (orange `#ff6600`) — HN >20 commentaires
+- 🔮 **Tendances montantes** (violet `#7b2ff7`) — Google Trends rising
+- ⭐ **Tech viral** (vert `#238636`) — GitHub trending repos
+- 📡 **Signal éditorial** (cyan `#0e7490`) — auto-bootstrap DB
+
+La colonne `hot_source` en Supabase stocke les sources sous forme de chaîne pipe-séparée (ex: `"trends|hn"`).
+
+**Migration SQL à exécuter une fois en Supabase :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS hot_source TEXT DEFAULT '';
+```
+Le code est backward-compatible : si la colonne n'existe pas, l'upsert se fait sans elle (fallback automatique).
+
 ### Seuil Supa Hot Topic
 Un article `hot_topic` est promu `supa_hot` si :
 - `mention_count > 5` (≥ 5 autres articles du jour partagent ≥ 2 mots-clés du titre)
