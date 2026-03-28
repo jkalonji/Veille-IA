@@ -160,6 +160,32 @@ def _compute_mention_counts(articles: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _deduplicate_articles(articles: list[dict]) -> list[dict]:
+    """Merge articles sharing ≥ 2 title keywords into one card with source_count."""
+    tokens = {a["url"]: _tokenize(a.get("title", "")) for a in articles}
+    used: set[str] = set()
+    result = []
+    for i, a in enumerate(articles):
+        url = a["url"]
+        if url in used:
+            continue
+        mine = tokens[url]
+        group = [a]
+        if mine:
+            for j, other in enumerate(articles):
+                if i == j or other["url"] in used:
+                    continue
+                if len(mine & tokens[other["url"]]) >= 2:
+                    group.append(other)
+                    used.add(other["url"])
+        used.add(url)
+        rep = dict(group[0])
+        rep["source_count"]    = len(group)
+        rep["merged_sources"]  = [g["source"] for g in group]
+        result.append(rep)
+    return result
+
+
 def _hot_sort_key(a: dict):
     """Sort key: supa_hot first, then newest, then most mentioned."""
     supa = 0 if a.get("supa_hot") else 1
@@ -289,7 +315,9 @@ def _render_hot_articles(articles: list[dict], container) -> None:
     """Render hot topic articles as styled cards in a Streamlit container."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     hot = sorted(
-        [a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago],
+        _deduplicate_articles([
+            a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
+        ]),
         key=_hot_sort_key,
     )
     container.markdown("#### 🔥 Hot Articles")
@@ -303,12 +331,15 @@ def _render_hot_articles(articles: list[dict], container) -> None:
         title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
         mentions   = a.get("mention_count", 0)
         is_supra   = a.get("supa_hot", False)
+        n_src      = a.get("source_count", 1)
+        src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
+        src_badge  = f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">{n_src} sources</span>' if n_src > 1 else ""
         if is_supra:
-            card_bg    = "background:linear-gradient(135deg,#2a0a00,#1a0d00);border-left:4px solid #ff4500;box-shadow:0 0 12px rgba(255,69,0,0.4);"
+            card_bg     = "background:linear-gradient(135deg,#2a0a00,#1a0d00);border-left:4px solid #ff4500;box-shadow:0 0 12px rgba(255,69,0,0.4);"
             title_color = "#ff6b35"
-            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} sources</span>'
+            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>'
         else:
-            card_bg    = "background:#1a1d27;border-left:4px solid #f4a261;"
+            card_bg     = "background:#1a1d27;border-left:4px solid #f4a261;"
             title_color = "#fafafa"
             badge_html  = '<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
         cards_html += f"""
@@ -318,7 +349,7 @@ def _render_hot_articles(articles: list[dict], container) -> None:
                style="color:{title_color};text-decoration:none;">{title}</a>
           </div>
           <div style="font-size:12px;color:#888;">
-            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
+            {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
             &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
             &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
           </div>
@@ -493,6 +524,7 @@ def run_streamlit() -> None:
     _render_hot_articles(filtered, st)
 
     # ── Table — local filters ─────────────────────────────────────────────────
+    filtered = _deduplicate_articles(filtered)
     st.markdown("### 📋 Derniers articles")
 
     fa, fb, fc, fd = st.columns([3, 2, 1, 1])
@@ -560,14 +592,16 @@ def _articles_to_html_table(articles: list[dict]) -> str:
         hot      = a.get("hot_topic", False)
         hot_badge = "🔥 " if hot else ""
         hot_class = ' class="hot"' if hot else ""
-        age = _time_ago(a.get("published_raw") or a.get("published", ""))
+        age    = _time_ago(a.get("published_raw") or a.get("published", ""))
+        n_src  = a.get("source_count", 1)
+        src_display = src if n_src == 1 else f"{src} <small style='color:#888'>+{n_src-1}</small>"
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
             f'data-category="{cat}" data-source="{src}"{hot_class}>'
             f"<td>{age}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
-            f'<td class="col-source">{src}</td>'
+            f'<td class="col-source">{src_display}</td>'
             f'<td class="col-country">{a.get("country", "")}</td>'
             f"<td>{emoji} {cat}</td>"
             f"</tr>"
@@ -579,7 +613,9 @@ def _hot_articles_html(articles: list[dict]) -> str:
     """Build hot articles cards for the CI HTML export."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     hot = sorted(
-        [a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago],
+        _deduplicate_articles([
+            a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
+        ]),
         key=_hot_sort_key,
     )
     if not hot:
@@ -591,24 +627,26 @@ def _hot_articles_html(articles: list[dict]) -> str:
         title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
         mentions   = a.get("mention_count", 0)
         is_supra   = a.get("supa_hot", False)
+        n_src      = a.get("source_count", 1)
+        src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
+        src_badge  = f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;">{n_src} sources</span>' if n_src > 1 else ""
         if is_supra:
-            badge       = "🌋 SUPA HOT"
             card_style  = ("background:linear-gradient(135deg,#2a0a00,#1a0d00);"
                            "border-left:4px solid #ff4500;"
                            "box-shadow:0 0 12px rgba(255,69,0,0.4);")
-            title_style = "color:#ff6b35;"
-            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} sources</span>'
+            title_style = "#ff6b35"
+            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>'
         else:
             card_style  = "background:#1a1d27;border-left:4px solid #f4a261;"
             title_style = "#fafafa"
-            badge_html  = f'<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
+            badge_html  = '<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
         cards += f"""
         <div style="border-radius:8px;padding:12px 14px;margin-bottom:10px;{card_style}">
           <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
             {badge_html}<a href="{a.get('url','#')}" target="_blank" style="color:{title_style};text-decoration:none;">{title}</a>
           </div>
           <div style="font-size:12px;color:#888;line-height:1.6;">
-            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
+            {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
             &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
             &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
           </div>
@@ -651,8 +689,9 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
             config={"responsive": True},
         ))
 
-    hot_cards  = _hot_articles_html(articles)
-    table_rows = _articles_to_html_table(articles)
+    deduped    = _deduplicate_articles(articles)
+    hot_cards  = _hot_articles_html(deduped)
+    table_rows = _articles_to_html_table(deduped)
 
     # Build filter option lists for the HTML selects
     def _options(values: list[str]) -> str:

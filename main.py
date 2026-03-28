@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 import os
-import re
+import re  # noqa: F401 (already imported)
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -35,6 +35,8 @@ class Article:
     category: str = ""
     sentiment: str = ""
     hot_topic: bool = False
+    mention_count: int = 0
+    supa_hot: bool = False
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -60,6 +62,35 @@ def compute_stats(articles: list[Article]) -> dict[str, int]:
     for a in articles:
         stats[a.category] = stats.get(a.category, 0) + 1
     return stats
+
+
+_MENTION_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "as", "by", "from", "is", "are", "was", "were", "be",
+    "been", "have", "has", "had", "will", "would", "could", "should",
+    "that", "this", "these", "those", "its", "not", "new", "how", "why",
+    "what", "when", "where", "who", "which", "more", "can", "all", "out",
+    "over", "about", "into", "than", "their", "they", "there", "says",
+    "said", "just", "also", "after", "amid",
+}
+
+
+def _compute_article_mentions(articles: list[Article]) -> None:
+    """Set mention_count and supa_hot on each article in-place."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    tokens: dict[str, set[str]] = {}
+    for a in articles:
+        words = re.findall(r"[a-zA-Z]{4,}", a.title.lower())
+        tokens[a.url] = {w for w in words if w not in _MENTION_STOPWORDS}
+
+    for i, a in enumerate(articles):
+        mine = tokens[a.url]
+        count = sum(
+            1 for j, other in enumerate(articles)
+            if i != j and other.published == today and len(mine & tokens[other.url]) >= 2
+        ) if mine else 0
+        a.mention_count = count
+        a.supa_hot = a.hot_topic and count > 5 and a.published == today
 
 # ---------------------------------------------------------------------------
 # 0. Hot keywords (via Google Trends / fallback static list)
@@ -490,7 +521,8 @@ def _post_telegram(token: str, chat_id: str, text: str) -> None:
 
 
 def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
-    """Send a header summary then all articles in batches to Telegram."""
+    """Send recap + dashboard link + hot articles only to Telegram."""
+    import time
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
     today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
@@ -499,9 +531,14 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
         _post_telegram(token, chat_id, "🤖 Radar IA : 0 nouveaux articles aujourd'hui.")
         return
 
-    # Header with stats
+    # ── Header recap ──────────────────────────────────────────────────────────
     stats = compute_stats(articles)
-    header_lines = [f"🤖 <b>Radar IA — {today}</b>", f"📰 {len(articles)} articles collectés", ""]
+    hot_articles = [a for a in articles if a.hot_topic]
+    header_lines = [
+        f"🤖 <b>Radar IA — {today}</b>",
+        f"📰 {len(articles)} articles collectés · 🔥 {len(hot_articles)} hot topics",
+        "",
+    ]
     for cat, emoji in CATEGORY_EMOJI.items():
         count = stats.get(cat, 0)
         if count:
@@ -510,19 +547,28 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
         header_lines.append(f'\n📊 <a href="{dashboard_url}">Voir le Dashboard</a>')
     _post_telegram(token, chat_id, "\n".join(header_lines))
 
-    # Articles in batches of 10
+    if not hot_articles:
+        return
+
+    # ── Hot articles only — supa_hot first, then by date desc ─────────────────
+    hot_articles.sort(key=lambda a: (not a.supa_hot, a.published), reverse=False)
+
     batch: list[str] = []
     batch_chars = 0
 
-    for article in articles:
+    for article in hot_articles:
         sent_emoji = SENTIMENT_EMOJI.get(article.sentiment, "⚪")
-        cat_emoji = CATEGORY_EMOJI.get(article.category, "📌")
+        cat_emoji  = CATEGORY_EMOJI.get(article.category, "📌")
+        if article.supa_hot:
+            badge = f"🌋 <b>SUPA HOT · {article.mention_count} sources</b>\n"
+        else:
+            badge = "🔥 "
         desc = article.description.strip()
         if desc and not desc.endswith((".", "!", "?")):
             desc += "…"
 
         entry_lines = [
-            f"{sent_emoji} <b>{article.title}</b>",
+            f"{badge}{sent_emoji} <b>{article.title}</b>",
             f"{cat_emoji} {article.category} | {article.country} {article.source}",
         ]
         if desc:
@@ -530,12 +576,11 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
         entry_lines.append(f'<a href="{article.url}">🔗 Lire l\'article</a>')
         entry = "\n".join(entry_lines)
 
-        # Flush batch if adding this entry would exceed Telegram's 4096-char limit
         if batch and batch_chars + len(entry) + 2 > 4000:
             _post_telegram(token, chat_id, "\n\n".join(batch))
             batch = []
             batch_chars = 0
-            import time; time.sleep(0.5)  # avoid Telegram rate limit
+            time.sleep(0.5)
 
         batch.append(entry)
         batch_chars += len(entry) + 2
@@ -543,7 +588,7 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
     if batch:
         _post_telegram(token, chat_id, "\n\n".join(batch))
 
-    logging.info(f"Telegram: sent {len(articles)} articles")
+    logging.info(f"Telegram: sent recap + {len(hot_articles)} hot articles")
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -576,6 +621,9 @@ async def main():
     # 3. Classify with Groq
     logging.info(f"Classifying {len(articles)} articles with Groq...")
     classified = await classify_articles(articles)
+
+    # 3b. Compute mention counts and supa_hot flags
+    _compute_article_mentions(classified)
 
     # 4. Save to Supabase
     save_to_supabase(classified)
