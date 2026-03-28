@@ -92,6 +92,35 @@ def _normalize_date(s: str) -> str:
     return s[:10] if s else s
 
 
+def _time_ago(published_str: str) -> str:
+    """Convert a published datetime string to a human-readable elapsed time."""
+    if not published_str:
+        return "—"
+    try:
+        s = published_str.replace("Z", "+00:00")
+        try:
+            pub = datetime.fromisoformat(s)
+        except ValueError:
+            pub = datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        secs = int((now - pub).total_seconds())
+        if secs < 0:
+            return "—"
+        if secs < 3600:
+            m = max(1, secs // 60)
+            return f"{m}min"
+        if secs < 86400:
+            return f"{secs // 3600}h"
+        d = secs // 86400
+        if d == 1:
+            return "hier"
+        return f"{d}j"
+    except Exception:
+        return published_str[:10]
+
+
 def load_articles(days: int) -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -104,10 +133,10 @@ def load_articles(days: int) -> list[dict]:
         .execute()
     )
     articles = resp.data or []
-    # FIX 2: normalize published to YYYY-MM-DD regardless of what Supabase returns
     for a in articles:
         if a.get("published"):
-            a["published"] = _normalize_date(a["published"])
+            a["published_raw"] = a["published"]          # full datetime for time_ago
+            a["published"] = _normalize_date(a["published"])  # YYYY-MM-DD for filtering
     return articles
 
 # ---------------------------------------------------------------------------
@@ -216,7 +245,7 @@ def _render_hot_articles(articles: list[dict], container) -> None:
                style="color:#fafafa;text-decoration:none;">{title}</a>
           </div>
           <div style="font-size:12px;color:#888;">
-            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {a.get('published','')}
+            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
             &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
             &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
           </div>
@@ -418,16 +447,19 @@ def run_streamlit() -> None:
         df["category"]  = df["category"].apply(lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}")
         df["lien"]      = df["url"].apply(lambda u: f"[↗]({u})")
         df["hot_topic"] = df.get("hot_topic", False).fillna(False)
+        df["age"] = df.apply(
+            lambda r: _time_ago(r.get("published_raw") or r.get("published", "")), axis=1
+        )
         # Hot topic articles are already first (ordered by Supabase); add 🔥 badge in title
         df["title"] = df.apply(
             lambda r: f"🔥 {r['title']}" if r["hot_topic"] else r["title"], axis=1
         )
         st.dataframe(
-            df[["published", "sentiment", "title", "source", "country", "category", "lien"]],
+            df[["age", "sentiment", "title", "source", "country", "category", "lien"]],
             use_container_width=True,
             hide_index=True,
             column_config={
-                "published": st.column_config.DateColumn("Date"),
+                "age":       st.column_config.TextColumn("Publié"),
                 "sentiment": st.column_config.TextColumn("Sent."),
                 "title":     st.column_config.TextColumn("Titre", width="large"),
                 "source":    st.column_config.TextColumn("Source"),
@@ -456,10 +488,11 @@ def _articles_to_html_table(articles: list[dict]) -> str:
         hot      = a.get("hot_topic", False)
         hot_badge = "🔥 " if hot else ""
         hot_class = ' class="hot"' if hot else ""
+        age = _time_ago(a.get("published_raw") or a.get("published", ""))
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
             f'data-category="{cat}" data-source="{src}"{hot_class}>'
-            f"<td>{a.get('published', '')}</td>"
+            f"<td>{age}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
             f'<td class="col-source">{src}</td>'
@@ -486,7 +519,7 @@ def _hot_articles_html(articles: list[dict]) -> str:
             <a href="{a.get('url','#')}" target="_blank">{title}</a>
           </div>
           <div class="hot-meta">
-            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {a.get('published','')}
+            {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
             &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
             &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
           </div>
@@ -650,7 +683,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     <table id="articles-table">
       <thead>
         <tr>
-          <th>Date</th>
+          <th>Publié</th>
           <th>Sent.</th>
           <th>Titre</th>
           <th class="col-source">Source</th>
