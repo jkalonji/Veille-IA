@@ -65,9 +65,9 @@ Un article est tagué `hot_topic = True` si son titre/description contient au mo
 Chaque article hot est assigné à un groupe selon sa source prioritaire (ordre : hn > trends > github > db).
 Les groupes s'affichent dans cet ordre avec des couleurs et icônes distinctes :
 - 💬 **Sujets en débat** (orange `#ff6600`) — HN >20 commentaires
-- 🔮 **Tendances montantes** (violet `#7b2ff7`) — Google Trends rising
 - ⭐ **Tech viral** (vert `#238636`) — GitHub trending repos
-- 📡 **Signal éditorial** (cyan `#0e7490`) — auto-bootstrap DB
+- 📡 **Sujets de société** (cyan `#0e7490`) — auto-bootstrap DB (mots dans 3+ titres aujourd'hui)
+- 🔮 **Tendances montantes** (violet `#7b2ff7`) — Google Trends rising
 
 La colonne `hot_source` en Supabase stocke les sources sous forme de chaîne pipe-séparée (ex: `"trends|hn"`).
 

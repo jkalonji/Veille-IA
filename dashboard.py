@@ -56,13 +56,13 @@ SENTIMENT_COLORS = {
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
-# Hot source groups — order = display priority
+# Hot source groups — order = tab display order
 HOT_SOURCE_META: list[dict] = [
-    {"key": "hn",      "label": "Sujets en débat",       "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
-    {"key": "trends",  "label": "Tendances montantes",   "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
-    {"key": "github",  "label": "Tech viral",            "icon": "⭐", "color": "#238636", "border": "#3fb950"},
-    {"key": "db",      "label": "Signal éditorial",      "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
-    {"key": "unknown", "label": "Hot topics",            "icon": "🔥", "color": "#92400e", "border": "#f4a261"},
+    {"key": "hn",      "label": "Sujets en débat",     "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
+    {"key": "github",  "label": "Tech viral",          "icon": "⭐", "color": "#238636", "border": "#3fb950"},
+    {"key": "db",      "label": "Sujets de société",   "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
+    {"key": "trends",  "label": "Tendances montantes", "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
+    {"key": "unknown", "label": "Hot topics",          "icon": "🔥", "color": "#92400e", "border": "#f4a261"},
 ]
 _SOURCE_ORDER = {m["key"]: i for i, m in enumerate(HOT_SOURCE_META)}
 
@@ -337,7 +337,8 @@ def fig_trend(articles: list[dict]) -> go.Figure:
 
 
 def _render_hot_articles(articles: list[dict], container) -> None:
-    """Render hot articles grouped by detection source in a Streamlit container."""
+    """Render hot articles as tabs grouped by detection source in Streamlit."""
+    import streamlit as st
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     hot = _deduplicate_articles([
         a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
@@ -351,18 +352,17 @@ def _render_hot_articles(articles: list[dict], container) -> None:
     for a in hot:
         groups[_primary_hot_source(a)].append(a)
 
-    cards_html = ""
-    for meta in HOT_SOURCE_META:
+    active = [m for m in HOT_SOURCE_META if groups[m["key"]]]
+    if not active:
+        container.info("Aucun article hot topic sur la période sélectionnée.")
+        return
+
+    tab_labels = [f"{m['icon']} {m['label']} ({len(groups[m['key']])})" for m in active]
+    tabs = container.tabs(tab_labels)
+    for tab, meta in zip(tabs, active):
         group = sorted(groups[meta["key"]], key=_hot_sort_key)
-        if not group:
-            continue
-        cards_html += (f'<div style="margin:18px 0 8px;font-size:13px;font-weight:700;'
-                       f'color:{meta["color"]};letter-spacing:0.05em;">'
-                       f'{meta["icon"]} {meta["label"].upper()} '
-                       f'<span style="font-weight:400;color:#888;font-size:11px;">({len(group)})</span></div>')
-        for a in group:
-            cards_html += _render_hot_card_html(a, meta)
-    container.markdown(cards_html, unsafe_allow_html=True)
+        cards_html = "".join(_render_hot_card_html(a, meta) for a in group)
+        tab.markdown(cards_html, unsafe_allow_html=True)
 
 
 def fig_heatmap(articles: list[dict]) -> go.Figure:
@@ -655,7 +655,7 @@ def _render_hot_card_html(a: dict, meta: dict) -> str:
 
 
 def _hot_articles_html(articles: list[dict]) -> str:
-    """Build hot articles grouped by detection source for the CI HTML export."""
+    """Build hot articles as tabs grouped by detection source (CI HTML export)."""
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
     hot = _deduplicate_articles([
         a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago
@@ -663,22 +663,87 @@ def _hot_articles_html(articles: list[dict]) -> str:
     if not hot:
         return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
 
-    # Group by primary source
     groups: dict[str, list[dict]] = {m["key"]: [] for m in HOT_SOURCE_META}
     for a in hot:
         groups[_primary_hot_source(a)].append(a)
 
-    html = ""
-    for meta in HOT_SOURCE_META:
-        group = sorted(groups[meta["key"]], key=_hot_sort_key)
-        if not group:
-            continue
-        html += (f'<div style="margin:18px 0 8px;font-size:13px;font-weight:700;color:{meta["color"]};'
-                 f'letter-spacing:0.05em;">{meta["icon"]} {meta["label"].upper()} '
-                 f'<span style="font-weight:400;color:#888;font-size:11px;">({len(group)})</span></div>')
-        for a in group:
-            html += _render_hot_card_html(a, meta)
-    return html
+    # Only show tabs that have content
+    active = [m for m in HOT_SOURCE_META if groups[m["key"]]]
+    if not active:
+        return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
+
+    first_key = active[0]["key"]
+
+    # ── Tab buttons ───────────────────────────────────────────────────────────
+    buttons = ""
+    for m in active:
+        count     = len(groups[m["key"]])
+        is_active = m["key"] == first_key
+        buttons += (
+            f'<button class="hot-tab{"  hot-tab--active" if is_active else ""}" '
+            f'data-group="{m["key"]}" '
+            f'style="{"border-color:"+m["border"]+";color:"+m["color"] if is_active else ""}">'
+            f'{m["icon"]} {m["label"]}'
+            f'<span class="hot-tab__count">{count}</span>'
+            f'</button>'
+        )
+
+    # ── Tab panels ────────────────────────────────────────────────────────────
+    panels = ""
+    for m in active:
+        group   = sorted(groups[m["key"]], key=_hot_sort_key)
+        display = "block" if m["key"] == first_key else "none"
+        cards   = "".join(_render_hot_card_html(a, m) for a in group)
+        panels += f'<div class="hot-panel" id="hot-{m["key"]}" style="display:{display}">{cards}</div>'
+
+    return f"""
+<style>
+  .hot-tabs {{
+    display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+  }}
+  .hot-tab {{
+    background: #1a1d27; color: #adb5bd;
+    border: 2px solid #2a2d3a; border-radius: 20px;
+    padding: 7px 16px; font-size: 13px; cursor: pointer;
+    transition: all 0.15s ease; white-space: nowrap;
+  }}
+  .hot-tab:hover {{ background: #252836; color: #fafafa; }}
+  .hot-tab--active {{ background: #252836; color: #fafafa; font-weight: 700; }}
+  .hot-tab__count {{
+    background: #333; border-radius: 10px;
+    padding: 1px 7px; font-size: 11px; margin-left: 6px; font-weight: 400;
+  }}
+</style>
+<div class="hot-tabs">{buttons}</div>
+<div>{panels}</div>
+<script>
+(function() {{
+  var tabs   = document.querySelectorAll('.hot-tab');
+  var panels = document.querySelectorAll('.hot-panel');
+  tabs.forEach(function(btn) {{
+    btn.addEventListener('click', function() {{
+      var meta = {{
+        hn:      {{ border:'#ff6600', color:'#ff6600' }},
+        github:  {{ border:'#3fb950', color:'#238636' }},
+        db:      {{ border:'#06b6d4', color:'#0e7490' }},
+        trends:  {{ border:'#9d4edd', color:'#7b2ff7' }},
+        unknown: {{ border:'#f4a261', color:'#92400e' }},
+      }};
+      tabs.forEach(function(b) {{
+        b.classList.remove('hot-tab--active');
+        b.style.borderColor = '';
+        b.style.color = '';
+      }});
+      panels.forEach(function(p) {{ p.style.display = 'none'; }});
+      btn.classList.add('hot-tab--active');
+      var g = btn.dataset.group;
+      if (meta[g]) {{ btn.style.borderColor = meta[g].border; btn.style.color = meta[g].color; }}
+      var panel = document.getElementById('hot-' + g);
+      if (panel) panel.style.display = 'block';
+    }});
+  }});
+}})();
+</script>"""
 
 
 def run_export(days: int, output: str = "dashboard.html") -> None:
