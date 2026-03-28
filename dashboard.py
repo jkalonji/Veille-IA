@@ -6,6 +6,7 @@ Usage CI    : python dashboard.py --export [--days N] [--top N]
 
 import argparse
 import os
+import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
@@ -121,6 +122,55 @@ def _time_ago(published_str: str) -> str:
         return published_str[:10]
 
 
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "as", "by", "from", "is", "are", "was", "were", "be",
+    "been", "have", "has", "had", "will", "would", "could", "should",
+    "that", "this", "these", "those", "its", "not", "new", "how", "why",
+    "what", "when", "where", "who", "which", "more", "can", "all", "out",
+    "over", "about", "into", "than", "their", "they", "there", "says",
+    "said", "just", "also", "after", "amid", "here", "your", "our",
+    "le", "la", "les", "de", "du", "des", "et", "en", "un", "une",
+    "sur", "par", "pour", "avec", "dans", "est", "sont",
+}
+
+
+def _tokenize(title: str) -> set[str]:
+    words = re.findall(r"[a-zA-Z]{4,}", title.lower())
+    return {w for w in words if w not in _STOPWORDS}
+
+
+def _compute_mention_counts(articles: list[dict]) -> dict[str, int]:
+    """For each article, count how many other articles today share ≥ 2 title keywords."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    tokens = {a["url"]: _tokenize(a.get("title", "")) for a in articles}
+    counts: dict[str, int] = {}
+    for i, a in enumerate(articles):
+        url = a["url"]
+        mine = tokens[url]
+        if not mine:
+            counts[url] = 0
+            continue
+        counts[url] = sum(
+            1 for j, other in enumerate(articles)
+            if i != j
+            and other.get("published", "") == today
+            and len(mine & tokens[other["url"]]) >= 2
+        )
+    return counts
+
+
+def _hot_sort_key(a: dict):
+    """Sort key: supa_hot first, then newest, then most mentioned."""
+    supa = 0 if a.get("supa_hot") else 1
+    raw = (a.get("published_raw") or a.get("published", ""))[:19]
+    try:
+        ts = -datetime.fromisoformat(raw.replace("Z", "+00:00")).timestamp()
+    except Exception:
+        ts = 0.0
+    return (supa, ts, -a.get("mention_count", 0))
+
+
 def load_articles(days: int) -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -135,8 +185,19 @@ def load_articles(days: int) -> list[dict]:
     articles = resp.data or []
     for a in articles:
         if a.get("published"):
-            a["published_raw"] = a["published"]          # full datetime for time_ago
-            a["published"] = _normalize_date(a["published"])  # YYYY-MM-DD for filtering
+            a["published_raw"] = a["published"]
+            a["published"] = _normalize_date(a["published"])
+
+    # Compute mention counts and supa_hot flag
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    mention_counts = _compute_mention_counts(articles)
+    for a in articles:
+        a["mention_count"] = mention_counts.get(a.get("url", ""), 0)
+        a["supa_hot"] = (
+            bool(a.get("hot_topic"))
+            and a["mention_count"] > 5
+            and a.get("published", "") == today
+        )
     return articles
 
 # ---------------------------------------------------------------------------
@@ -226,8 +287,11 @@ def fig_trend(articles: list[dict]) -> go.Figure:
 
 def _render_hot_articles(articles: list[dict], container) -> None:
     """Render hot topic articles as styled cards in a Streamlit container."""
-    import streamlit as st
-    hot = [a for a in articles if a.get("hot_topic")]
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    hot = sorted(
+        [a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago],
+        key=_hot_sort_key,
+    )
     container.markdown("#### 🔥 Hot Articles")
     if not hot:
         container.info("Aucun article hot topic sur la période sélectionnée.")
@@ -237,12 +301,21 @@ def _render_hot_articles(articles: list[dict], container) -> None:
         cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
         sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
         title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        mentions   = a.get("mention_count", 0)
+        is_supra   = a.get("supa_hot", False)
+        if is_supra:
+            card_bg    = "background:linear-gradient(135deg,#2a0a00,#1a0d00);border-left:4px solid #ff4500;box-shadow:0 0 12px rgba(255,69,0,0.4);"
+            title_color = "#ff6b35"
+            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} sources</span>'
+        else:
+            card_bg    = "background:#1a1d27;border-left:4px solid #f4a261;"
+            title_color = "#fafafa"
+            badge_html  = '<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
         cards_html += f"""
-        <div style="background:#1a1d27;border-left:4px solid #f4a261;border-radius:6px;
-                    padding:10px 14px;margin-bottom:8px;">
+        <div style="border-radius:6px;padding:10px 14px;margin-bottom:8px;{card_bg}">
           <div style="font-size:14px;font-weight:600;margin-bottom:5px;">
-            <a href="{a.get('url','#')}" target="_blank"
-               style="color:#fafafa;text-decoration:none;">{title}</a>
+            {badge_html}<a href="{a.get('url','#')}" target="_blank"
+               style="color:{title_color};text-decoration:none;">{title}</a>
           </div>
           <div style="font-size:12px;color:#888;">
             {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
@@ -317,13 +390,12 @@ def run_streamlit() -> None:
         if "days" not in st.session_state:
             st.session_state["days"] = 7
         st.caption("Période rapide")
-        p1, p2, p3, p4 = st.columns(4)
-        if p1.button("1j",  use_container_width=True): st.session_state["days"] = 1
-        if p2.button("7j",  use_container_width=True): st.session_state["days"] = 7
-        if p3.button("30j", use_container_width=True): st.session_state["days"] = 30
-        if p4.button("90j", use_container_width=True): st.session_state["days"] = 90
+        p1, p2, p3 = st.columns(3)
+        if p1.button("1j", use_container_width=True): st.session_state["days"] = 1
+        if p2.button("3j", use_container_width=True): st.session_state["days"] = 3
+        if p3.button("7j", use_container_width=True): st.session_state["days"] = 7
 
-        days = st.slider("Fenêtre d'analyse (jours)", 1, 90, key="days")
+        days = st.slider("Fenêtre d'analyse (jours)", 1, 7, key="days")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
@@ -505,7 +577,11 @@ def _articles_to_html_table(articles: list[dict]) -> str:
 
 def _hot_articles_html(articles: list[dict]) -> str:
     """Build hot articles cards for the CI HTML export."""
-    hot = [a for a in articles if a.get("hot_topic")]
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    hot = sorted(
+        [a for a in articles if a.get("hot_topic") and a.get("published", "") >= week_ago],
+        key=_hot_sort_key,
+    )
     if not hot:
         return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
     cards = ""
@@ -513,12 +589,25 @@ def _hot_articles_html(articles: list[dict]) -> str:
         cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
         sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
         title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        mentions   = a.get("mention_count", 0)
+        is_supra   = a.get("supa_hot", False)
+        if is_supra:
+            badge       = "🌋 SUPA HOT"
+            card_style  = ("background:linear-gradient(135deg,#2a0a00,#1a0d00);"
+                           "border-left:4px solid #ff4500;"
+                           "box-shadow:0 0 12px rgba(255,69,0,0.4);")
+            title_style = "color:#ff6b35;"
+            badge_html  = f'<span style="background:#ff4500;color:#fff;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} sources</span>'
+        else:
+            card_style  = "background:#1a1d27;border-left:4px solid #f4a261;"
+            title_style = "#fafafa"
+            badge_html  = f'<span style="background:#f4a261;color:#000;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-right:6px;">🔥 HOT</span>'
         cards += f"""
-        <div class="hot-card">
-          <div class="hot-title">
-            <a href="{a.get('url','#')}" target="_blank">{title}</a>
+        <div style="border-radius:8px;padding:12px 14px;margin-bottom:10px;{card_style}">
+          <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
+            {badge_html}<a href="{a.get('url','#')}" target="_blank" style="color:{title_style};text-decoration:none;">{title}</a>
           </div>
-          <div class="hot-meta">
+          <div style="font-size:12px;color:#888;line-height:1.6;">
             {a.get('country','')} {a.get('source','')} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
             &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
             &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
