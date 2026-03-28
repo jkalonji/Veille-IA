@@ -38,7 +38,8 @@ class Article:
     hot_topic: bool = False
     mention_count: int = 0
     supa_hot: bool = False
-    hot_source: str = ""   # pipe-separated: "trends|hn|github|db"
+    hot_source: str = ""    # pipe-separated detection signals: "trends|hn|github|db"
+    hot_reason: str = ""    # groq content classification: "debat"|"tech"|"societe"|"tendance"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -494,13 +495,23 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # 3. Classification with Groq
 # ---------------------------------------------------------------------------
 
-GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec trois cles :
-- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses"]
-  Note: les articles de geopolitique, regulation internationale et diplomatie tech sont a classer dans "Politique / Regulation".
-- "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
-- "country": le pays ou la region principalement concerne(e) par le contenu de l'article (ex: "USA", "Chine", "France", "Europe", "Inde", "Global"). Si l'article est generique ou mondial, utilise "Global".
+GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec quatre cles :
 
-Ne renvoie AUCUN texte supplementaire, AUCUN resume, AUCUNE explication. Uniquement l'objet JSON."""
+- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses"]
+  Note: les articles de geopolitique, regulation internationale et diplomatie tech vont dans "Politique / Regulation".
+
+- "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
+
+- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global").
+
+- "hot_reason": pourquoi cet article serait notable ou viral, parmi ces quatre valeurs EXACTES:
+  * "debat"    — suscite une controverse, des opinions polarisees, un debat public ou du drama (ex: licenciements, echec d'un modele, proces, critique d'une entreprise)
+  * "tech"     — annonce technique, sortie d'un modele, outil dev, benchmark, mise a jour produit (ex: lancement GPT-5, nouveau framework, record de performance)
+  * "societe"  — impact sur la societe, l'emploi, l'ethique, la regulation, les droits (ex: loi IA, impact sur les metiers, biais algorithmique)
+  * "tendance" — concept emergent, nouvelle direction de recherche, sujet qui monte progressivement (ex: MCP, vibe coding, nouveau paradigme)
+  Si tu n'es pas sur, choisis la valeur la plus proche du contenu reel de l'article.
+
+Ne renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."""
 
 VALID_CATEGORIES = {
     "Innovation / Tech",
@@ -511,7 +522,8 @@ VALID_CATEGORIES = {
     "Drama / Controverses",
 }
 
-VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
+VALID_SENTIMENTS  = {"Positif", "Negatif", "Neutre"}
+VALID_HOT_REASONS = {"debat", "tech", "societe", "tendance"}
 
 
 async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None:
@@ -528,20 +540,23 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.1,
-            max_tokens=120,
+            max_tokens=160,
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
-        cat = result.get("category", "Innovation / Tech")
-        sent = result.get("sentiment", "Neutre")
-        article.category = cat if cat in VALID_CATEGORIES else "Innovation / Tech"
-        article.sentiment = sent if sent in VALID_SENTIMENTS else "Neutre"
-        article.country = result.get("country", "Global") or "Global"
+        cat    = result.get("category",   "Innovation / Tech")
+        sent   = result.get("sentiment",  "Neutre")
+        reason = result.get("hot_reason", "tech")
+        article.category   = cat    if cat    in VALID_CATEGORIES  else "Innovation / Tech"
+        article.sentiment  = sent   if sent   in VALID_SENTIMENTS  else "Neutre"
+        article.country    = result.get("country", "Global") or "Global"
+        article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
-        article.category = "Innovation / Tech"
-        article.sentiment = "Neutre"
-        article.country = "Global"
+        article.category   = "Innovation / Tech"
+        article.sentiment  = "Neutre"
+        article.country    = "Global"
+        article.hot_reason = "tech"
 
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
@@ -583,6 +598,7 @@ def save_to_supabase(articles: list[Article]) -> None:
             "sentiment": a.sentiment,
             "hot_topic": a.hot_topic,
             "hot_source": a.hot_source,
+            "hot_reason": a.hot_reason,
         }
         for a in articles
     ]
@@ -591,14 +607,15 @@ def save_to_supabase(articles: list[Article]) -> None:
         client.table("articles").upsert(rows, on_conflict="url").execute()
         logging.info(f"Supabase: upserted {len(rows)} articles")
     except Exception as e:
-        # Fallback: retry without hot_source if column doesn't exist yet
-        if "hot_source" in str(e):
-            logging.warning("hot_source column missing — run migration. Retrying without it.")
+        # Fallback: retry without new columns if migration not yet run
+        if "hot_source" in str(e) or "hot_reason" in str(e):
+            logging.warning("hot_source/hot_reason columns missing — run migration. Retrying without them.")
             for row in rows:
                 row.pop("hot_source", None)
+                row.pop("hot_reason", None)
             try:
                 client.table("articles").upsert(rows, on_conflict="url").execute()
-                logging.info(f"Supabase: upserted {len(rows)} articles (without hot_source)")
+                logging.info(f"Supabase: upserted {len(rows)} articles (without hot_source/hot_reason)")
             except Exception as e2:
                 logging.error(f"Supabase upsert error: {e2}")
         else:

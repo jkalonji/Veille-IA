@@ -62,20 +62,21 @@ Un article est tagué `hot_topic = True` si son titre/description contient au mo
 - Auto-alimenté : plus on collecte de sources, plus ce signal est précis
 
 ### Groupage visuel dans le dashboard
-Chaque article hot est assigné à un groupe selon sa source prioritaire (ordre : hn > trends > github > db).
-Les groupes s'affichent dans cet ordre avec des couleurs et icônes distinctes :
-- 💬 **Sujets en débat** (orange `#ff6600`) — HN >20 commentaires
-- ⭐ **Tech viral** (vert `#238636`) — GitHub trending repos
-- 📡 **Sujets de société** (cyan `#0e7490`) — auto-bootstrap DB (mots dans 3+ titres aujourd'hui)
-- 🔮 **Tendances montantes** (violet `#7b2ff7`) — Google Trends rising
+Chaque article hot est catégorisé par **Groq** via le champ `hot_reason` (classification sémantique du contenu).
+Les 4 onglets toujours visibles :
+- 💬 **Sujets en débat** (`debat`) — controverse, opinions polarisées, drama, licenciements, procès
+- ⭐ **Tech viral** (`tech`) — lancement modèle, outil dev, benchmark, sortie produit
+- 📡 **Sujets de société** (`societe`) — régulation, emploi, éthique, droits, impact sociétal
+- 🔮 **Tendances montantes** (`tendance`) — concept émergent, nouveau paradigme, recherche en hausse
 
-La colonne `hot_source` en Supabase stocke les sources sous forme de chaîne pipe-séparée (ex: `"trends|hn"`).
+`hot_source` reste en base comme métadonnée de détection (Trends/HN/GitHub/DB), mais n'est plus utilisé pour le groupage — c'est `hot_reason` qui pilote les onglets.
 
 **Migration SQL à exécuter une fois en Supabase :**
 ```sql
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS hot_source TEXT DEFAULT '';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS hot_reason TEXT DEFAULT '';
 ```
-Le code est backward-compatible : si la colonne n'existe pas, l'upsert se fait sans elle (fallback automatique).
+Le code est backward-compatible (fallback automatique si colonnes absentes).
 
 ### Seuil Supa Hot Topic
 Un article `hot_topic` est promu `supa_hot` si :

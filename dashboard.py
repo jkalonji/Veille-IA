@@ -56,13 +56,13 @@ SENTIMENT_COLORS = {
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
-# Hot source groups — order = tab display order
+# Hot reason groups — keyed by Groq's hot_reason values, order = tab display order
 HOT_SOURCE_META: list[dict] = [
-    {"key": "hn",      "label": "Sujets en débat",     "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
-    {"key": "github",  "label": "Tech viral",          "icon": "⭐", "color": "#238636", "border": "#3fb950"},
-    {"key": "db",      "label": "Sujets de société",   "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
-    {"key": "trends",  "label": "Tendances montantes", "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
-    {"key": "unknown", "label": "Hot topics",          "icon": "🔥", "color": "#92400e", "border": "#f4a261"},
+    {"key": "debat",    "label": "Sujets en débat",     "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
+    {"key": "tech",     "label": "Tech viral",          "icon": "⭐", "color": "#238636", "border": "#3fb950"},
+    {"key": "societe",  "label": "Sujets de société",   "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
+    {"key": "tendance", "label": "Tendances montantes", "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
+    {"key": "unknown",  "label": "Hot topics",          "icon": "🔥", "color": "#92400e", "border": "#f4a261"},
 ]
 _SOURCE_ORDER = {m["key"]: i for i, m in enumerate(HOT_SOURCE_META)}
 
@@ -200,12 +200,12 @@ def _deduplicate_articles(articles: list[dict]) -> list[dict]:
 
 
 def _primary_hot_source(a: dict) -> str:
-    """Return the highest-priority hot source key for an article."""
-    raw = a.get("hot_source") or ""
-    parts = [p for p in raw.split("|") if p]
-    if not parts:
-        return "unknown"
-    return min(parts, key=lambda s: _SOURCE_ORDER.get(s, 99))
+    """Return the hot tab key for an article.
+    Prefers Groq's semantic hot_reason; falls back to unknown."""
+    reason = (a.get("hot_reason") or "").strip()
+    if reason in _SOURCE_ORDER:
+        return reason
+    return "unknown"
 
 
 def _hot_sort_key(a: dict):
@@ -224,7 +224,7 @@ def load_articles(days: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     resp = (
         client.table("articles")
-        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source")
+        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason")
         .gte("published", cutoff)
         .order("hot_topic", desc=True)
         .order("published", desc=True)
@@ -352,7 +352,7 @@ def _render_hot_articles(articles: list[dict], container) -> None:
     groups: dict[str, list[dict]] = {m["key"]: [] for m in HOT_SOURCE_META}
     for a in hot:
         src = _primary_hot_source(a)
-        groups[src if src != "unknown" else "hn"].append(a)
+        groups[src if src != "unknown" else "debat"].append(a)
 
     tab_labels = [
         f"{m['icon']} {m['label']}" + (f" ({len(groups[m['key']])})" if groups[m["key"]] else "")
@@ -672,8 +672,7 @@ def _hot_articles_html(articles: list[dict]) -> str:
     groups: dict[str, list[dict]] = {m["key"]: [] for m in HOT_SOURCE_META}
     for a in hot:
         src = _primary_hot_source(a)
-        # Fold unknown into the "hn" tab as a fallback so articles are always visible
-        groups[src if src != "unknown" else "hn"].append(a)
+        groups[src if src != "unknown" else "debat"].append(a)
 
     # First tab with content (default selected); fall back to first named tab
     first_key = next((m["key"] for m in named_meta if groups[m["key"]]), named_meta[0]["key"])
@@ -733,10 +732,10 @@ def _hot_articles_html(articles: list[dict]) -> str:
 <script>
 (function() {{
   var COLOR = {{
-    hn:     {{ border:'#ff6600', color:'#ff6600' }},
-    github: {{ border:'#3fb950', color:'#238636' }},
-    db:     {{ border:'#06b6d4', color:'#0e7490' }},
-    trends: {{ border:'#9d4edd', color:'#7b2ff7' }},
+    debat:    {{ border:'#ff6600', color:'#ff6600' }},
+    tech:     {{ border:'#3fb950', color:'#238636' }},
+    societe:  {{ border:'#06b6d4', color:'#0e7490' }},
+    tendance: {{ border:'#9d4edd', color:'#7b2ff7' }},
   }};
   document.querySelectorAll('.hot-tab:not([onclick])').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
