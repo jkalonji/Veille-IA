@@ -7,8 +7,9 @@ import asyncio
 import json
 import logging
 import os
-import re  # noqa: F401 (already imported)
+import re
 import sys
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from time import mktime
@@ -141,6 +142,87 @@ def fetch_hot_keywords() -> set[str]:
         logging.warning(f"Google Trends unavailable ({e}), using fallback hot keywords")
 
     return HOT_KEYWORDS_FALLBACK
+
+
+async def _fetch_hn_debate_keywords(session: aiohttp.ClientSession) -> set[str]:
+    """Keywords extracted from HN AI stories with >20 comments in the last 48h.
+    High comment count = active debate, not just passive reading."""
+    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(hours=48)).timestamp())
+    keywords: set[str] = set()
+    for query in ["AI", "LLM", "OpenAI", "Claude", "machine learning", "AGI"]:
+        params = {
+            "query": query,
+            "tags": "story",
+            "numericFilters": f"num_comments>20,created_at_i>{cutoff_ts}",
+            "hitsPerPage": 10,
+        }
+        try:
+            async with session.get(
+                "https://hn.algolia.com/api/v1/search",
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+            for hit in data.get("hits", []):
+                words = re.findall(r"[a-z]{4,}", hit.get("title", "").lower())
+                keywords.update(w for w in words if w not in _MENTION_STOPWORDS)
+        except Exception as e:
+            logging.warning(f"HN debate keywords failed for '{query}': {e}")
+    logging.info(f"HN debate keywords: {len(keywords)} terms")
+    return keywords
+
+
+async def _fetch_github_trending_keywords(session: aiohttp.ClientSession) -> set[str]:
+    """Keywords from AI repos that spiked on GitHub in the last 24h.
+    A repo gaining 200+ stars overnight signals a viral paper or tool."""
+    since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    keywords: set[str] = set()
+    for topic in ["artificial-intelligence", "large-language-model", "llm"]:
+        params = {
+            "q": f"topic:{topic} pushed:>{since}",
+            "sort": "stars",
+            "order": "desc",
+            "per_page": 15,
+        }
+        try:
+            async with session.get(
+                "https://api.github.com/search/repositories",
+                params=params,
+                headers={"Accept": "application/vnd.github+json"},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json()
+            for repo in data.get("items", []):
+                text = f"{repo.get('name', '')} {repo.get('description', '') or ''}".lower()
+                words = re.findall(r"[a-z]{4,}", text)
+                keywords.update(w for w in words if w not in _MENTION_STOPWORDS)
+        except Exception as e:
+            logging.warning(f"GitHub trending keywords failed for '{topic}': {e}")
+    logging.info(f"GitHub trending keywords: {len(keywords)} terms")
+    return keywords
+
+
+def _fetch_db_trending_keywords() -> set[str]:
+    """Extract keywords that appear in 3+ article titles collected today.
+    Self-bootstrapping: our own data reveals what's dominating the conversation."""
+    url  = os.environ.get("SUPABASE_URL")
+    key  = os.environ.get("SUPABASE_KEY")
+    if not url or not key:
+        return set()
+    try:
+        client  = create_client(url, key)
+        cutoff  = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        resp    = client.table("articles").select("title").gte("published", cutoff).execute()
+        counts: Counter = Counter()
+        for a in (resp.data or []):
+            words = re.findall(r"[a-z]{4,}", a.get("title", "").lower())
+            counts.update(w for w in words if w not in _MENTION_STOPWORDS)
+        keywords = {w for w, c in counts.items() if c >= 3}
+        logging.info(f"DB self-bootstrap keywords: {len(keywords)} terms (freq ≥ 3)")
+        return keywords
+    except Exception as e:
+        logging.warning(f"DB trending keywords failed: {e}")
+        return set()
 
 
 # ---------------------------------------------------------------------------
@@ -378,8 +460,18 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
 
+    # Build enriched hot keyword set from all sources
+    hot_keywords = fetch_hot_keywords()  # Google Trends or fallback
+    async with aiohttp.ClientSession() as kw_session:
+        hn_kw, gh_kw = await asyncio.gather(
+            _fetch_hn_debate_keywords(kw_session),
+            _fetch_github_trending_keywords(kw_session),
+        )
+    db_kw = _fetch_db_trending_keywords()
+    hot_keywords |= hn_kw | gh_kw | db_kw
+    logging.info(f"Hot keywords total: {len(hot_keywords)} terms (Trends + HN debate + GitHub + DB self-bootstrap)")
+
     # Tag hot topics
-    hot_keywords = fetch_hot_keywords()
     hot_count = 0
     for a in filtered:
         text = (a.title + " " + a.description).lower()
@@ -395,7 +487,8 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # ---------------------------------------------------------------------------
 
 GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec trois cles :
-- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses", "Geopolitique"]
+- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses"]
+  Note: les articles de geopolitique, regulation internationale et diplomatie tech sont a classer dans "Politique / Regulation".
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 - "country": le pays ou la region principalement concerne(e) par le contenu de l'article (ex: "USA", "Chine", "France", "Europe", "Inde", "Global"). Si l'article est generique ou mondial, utilise "Global".
 
@@ -408,7 +501,6 @@ VALID_CATEGORIES = {
     "Societe / Ethique",
     "Recherche Academique",
     "Drama / Controverses",
-    "Geopolitique",
 }
 
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}

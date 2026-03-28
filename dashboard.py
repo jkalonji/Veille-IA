@@ -34,7 +34,6 @@ CATEGORY_COLORS = {
     "Societe / Ethique":      "#e9c46a",
     "Recherche Academique":   "#a8dadc",
     "Drama / Controverses":   "#e63946",
-    "Geopolitique":           "#6a0572",
 }
 CATEGORY_EMOJI = {
     "Innovation / Tech":      "🚀",
@@ -43,7 +42,11 @@ CATEGORY_EMOJI = {
     "Societe / Ethique":      "🤝",
     "Recherche Academique":   "🎓",
     "Drama / Controverses":   "💥",
-    "Geopolitique":           "🌍",
+}
+
+# Legacy category mapping (for articles already stored in Supabase)
+_CATEGORY_ALIAS: dict[str, str] = {
+    "Geopolitique": "Politique / Regulation",
 }
 SENTIMENT_COLORS = {
     "Positif": "#2a9d8f",
@@ -213,6 +216,9 @@ def load_articles(days: int) -> list[dict]:
         if a.get("published"):
             a["published_raw"] = a["published"]
             a["published"] = _normalize_date(a["published"])
+        # Migrate legacy categories
+        if a.get("category") in _CATEGORY_ALIAS:
+            a["category"] = _CATEGORY_ALIAS[a["category"]]
 
     # Compute mention counts and supa_hot flag
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
