@@ -727,17 +727,6 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
             font=dict(size=14, color="#adb5bd"),
             x=0.5, xanchor="center",
         ),
-        annotations=[dict(
-            text=(
-                "📰 <b>Couverture</b> = volume × sources &nbsp;·&nbsp; "
-                "🚀 <b>Innovation</b> = articles tech viraux &nbsp;·&nbsp; "
-                "🔥 <b>Influence</b> = hot topics × engagement"
-            ),
-            x=0.5, y=1.07, xref="paper", yref="paper",
-            showarrow=False,
-            font=dict(size=9, color="#666"),
-            align="center",
-        )],
         xaxis=dict(
             title=dict(
                 text="Score / 100",
@@ -749,7 +738,6 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
             tickfont=dict(size=10),
         ),
         yaxis=dict(tickfont=dict(size=11, color="#fafafa"), automargin=True),
-        # Legend as a boxed container, anchored to the right
         legend=dict(
             orientation="v",
             yanchor="middle", y=0.5,
@@ -761,7 +749,7 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
         ),
         paper_bgcolor="#0e1117",
         plot_bgcolor="#0e1117",
-        margin=dict(l=10, r=130, t=68, b=30),
+        margin=dict(l=10, r=130, t=44, b=10),
         height=450,
     )
     return fig
@@ -930,12 +918,18 @@ def run_streamlit() -> None:
 
     # ── Brief du jour ─────────────────────────────────────────────────────────
     @st.cache_data(ttl=3600, show_spinner=False)
-    def _cached_brief(date_str: str, titles_key: tuple) -> str:  # noqa: unused date_str — cache key
-        return _generate_brief_text(filtered)
+    def _cached_brief(date_str: str, articles_json: str) -> str:
+        import json as _json
+        return _generate_brief_text(_json.loads(articles_json))
 
     today_str  = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    hot_titles = tuple(a.get("title", "") for a in filtered if a.get("hot_topic"))[:8]
-    brief_text = _cached_brief(today_str, hot_titles)
+    brief_pool = [a for a in filtered if a.get("hot_topic")]
+    brief_json = json.dumps([
+        {k: a.get(k, "") for k in ("title", "summary", "hot_reason", "published", "supa_hot", "mention_count")}
+        for a in brief_pool
+    ])
+    with st.spinner("Génération du brief…"):
+        brief_text = _cached_brief(today_str, brief_json)
     brief_html = _brief_html_block(brief_text)
     if brief_html:
         st.markdown(brief_html, unsafe_allow_html=True)
@@ -963,6 +957,11 @@ def run_streamlit() -> None:
     col_globe, col_ranking = st.columns([3, 2])
     with col_ranking:
         st.plotly_chart(fig_country_ranking(filtered), use_container_width=True)
+        st.caption(
+            "📰 **Couverture** = volume × diversité des sources  ·  "
+            "🚀 **Innovation** = articles tech viraux  ·  "
+            "🔥 **Influence** = hot topics × engagement"
+        )
     with col_globe:
         globe_event = st.plotly_chart(
             fig_globe(filtered),
@@ -1382,7 +1381,14 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 
   <div class="charts-row">
     <div class="globe-card">{globe_html}</div>
-    <div class="radar-card">{radar_html}</div>
+    <div class="radar-card">
+      {radar_html}
+      <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
+        📰 <b>Couverture</b> = volume × diversité des sources &nbsp;·&nbsp;
+        🚀 <b>Innovation</b> = articles tech viraux &nbsp;·&nbsp;
+        🔥 <b>Influence</b> = hot topics × engagement
+      </p>
+    </div>
   </div>
   <div id="country-filter-bar">
     <span id="country-filter-label"></span>
