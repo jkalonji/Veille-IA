@@ -136,75 +136,58 @@ def _country_to_iso3(country: str) -> str | None:
 # AI Power influence — groupings & scoring
 # ---------------------------------------------------------------------------
 
-# ISO-3 sets for each major AI power bloc
-_POWER_ISO3: dict[str, set[str]] = {
-    "USA":    {"USA"},
-    "Chine":  {"CHN"},
-    "Europe": {"FRA", "GBR", "DEU", "NLD", "ITA", "ESP", "SWE", "BEL",
-               "CHE", "DNK", "FIN", "NOR", "POL"},
-    "Taiwan": {"TWN"},
-    "Russie": {"RUS"},
-}
-# Groq sometimes outputs "Europe" as a region text — catch it directly
-_EUROPE_TEXT: set[str] = {"Europe", "EU", "UE", "European Union"}
+def _compute_country_scores(articles: list[dict], top_n: int = 10) -> list[dict]:
+    """Compute 3 influence scores for every country, return top N by composite.
 
-_POWER_META: dict[str, dict] = {
-    "USA":    {"label": "🇺🇸 USA",    "color": "#00b4d8", "fill": "rgba(0,180,216,0.15)"},
-    "Chine":  {"label": "🇨🇳 Chine",  "color": "#e63946", "fill": "rgba(230,57,70,0.15)"},
-    "Europe": {"label": "🇪🇺 Europe", "color": "#f4a261", "fill": "rgba(244,162,97,0.15)"},
-    "Taiwan": {"label": "🇹🇼 Taiwan", "color": "#2a9d8f", "fill": "rgba(42,157,143,0.15)"},
-    "Russie": {"label": "🇷🇺 Russie", "color": "#9d4edd", "fill": "rgba(157,78,221,0.15)"},
-}
-
-
-def _article_to_power(article: dict) -> str | None:
-    """Return the AI power group key for an article, or None."""
-    country = (article.get("country") or "").strip()
-    if country in _EUROPE_TEXT:
-        return "Europe"
-    iso = _country_to_iso3(country)
-    if not iso:
-        return None
-    for power, iso_set in _POWER_ISO3.items():
-        if iso in iso_set:
-            return power
-    return None
-
-
-def _compute_power_scores(articles: list[dict]) -> dict[str, dict[str, float]]:
-    """Compute 3 normalized influence scores (0–100) for each AI power bloc.
-
-    Couverture  = article volume weighted by source diversity
-    Innovation  = absolute count of hot articles classified as 'tech' by Groq
-    Influence virale = hot-article count boosted by average mention density
+    Couverture      = article volume × source diversity bonus
+    Innovation      = count of hot articles classified hot_reason='tech' by Groq
+    Influence virale = hot-article count boosted by avg mention density
+    All metrics min-max normalized to 0–100 across all countries present.
     """
-    by_power: dict[str, list[dict]] = {p: [] for p in _POWER_ISO3}
+    by_iso: dict[str, list[dict]] = defaultdict(list)
     for a in articles:
-        power = _article_to_power(a)
-        if power:
-            by_power[power].append(a)
+        iso = _country_to_iso3(a.get("country", ""))
+        if iso:
+            by_iso[iso].append(a)
+
+    if not by_iso:
+        return []
 
     raw: dict[str, dict[str, float]] = {}
-    for power, arts in by_power.items():
-        n         = len(arts)
-        hot_arts  = [a for a in arts if a.get("hot_topic")]
-        tech_arts = [a for a in hot_arts if a.get("hot_reason") == "tech"]
-        sources   = {a.get("source") for a in arts if a.get("source")}
+    for iso, arts in by_iso.items():
+        n           = len(arts)
+        hot_arts    = [a for a in arts if a.get("hot_topic")]
+        tech_arts   = [a for a in hot_arts if a.get("hot_reason") == "tech"]
+        sources     = {a.get("source") for a in arts if a.get("source")}
         avg_mention = sum(a.get("mention_count", 0) for a in arts) / n if n else 0
-        raw[power] = {
+        raw[iso] = {
             "couverture": n * (1 + 0.3 * (len(sources) ** 0.5)),
             "innovation": float(len(tech_arts)),
             "virale":     len(hot_arts) * (1 + avg_mention * 0.3),
         }
 
-    # Min-max normalize each metric to 0–100
-    scores: dict[str, dict[str, float]] = {p: {} for p in _POWER_ISO3}
+    # Min-max normalize each metric to 0–100 across all countries
+    normed: dict[str, dict[str, float]] = {iso: {} for iso in raw}
     for metric in ("couverture", "innovation", "virale"):
-        vals  = [raw[p][metric] for p in _POWER_ISO3]
+        vals  = [raw[iso][metric] for iso in raw]
         max_v = max(vals) if max(vals) > 0 else 1
-        for power in _POWER_ISO3:
-            scores[power][metric] = round(raw[power][metric] / max_v * 100, 1)
-    return scores
+        for iso in raw:
+            normed[iso][metric] = round(raw[iso][metric] / max_v * 100, 1)
+
+    result = []
+    for iso, s in normed.items():
+        composite = round((s["couverture"] + s["innovation"] + s["virale"]) / 3, 1)
+        result.append({
+            "iso":        iso,
+            "name":       ISO3_TO_NAME.get(iso, iso),
+            "couverture": s["couverture"],
+            "innovation": s["innovation"],
+            "virale":     s["virale"],
+            "composite":  composite,
+        })
+
+    result.sort(key=lambda x: x["composite"], reverse=True)
+    return result[:top_n]
 
 
 # Also extend COUNTRY_TO_REGION to handle Groq text values ──────────────────
@@ -537,58 +520,62 @@ def fig_globe(articles: list[dict]) -> go.Figure:
     return fig
 
 
-def fig_influence_radar(articles: list[dict]) -> go.Figure:
-    """Radar chart: AI power influence across 3 dimensions (all from Supabase data)."""
-    scores = _compute_power_scores(articles)
-    axes   = ["Couverture", "Innovation", "Influence virale"]
-    theta  = axes + [axes[0]]   # close the polygon
+def fig_country_ranking(articles: list[dict]) -> go.Figure:
+    """Horizontal grouped bar chart: top 10 countries ranked by composite influence score."""
+    ranking = _compute_country_scores(articles, top_n=10)
 
+    if not ranking:
+        fig = go.Figure()
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE, height=400, paper_bgcolor="#0e1117",
+            title=dict(text="🏆 Top 10 pays — aucune donnée", font=dict(color="#adb5bd")),
+        )
+        return fig
+
+    # Reverse so #1 appears at top of horizontal bar chart
+    ranking_rev = list(reversed(ranking))
+    names = [r["name"] for r in ranking_rev]
+
+    metrics = [
+        ("couverture", "📰 Couverture",       "#00b4d8"),
+        ("innovation", "🚀 Innovation",        "#f4a261"),
+        ("virale",     "🔥 Influence virale",  "#e63946"),
+    ]
     fig = go.Figure()
-    for power, meta in _POWER_META.items():
-        s      = scores[power]
-        values = [s["couverture"], s["innovation"], s["virale"], s["couverture"]]
-        fig.add_trace(go.Scatterpolar(
-            r=values,
-            theta=theta,
-            fill="toself",
-            fillcolor=meta["fill"],
-            line=dict(color=meta["color"], width=2.5),
-            name=meta["label"],
-            hovertemplate="%{theta} : <b>%{r:.0f}</b> / 100<extra>" + meta["label"] + "</extra>",
+    for key, label, color in metrics:
+        values = [r[key] for r in ranking_rev]
+        fig.add_trace(go.Bar(
+            y=names,
+            x=values,
+            name=label,
+            orientation="h",
+            marker=dict(color=color, opacity=0.85),
+            hovertemplate=f"<b>%{{y}}</b><br>{label} : <b>%{{x:.0f}}</b> / 100<extra></extra>",
         ))
 
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        polar=dict(
-            bgcolor="#0e1117",
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickfont=dict(size=8, color="#555"),
-                gridcolor="#2a2d3a",
-                linecolor="#2a2d3a",
-            ),
-            angularaxis=dict(
-                tickfont=dict(size=12, color="#adb5bd"),
-                gridcolor="#2a2d3a",
-                linecolor="#2a2d3a",
-            ),
-        ),
-        showlegend=True,
-        legend=dict(
-            orientation="h",
-            yanchor="bottom", y=-0.22,
-            xanchor="center", x=0.5,
-            font=dict(size=11, color="#adb5bd"),
-        ),
+        barmode="group",
         title=dict(
-            text="⚡ Score d'influence IA — Grandes puissances",
+            text="🏆 Top 10 pays — Score d'influence IA",
             font=dict(size=14, color="#adb5bd"),
             x=0.5, xanchor="center",
         ),
+        xaxis=dict(
+            title="Score / 100", range=[0, 108],
+            gridcolor="#2a2d3a", tickfont=dict(size=10),
+        ),
+        yaxis=dict(tickfont=dict(size=11, color="#fafafa"), automargin=True),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=1.02,
+            xanchor="right", x=1,
+            font=dict(size=10, color="#adb5bd"),
+        ),
         paper_bgcolor="#0e1117",
-        margin=dict(l=50, r=50, t=55, b=80),
-        height=480,
+        plot_bgcolor="#0e1117",
+        margin=dict(l=10, r=20, t=60, b=20),
+        height=420,
     )
     return fig
 
@@ -755,9 +742,9 @@ def run_streamlit() -> None:
     if "globe_country" not in st.session_state:
         st.session_state["globe_country"] = None
 
-    col_globe, col_radar = st.columns([3, 2])
-    with col_radar:
-        st.plotly_chart(fig_influence_radar(filtered), use_container_width=True)
+    col_globe, col_ranking = st.columns([3, 2])
+    with col_ranking:
+        st.plotly_chart(fig_country_ranking(filtered), use_container_width=True)
     with col_globe:
         globe_event = st.plotly_chart(
             fig_globe(filtered),
@@ -1043,7 +1030,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         config={"responsive": True, "scrollZoom": False},
     )
     radar_html = pio.to_html(
-        fig_influence_radar(articles),
+        fig_country_ranking(articles),
         div_id="radar-div",
         full_html=False,
         include_plotlyjs=False,   # already bundled by globe_html
