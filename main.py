@@ -492,23 +492,27 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # 3. Classification with Groq
 # ---------------------------------------------------------------------------
 
-GROQ_SYSTEM_PROMPT = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec quatre cles :
+_GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec les cles suivantes :
 
 - "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses"]
   Note: les articles de geopolitique, regulation internationale et diplomatie tech vont dans "Politique / Regulation".
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
-- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global").
+- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global")."""
 
+_GROQ_PROMPT_HOT_REASON = """
 - "hot_reason": pourquoi cet article serait notable ou viral, parmi ces quatre valeurs EXACTES:
   * "debat"    — suscite une controverse, des opinions polarisees, un debat public ou du drama (ex: licenciements, echec d'un modele, proces, critique d'une entreprise)
   * "tech"     — annonce technique, sortie d'un modele, outil dev, benchmark, mise a jour produit (ex: lancement GPT-5, nouveau framework, record de performance)
   * "societe"  — impact sur la societe, l'emploi, l'ethique, la regulation, les droits (ex: loi IA, impact sur les metiers, biais algorithmique)
   * "tendance" — concept emergent, nouvelle direction de recherche, sujet qui monte progressivement (ex: MCP, vibe coding, nouveau paradigme)
-  Si tu n'es pas sur, choisis la valeur la plus proche du contenu reel de l'article.
+  Si tu n'es pas sur, choisis la valeur la plus proche du contenu reel de l'article."""
 
-Ne renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."""
+_GROQ_PROMPT_FOOTER = "\n\nNe renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."
+
+GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_HOT_REASON + _GROQ_PROMPT_FOOTER
+GROQ_SYSTEM_PROMPT_LITE = _GROQ_PROMPT_BASE + _GROQ_PROMPT_FOOTER
 
 VALID_CATEGORIES = {
     "Innovation / Tech",
@@ -524,36 +528,41 @@ VALID_HOT_REASONS = {"debat", "tech", "societe", "tendance"}
 
 
 async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None:
-    """Classify a single article in-place."""
+    """Classify a single article in-place.
+    hot_reason is only requested for articles already tagged as hot_topic,
+    saving tokens on the majority of articles that will never need that field."""
     user_msg = f"Titre: {article.title}\nSource: {article.source}"
     if article.description:
         user_msg += f"\nDescription: {article.description}"
+
+    system_prompt = GROQ_SYSTEM_PROMPT if article.hot_topic else GROQ_SYSTEM_PROMPT_LITE
+    max_tokens    = 160                 if article.hot_topic else 100
 
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": GROQ_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
+                {"role": "system", "content": system_prompt},
+                {"role": "user",   "content": user_msg},
             ],
             temperature=0.1,
-            max_tokens=160,
+            max_tokens=max_tokens,
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
-        cat    = result.get("category",   "Innovation / Tech")
-        sent   = result.get("sentiment",  "Neutre")
-        reason = result.get("hot_reason", "tech")
-        article.category   = cat    if cat    in VALID_CATEGORIES  else "Innovation / Tech"
-        article.sentiment  = sent   if sent   in VALID_SENTIMENTS  else "Neutre"
-        article.country    = result.get("country", "Global") or "Global"
-        article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
+        cat    = result.get("category",  "Innovation / Tech")
+        sent   = result.get("sentiment", "Neutre")
+        article.category  = cat  if cat  in VALID_CATEGORIES else "Innovation / Tech"
+        article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
+        article.country   = result.get("country", "Global") or "Global"
+        if article.hot_topic:
+            reason = result.get("hot_reason", "tech")
+            article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
-        article.category   = "Innovation / Tech"
-        article.sentiment  = "Neutre"
-        article.country    = "Global"
-        article.hot_reason = "tech"
+        article.category  = "Innovation / Tech"
+        article.sentiment = "Neutre"
+        article.country   = "Global"
 
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
