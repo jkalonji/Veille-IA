@@ -227,7 +227,7 @@ _GROQ_REGION_MAP: dict[str, str] = {
 
 # Hot reason groups — keyed by Groq's hot_reason values, order = tab display order
 HOT_SOURCE_META: list[dict] = [
-    {"key": "tech",     "label": "Tech viral",          "icon": "⭐", "color": "#238636", "border": "#3fb950"},
+    {"key": "tech",     "label": "News Tech",           "icon": "⭐", "color": "#238636", "border": "#3fb950"},
     {"key": "debat",    "label": "Crée le débat",       "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
     {"key": "societe",  "label": "Sujets de société",   "icon": "📡", "color": "#0e7490", "border": "#06b6d4"},
     {"key": "tendance", "label": "Tendances montantes", "icon": "🔮", "color": "#7b2ff7", "border": "#9d4edd"},
