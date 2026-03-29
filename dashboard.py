@@ -735,9 +735,20 @@ def run_streamlit() -> None:
     def _cached_load(days: int) -> list[dict]:
         return load_articles(days)
 
-    # Initialise days before data load
+    # ── Période d'analyse — en haut de page, avant chargement ────────────────
     if "days" not in st.session_state:
         st.session_state["days"] = 7
+
+    st.markdown("#### 🗓 Période d'analyse")
+    col_slider, col_1j, col_3j, col_7j, col_30j = st.columns([5, 1, 1, 1, 1])
+    with col_slider:
+        st.slider("Fenêtre (jours)", 1, 30, key="days", label_visibility="collapsed")
+    if col_1j.button("1j",   use_container_width=True): st.session_state["days"] = 1;  st.rerun()
+    if col_3j.button("3j",   use_container_width=True): st.session_state["days"] = 3;  st.rerun()
+    if col_7j.button("7j",   use_container_width=True): st.session_state["days"] = 7;  st.rerun()
+    if col_30j.button("30j", use_container_width=True): st.session_state["days"] = 30; st.rerun()
+    st.markdown("---")
+
     days = st.session_state["days"]
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
@@ -822,17 +833,6 @@ def run_streamlit() -> None:
     prev_pos_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Positif") / max(prev_total, 1) * 100)
     prev_neg_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Negatif") / max(prev_total, 1) * 100)
     prev_nb_src  = len({a["source"] for a in prev_filtered})
-
-    # ── Période d'analyse ─────────────────────────────────────────────────────
-    st.markdown("#### 🗓 Période d'analyse")
-    col_slider, col_1j, col_3j, col_7j, col_30j = st.columns([5, 1, 1, 1, 1])
-    with col_slider:
-        st.slider("Fenêtre (jours)", 1, 30, key="days", label_visibility="collapsed")
-    if col_1j.button("1j",   use_container_width=True): st.session_state["days"] = 1;  st.rerun()
-    if col_3j.button("3j",   use_container_width=True): st.session_state["days"] = 3;  st.rerun()
-    if col_7j.button("7j",   use_container_width=True): st.session_state["days"] = 7;  st.rerun()
-    if col_30j.button("30j", use_container_width=True): st.session_state["days"] = 30; st.rerun()
-    st.markdown("---")
 
     st.markdown(f"## 📰 {total} articles · {date_lbl}")
     k1, k2, k3, k4, k5 = st.columns(5)
