@@ -235,12 +235,6 @@ HOT_SOURCE_META: list[dict] = [
 ]
 _SOURCE_ORDER = {m["key"]: i for i, m in enumerate(HOT_SOURCE_META)}
 
-# Brief du jour — 3 angles affiché en haut de page
-_BRIEF_CONFIG = [
-    ("debat",    "🔴 À surveiller", "#e63946"),
-    ("tech",     "🟢 Opportunité",  "#2a9d8f"),
-    ("tendance", "🔮 Tendance",     "#9d4edd"),
-]
 
 # Mapping emoji-flag → world region (covers all sources in sources.json)
 COUNTRY_TO_REGION: dict[str, str] = {
@@ -398,78 +392,6 @@ def _hot_sort_key(a: dict):
         ts = 0.0
     return (supa, ts, -a.get("mention_count", 0))
 
-
-# ---------------------------------------------------------------------------
-# Brief du jour
-# ---------------------------------------------------------------------------
-
-def _generate_brief_text(articles: list[dict]) -> str:
-    """Generate a ~100-word daily brief via Groq from today's hot articles.
-    Falls back to a structured title list if Groq is unavailable."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    for cutoff in (today, ""):
-        pool = [
-            a for a in articles
-            if a.get("hot_topic") and (not cutoff or a.get("published", "") >= cutoff)
-        ]
-        if pool:
-            break
-    if not pool:
-        return ""
-
-    top = sorted(pool, key=_hot_sort_key)[:8]
-
-    groq_key = os.environ.get("GROQ_API_KEY")
-    if groq_key:
-        try:
-            from groq import Groq as _Groq
-            groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
-            client = _Groq(api_key=groq_key)
-            articles_text = "\n".join(
-                f"- [{a.get('hot_reason','')}] {a['title']}"
-                + (f" | {(a.get('summary') or '')[:80]}" if a.get("summary") else "")
-                for a in top
-            )
-            resp = client.chat.completions.create(
-                model=groq_model,
-                messages=[
-                    {"role": "system", "content": (
-                        "Tu es un assistant de veille IA pour des autoentrepreneurs. "
-                        "En 3 phrases maximum et 100 mots maximum, dis ce qui s'est passé dans l'IA aujourd'hui : "
-                        "un sujet qui fait débat, une opportunité tech concrète, une tendance à surveiller. "
-                        "Sois direct, factuel, orienté business. Commence directement sans intro."
-                    )},
-                    {"role": "user", "content": f"Sujets chauds du jour :\n{articles_text}"},
-                ],
-                temperature=0.4,
-                max_tokens=160,
-            )
-            return resp.choices[0].message.content.strip()
-        except Exception:
-            pass
-
-    # Fallback: one title per brief category
-    lines = []
-    for key, label, _ in _BRIEF_CONFIG:
-        group = [a for a in top if (a.get("hot_reason") or "") == key]
-        if group:
-            lines.append(f"{label} : {group[0].get('title', '')}")
-    return " · ".join(lines) if lines else f"Sujet du jour : {top[0].get('title', '')}"
-
-
-def _brief_html_block(text: str) -> str:
-    """Return an HTML card for the brief du jour (Streamlit & export)."""
-    if not text:
-        return ""
-    return (
-        '<div style="background:linear-gradient(135deg,#1a1d27,#12151e);'
-        'border:1px solid #2a2d3a;border-left:4px solid #00b4d8;'
-        'border-radius:10px;padding:14px 18px;margin-bottom:16px;">'
-        '<div style="font-size:11px;font-weight:700;letter-spacing:1.5px;'
-        'color:#00b4d8;margin-bottom:8px;">⚡ BRIEF DU JOUR</div>'
-        f'<div style="color:#e0e0e0;font-size:14px;line-height:1.7;">{text}</div>'
-        '</div>'
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -916,24 +838,6 @@ def run_streamlit() -> None:
     k4.metric("Sources actives",     nb_src,         delta=nb_src - prev_nb_src)
     k5.metric("Catégorie dominante", f"{CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
 
-    # ── Brief du jour ─────────────────────────────────────────────────────────
-    @st.cache_data(ttl=3600, show_spinner=False)
-    def _cached_brief(date_str: str, articles_json: str) -> str:
-        import json as _json
-        return _generate_brief_text(_json.loads(articles_json))
-
-    today_str  = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    brief_pool = [a for a in filtered if a.get("hot_topic")]
-    brief_json = json.dumps([
-        {k: a.get(k, "") for k in ("title", "summary", "hot_reason", "published", "supa_hot", "mention_count")}
-        for a in brief_pool
-    ])
-    with st.spinner("Génération du brief…"):
-        brief_text = _cached_brief(today_str, brief_json)
-    brief_html = _brief_html_block(brief_text)
-    if brief_html:
-        st.markdown(brief_html, unsafe_allow_html=True)
-
     # ── Résumé hebdo (on demand) ──────────────────────────────────────────────
     if st.session_state.get("show_weekly"):
         if "weekly_text_cache" not in st.session_state:
@@ -1255,7 +1159,6 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     )
 
     deduped     = _deduplicate_articles(articles)
-    brief_block = _brief_html_block(_generate_brief_text(articles))
     hot_cards   = _hot_articles_html(deduped)
     table_rows  = _articles_to_html_table(deduped)
 
@@ -1394,8 +1297,6 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     <span id="country-filter-label"></span>
     <button id="country-filter-clear" onclick="clearCountryFilter()">✕ Effacer le filtre</button>
   </div>
-
-  {brief_block}
 
   <h2>🔥 Hot Articles</h2>
   {hot_cards}
