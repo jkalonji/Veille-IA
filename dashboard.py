@@ -149,11 +149,11 @@ _POWER_ISO3: dict[str, set[str]] = {
 _EUROPE_TEXT: set[str] = {"Europe", "EU", "UE", "European Union"}
 
 _POWER_META: dict[str, dict] = {
-    "USA":    {"label": "🇺🇸 USA",    "color": "#00b4d8"},
-    "Chine":  {"label": "🇨🇳 Chine",  "color": "#e63946"},
-    "Europe": {"label": "🇪🇺 Europe", "color": "#f4a261"},
-    "Taiwan": {"label": "🇹🇼 Taiwan", "color": "#2a9d8f"},
-    "Russie": {"label": "🇷🇺 Russie", "color": "#9d4edd"},
+    "USA":    {"label": "🇺🇸 USA",    "color": "#00b4d8", "fill": "rgba(0,180,216,0.15)"},
+    "Chine":  {"label": "🇨🇳 Chine",  "color": "#e63946", "fill": "rgba(230,57,70,0.15)"},
+    "Europe": {"label": "🇪🇺 Europe", "color": "#f4a261", "fill": "rgba(244,162,97,0.15)"},
+    "Taiwan": {"label": "🇹🇼 Taiwan", "color": "#2a9d8f", "fill": "rgba(42,157,143,0.15)"},
+    "Russie": {"label": "🇷🇺 Russie", "color": "#9d4edd", "fill": "rgba(157,78,221,0.15)"},
 }
 
 
@@ -551,7 +551,7 @@ def fig_influence_radar(articles: list[dict]) -> go.Figure:
             r=values,
             theta=theta,
             fill="toself",
-            fillcolor=meta["color"] + "28",   # ~15 % opacity fill
+            fillcolor=meta["fill"],
             line=dict(color=meta["color"], width=2.5),
             name=meta["label"],
             hovertemplate="%{theta} : <b>%{r:.0f}</b> / 100<extra>" + meta["label"] + "</extra>",
