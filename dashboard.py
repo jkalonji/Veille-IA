@@ -5,6 +5,7 @@ Usage CI    : python dashboard.py --export [--days N] [--top N]
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -56,6 +57,116 @@ SENTIMENT_COLORS = {
 
 PLOTLY_TEMPLATE = "plotly_dark"
 
+# ---------------------------------------------------------------------------
+# Geography — ISO-3 mappings for the 3D globe
+# ---------------------------------------------------------------------------
+
+# Emoji flags stored in sources.json → ISO-3
+FLAG_TO_ISO3: dict[str, str] = {
+    "🇺🇸": "USA", "🇫🇷": "FRA", "🇬🇧": "GBR", "🇩🇪": "DEU",
+    "🇳🇱": "NLD", "🇳🇬": "NGA", "🇦🇪": "ARE", "🇸🇦": "SAU",
+    "🇮🇳": "IND", "🇯🇵": "JPN", "🇨🇳": "CHN", "🇰🇷": "KOR",
+    "🇿🇦": "ZAF", "🇨🇦": "CAN", "🇦🇺": "AUS", "🇷🇺": "RUS",
+    "🇧🇷": "BRA", "🇮🇱": "ISR", "🇮🇹": "ITA", "🇪🇸": "ESP",
+    "🇸🇬": "SGP", "🇹🇼": "TWN", "🇸🇪": "SWE", "🇨🇭": "CHE",
+}
+
+# Groq text country output (English & French) → ISO-3
+TEXT_TO_ISO3: dict[str, str] = {
+    # English
+    "USA": "USA", "US": "USA", "United States": "USA", "America": "USA",
+    "China": "CHN", "UK": "GBR", "United Kingdom": "GBR",
+    "France": "FRA", "Germany": "DEU", "Japan": "JPN",
+    "India": "IND", "Canada": "CAN", "Australia": "AUS",
+    "Russia": "RUS", "Brazil": "BRA", "South Korea": "KOR",
+    "Netherlands": "NLD", "UAE": "ARE", "Saudi Arabia": "SAU",
+    "Nigeria": "NGA", "South Africa": "ZAF", "Israel": "ISR",
+    "Italy": "ITA", "Spain": "ESP", "Sweden": "SWE",
+    "Singapore": "SGP", "Taiwan": "TWN", "Hong Kong": "HKG",
+    "Switzerland": "CHE", "Belgium": "BEL", "Denmark": "DNK",
+    "Finland": "FIN", "Norway": "NOR", "Poland": "POL",
+    "Mexico": "MEX", "Argentina": "ARG", "Chile": "CHL",
+    "Indonesia": "IDN", "Malaysia": "MYS", "Thailand": "THA",
+    "Vietnam": "VNM", "Philippines": "PHL", "Pakistan": "PAK",
+    "Egypt": "EGY", "Morocco": "MAR", "Kenya": "KEN",
+    "Ethiopia": "ETH", "Ghana": "GHA",
+    # French
+    "Chine": "CHN", "Japon": "JPN", "Inde": "IND",
+    "Allemagne": "DEU", "Royaume-Uni": "GBR", "Russie": "RUS",
+    "Corée du Sud": "KOR", "Émirats arabes unis": "ARE",
+    "Afrique du Sud": "ZAF", "Brésil": "BRA",
+    "Italie": "ITA", "Espagne": "ESP", "Suède": "SWE",
+    "Canada": "CAN", "Australie": "AUS", "Mexique": "MEX",
+    "Israël": "ISR", "Singapour": "SGP", "Indonésie": "IDN",
+    "Thaïlande": "THA", "Maroc": "MAR", "Égypte": "EGY",
+    "Argentine": "ARG", "Pologne": "POL", "Belgique": "BEL",
+    "Pays-Bas": "NLD", "Suisse": "CHE", "Danemark": "DNK",
+    "Finlande": "FIN", "Norvège": "NOR",
+}
+
+# ISO-3 → display name with flag
+ISO3_TO_NAME: dict[str, str] = {
+    "USA": "🇺🇸 USA", "FRA": "🇫🇷 France", "GBR": "🇬🇧 UK",
+    "CHN": "🇨🇳 Chine", "DEU": "🇩🇪 Allemagne", "JPN": "🇯🇵 Japon",
+    "IND": "🇮🇳 Inde", "KOR": "🇰🇷 Corée du Sud", "NLD": "🇳🇱 Pays-Bas",
+    "ARE": "🇦🇪 Émirats arabes unis", "SAU": "🇸🇦 Arabie Saoudite",
+    "NGA": "🇳🇬 Nigeria", "ZAF": "🇿🇦 Afrique du Sud",
+    "CAN": "🇨🇦 Canada", "AUS": "🇦🇺 Australie", "RUS": "🇷🇺 Russie",
+    "BRA": "🇧🇷 Brésil", "ISR": "🇮🇱 Israël", "ITA": "🇮🇹 Italie",
+    "ESP": "🇪🇸 Espagne", "SWE": "🇸🇪 Suède", "SGP": "🇸🇬 Singapour",
+    "TWN": "🇹🇼 Taïwan", "HKG": "🇭🇰 Hong Kong", "CHE": "🇨🇭 Suisse",
+    "BEL": "🇧🇪 Belgique", "DNK": "🇩🇰 Danemark", "FIN": "🇫🇮 Finlande",
+    "NOR": "🇳🇴 Norvège", "POL": "🇵🇱 Pologne", "MEX": "🇲🇽 Mexique",
+    "ARG": "🇦🇷 Argentine", "IDN": "🇮🇩 Indonésie", "EGY": "🇪🇬 Égypte",
+    "MAR": "🇲🇦 Maroc", "KEN": "🇰🇪 Kenya", "GHA": "🇬🇭 Ghana",
+}
+
+
+def _country_to_iso3(country: str) -> str | None:
+    """Convert an emoji flag OR Groq text country string to ISO-3 code.
+    Returns None for region-level values (Europe, Global, …)."""
+    if not country:
+        return None
+    if country in FLAG_TO_ISO3:
+        return FLAG_TO_ISO3[country]
+    return TEXT_TO_ISO3.get(country)
+
+
+# Also extend COUNTRY_TO_REGION to handle Groq text values ──────────────────
+_GROQ_REGION_MAP: dict[str, str] = {
+    "USA": "Amérique du Nord", "US": "Amérique du Nord", "United States": "Amérique du Nord",
+    "Canada": "Amérique du Nord",
+    "Brazil": "Amérique du Sud", "Brésil": "Amérique du Sud",
+    "Argentina": "Amérique du Sud", "Mexico": "Amérique du Nord", "Mexique": "Amérique du Nord",
+    "France": "Europe", "Germany": "Europe", "Allemagne": "Europe",
+    "UK": "Europe", "United Kingdom": "Europe", "Royaume-Uni": "Europe",
+    "Netherlands": "Europe", "Pays-Bas": "Europe", "Italy": "Europe", "Italie": "Europe",
+    "Spain": "Europe", "Espagne": "Europe", "Sweden": "Europe", "Suède": "Europe",
+    "Belgium": "Europe", "Belgique": "Europe", "Switzerland": "Europe", "Suisse": "Europe",
+    "Denmark": "Europe", "Danemark": "Europe", "Finland": "Europe", "Finlande": "Europe",
+    "Norway": "Europe", "Norvège": "Europe", "Poland": "Europe", "Pologne": "Europe",
+    "Russia": "Europe", "Russie": "Europe",
+    "China": "Asie de l'Est", "Chine": "Asie de l'Est",
+    "Japan": "Asie de l'Est", "Japon": "Asie de l'Est",
+    "South Korea": "Asie de l'Est", "Corée du Sud": "Asie de l'Est",
+    "Taiwan": "Asie de l'Est", "Taïwan": "Asie de l'Est",
+    "Hong Kong": "Asie de l'Est",
+    "India": "Asie du Sud", "Inde": "Asie du Sud", "Pakistan": "Asie du Sud",
+    "Singapore": "Asie du Sud-Est", "Singapour": "Asie du Sud-Est",
+    "Indonesia": "Asie du Sud-Est", "Indonésie": "Asie du Sud-Est",
+    "Malaysia": "Asie du Sud-Est", "Thailand": "Asie du Sud-Est",
+    "Vietnam": "Asie du Sud-Est",
+    "Australia": "Asie du Sud-Est", "Australie": "Asie du Sud-Est",
+    "UAE": "Moyen-Orient", "Émirats arabes unis": "Moyen-Orient",
+    "Saudi Arabia": "Moyen-Orient", "Arabie Saoudite": "Moyen-Orient",
+    "Israel": "Moyen-Orient", "Israël": "Moyen-Orient", "Egypt": "Moyen-Orient",
+    "Nigeria": "Afrique", "South Africa": "Afrique", "Afrique du Sud": "Afrique",
+    "Kenya": "Afrique", "Ghana": "Afrique", "Morocco": "Afrique", "Maroc": "Afrique",
+    "Ethiopia": "Afrique",
+    "Global": "International", "International": "International", "Europe": "Europe",
+    "Asia": "Asie du Sud-Est", "Asie": "Asie du Sud-Est",
+}
+
 # Hot reason groups — keyed by Groq's hot_reason values, order = tab display order
 HOT_SOURCE_META: list[dict] = [
     {"key": "debat",    "label": "Sujets en débat",     "icon": "💬", "color": "#ff6600", "border": "#ff6600"},
@@ -87,7 +198,11 @@ COUNTRY_TO_REGION: dict[str, str] = {
 }
 
 def _region(country: str) -> str:
-    return COUNTRY_TO_REGION.get(country, "Autre")
+    return (
+        COUNTRY_TO_REGION.get(country)
+        or _GROQ_REGION_MAP.get(country)
+        or "Autre"
+    )
 
 # ---------------------------------------------------------------------------
 # Data
@@ -224,7 +339,7 @@ def load_articles(days: int) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     resp = (
         client.table("articles")
-        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason")
+        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason, summary, description")
         .gte("published", cutoff)
         .order("hot_topic", desc=True)
         .order("published", desc=True)
@@ -255,83 +370,94 @@ def load_articles(days: int) -> list[dict]:
 # Figures
 # ---------------------------------------------------------------------------
 
-def fig_categories(articles: list[dict]) -> go.Figure:
-    counts = Counter(a["category"] for a in articles)
-    cats   = list(CATEGORY_COLORS.keys())
-    values = [counts.get(c, 0) for c in cats]
-    labels = [f"{CATEGORY_EMOJI[c]} {c}" for c in cats]
-    colors = list(CATEGORY_COLORS.values())
-
-    fig = go.Figure(go.Bar(
-        x=values, y=labels, orientation="h",
-        marker_color=colors,
-        text=values, textposition="outside",
-    ))
-    fig.update_layout(
-        template=PLOTLY_TEMPLATE,
-        title="Articles par catégorie",
-        xaxis_title="Nombre d'articles",
-        yaxis=dict(autorange="reversed"),
-        margin=dict(l=10, r=30, t=50, b=20),
-        height=320,
-    )
-    return fig
-
-
-def fig_sentiments(articles: list[dict]) -> go.Figure:
-    counts = Counter(a["sentiment"] for a in articles)
-    labels = list(SENTIMENT_COLORS.keys())
-    values = [counts.get(s, 0) for s in labels]
-    colors = list(SENTIMENT_COLORS.values())
-
-    fig = go.Figure(go.Pie(
-        labels=labels, values=values,
-        marker_colors=colors,
-        hole=0.55,
-        textinfo="label+percent",
-    ))
-    fig.update_layout(
-        template=PLOTLY_TEMPLATE,
-        title="Répartition des sentiments",
-        margin=dict(l=10, r=10, t=50, b=10),
-        height=320,
-        showlegend=False,
-    )
-    return fig
-
-
-def fig_trend(articles: list[dict]) -> go.Figure:
-    """Stacked area chart: articles per day broken down by sentiment."""
-    sentiments = ["Positif", "Neutre", "Negatif"]  # stacking order bottom→top
-
-    # Count by (date, sentiment)
-    by_date_sent: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+def fig_globe(articles: list[dict]) -> go.Figure:
+    """3D orthographic choropleth globe.
+    Countries are colored by article count; clicking one filters the feed."""
+    iso_counts: Counter = Counter()
     for a in articles:
-        by_date_sent[a["published"]][a.get("sentiment", "Neutre")] += 1
+        iso = _country_to_iso3(a.get("country", ""))
+        if iso:
+            iso_counts[iso] += 1
 
-    dates = sorted(by_date_sent)
+    if not iso_counts:
+        fig = go.Figure()
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE,
+            height=460,
+            title="Aucune donnée géographique disponible",
+            geo=dict(
+                showframe=False, showland=True, landcolor="#1a1d27",
+                showocean=True, oceancolor="#0e1117",
+                projection_type="orthographic", bgcolor="#0e1117",
+            ),
+            paper_bgcolor="#0e1117",
+        )
+        return fig
 
-    fig = go.Figure()
-    for sent in sentiments:
-        values = [by_date_sent[d][sent] for d in dates]
-        fig.add_trace(go.Scatter(
-            x=dates, y=values,
-            name=sent,
-            mode="lines",
-            stackgroup="one",          # enables stacked area
-            fillcolor=SENTIMENT_COLORS[sent],
-            line=dict(color=SENTIMENT_COLORS[sent], width=1),
-            hovertemplate="%{y} " + sent + "<extra></extra>",
-        ))
+    iso_list  = list(iso_counts.keys())
+    counts    = [iso_counts[c] for c in iso_list]
+    max_count = max(counts)
 
+    hover_text = [
+        f"<b>{ISO3_TO_NAME.get(iso, iso)}</b><br>{cnt} article{'s' if cnt > 1 else ''}"
+        for iso, cnt in zip(iso_list, counts)
+    ]
+
+    # Gradient: dark-blue (1 article) → cyan (brand) → orange → red (max)
+    colorscale = [
+        [0.0,  "#0d3b5e"],
+        [0.15, "#0077b6"],
+        [0.40, "#00b4d8"],
+        [0.70, "#f4a261"],
+        [1.0,  "#e63946"],
+    ]
+
+    fig = go.Figure(go.Choropleth(
+        locations=iso_list,
+        z=counts,
+        locationmode="ISO-3",
+        colorscale=colorscale,
+        zmin=1,
+        zmax=max_count,
+        showscale=True,
+        colorbar=dict(
+            title=dict(text="Articles", font=dict(color="#adb5bd", size=12)),
+            tickfont=dict(color="#adb5bd"),
+            thickness=14,
+            len=0.55,
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(0,0,0,0)",
+        ),
+        hovertext=hover_text,
+        hoverinfo="text",
+    ))
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        title="Tendance quotidienne (par sentiment)",
-        xaxis_title="Date",
-        yaxis_title="Articles",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=10, r=10, t=50, b=20),
-        height=260,
+        title=dict(
+            text="🌍 Couverture mondiale  ·  cliquez sur un pays pour filtrer",
+            font=dict(size=14, color="#adb5bd"),
+            x=0.5, xanchor="center",
+        ),
+        geo=dict(
+            showframe=False,
+            showcoastlines=True,
+            coastlinecolor="#2a2d3a",
+            showland=True,
+            landcolor="#1a1d27",
+            showocean=True,
+            oceancolor="#0e1117",
+            showlakes=False,
+            lakecolor="#0e1117",
+            showcountries=True,
+            countrycolor="#2a2d3a",
+            projection_type="orthographic",
+            bgcolor="#0e1117",
+        ),
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        margin=dict(l=0, r=0, t=50, b=0),
+        height=460,
+        dragmode="pan",
     )
     return fig
 
@@ -368,35 +494,6 @@ def _render_hot_articles(articles: list[dict], container) -> None:
             tab.info(f"Aucun article {meta['label'].lower()} sur la période sélectionnée.")
 
 
-def fig_heatmap(articles: list[dict]) -> go.Figure:
-    """Articles by day-of-week × category."""
-    day_names = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
-    cats = list(CATEGORY_COLORS.keys())
-    matrix = {cat: [0] * 7 for cat in cats}
-
-    for a in articles:
-        try:
-            dow = datetime.strptime(a["published"], "%Y-%m-%d").weekday()
-            matrix[a["category"]][dow] += 1
-        except (ValueError, KeyError):
-            pass
-
-    z       = [matrix[c] for c in cats]
-    ylabels = [f"{CATEGORY_EMOJI[c]} {c}" for c in cats]
-
-    fig = go.Figure(go.Heatmap(
-        z=z, x=day_names, y=ylabels,
-        colorscale="Blues",
-        text=z, texttemplate="%{text}",
-        showscale=False,
-    ))
-    fig.update_layout(
-        template=PLOTLY_TEMPLATE,
-        title="Heatmap : catégorie × jour de la semaine",
-        margin=dict(l=10, r=10, t=50, b=20),
-        height=300,
-    )
-    return fig
 
 # ---------------------------------------------------------------------------
 # Streamlit UI
@@ -523,24 +620,50 @@ def run_streamlit() -> None:
 
     st.markdown("---")
 
-    # ── Charts ────────────────────────────────────────────────────────────────
-    c1, c2 = st.columns([3, 2])
-    c1.plotly_chart(fig_categories(filtered), use_container_width=True)
-    c2.plotly_chart(fig_sentiments(filtered), use_container_width=True)
+    # ── 3D Globe ──────────────────────────────────────────────────────────────
+    if "globe_country" not in st.session_state:
+        st.session_state["globe_country"] = None
 
-    c3, c4 = st.columns([2, 3])
-    c3.plotly_chart(fig_trend(filtered),   use_container_width=True)
-    c4.plotly_chart(fig_heatmap(filtered), use_container_width=True)
+    globe_event = st.plotly_chart(
+        fig_globe(filtered),
+        use_container_width=True,
+        on_select="rerun",
+        key="globe_chart",
+        selection_mode="points",
+    )
+    # Capture click → toggle country filter
+    if globe_event and globe_event.selection and globe_event.selection.points:
+        clicked_iso = globe_event.selection.points[0].get("location")
+        if clicked_iso:
+            if st.session_state["globe_country"] == clicked_iso:
+                st.session_state["globe_country"] = None   # second click = deselect
+            else:
+                st.session_state["globe_country"] = clicked_iso
 
-    _render_hot_articles(filtered, st)
+    selected_iso = st.session_state["globe_country"]
+
+    # Country filter indicator + clear button
+    if selected_iso:
+        country_name   = ISO3_TO_NAME.get(selected_iso, selected_iso)
+        country_count  = sum(1 for a in filtered if _country_to_iso3(a.get("country", "")) == selected_iso)
+        col_info, col_clear = st.columns([5, 1])
+        col_info.info(f"🌍 Filtré par pays : **{country_name}** — {country_count} article{'s' if country_count != 1 else ''}")
+        if col_clear.button("✕ Effacer", use_container_width=True):
+            st.session_state["globe_country"] = None
+            st.rerun()
+        display_articles = [a for a in filtered if _country_to_iso3(a.get("country", "")) == selected_iso]
+    else:
+        display_articles = filtered
+
+    _render_hot_articles(display_articles, st)
 
     # ── Table — local filters ─────────────────────────────────────────────────
-    filtered = _deduplicate_articles(filtered)
+    display_articles = _deduplicate_articles(display_articles)
     st.markdown("### 📋 Derniers articles")
 
     fa, fb, fc, fd = st.columns([3, 2, 1, 1])
     search   = fa.text_input("🔍 Recherche dans les titres", placeholder="ex: GPT, OpenAI, Mistral…")
-    all_srcs = sorted({a["source"] for a in filtered})
+    all_srcs = sorted({a["source"] for a in display_articles})
     sel_srcs = fb.multiselect("Source", all_srcs, default=all_srcs, label_visibility="visible")
     only_new = fc.checkbox("Nouveautés 24h", value=False)
     only_top = fd.checkbox("Catégorie dominante", value=False)
@@ -548,7 +671,7 @@ def run_streamlit() -> None:
     # Apply local filters to the display dataframe only
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     table_rows = [
-        a for a in filtered
+        a for a in display_articles
         if  (not search   or search.lower() in a.get("title", "").lower())
         and (a["source"]  in sel_srcs)
         and (not only_new or a["published"] >= today_str)
@@ -606,9 +729,10 @@ def _articles_to_html_table(articles: list[dict]) -> str:
         age    = _time_ago(a.get("published_raw") or a.get("published", ""))
         n_src  = a.get("source_count", 1)
         src_display = src if n_src == 1 else f"{src} <small style='color:#888'>+{n_src-1}</small>"
+        iso = _country_to_iso3(a.get("country", "")) or ""
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
-            f'data-category="{cat}" data-source="{src}"{hot_class}>'
+            f'data-category="{cat}" data-source="{src}" data-iso="{iso}"{hot_class}>'
             f"<td>{age}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
@@ -643,8 +767,9 @@ def _render_hot_card_html(a: dict, meta: dict) -> str:
         card_style  = f"background:#1a1d27;border-left:4px solid {border};"
         title_color = "#fafafa"
         badge_html  = ""
+    iso = _country_to_iso3(a.get("country", "")) or ""
     return f"""
-    <div style="border-radius:8px;padding:12px 14px;margin-bottom:8px;{card_style}">
+    <div data-iso="{iso}" style="border-radius:8px;padding:12px 14px;margin-bottom:8px;{card_style}">
       <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
         {badge_html}<a href="{a.get('url','#')}" target="_blank"
            style="color:{title_color};text-decoration:none;">{title}</a>
@@ -775,23 +900,13 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     date_lbl = f"{dates[0]} → {dates[-1]}" if dates else "—"
     print(f"{total} articles trouvés ({date_lbl})")
 
-    figs = [
-        fig_categories(articles),
-        fig_sentiments(articles),
-        fig_trend(articles),
-        fig_heatmap(articles),
-    ]
-
-    # Combine all figures into a single self-contained HTML
-    # FIX 8: embed Plotly bundle locally (first fig only) — works offline/CI without CDN
-    html_parts = []
-    for i, fig in enumerate(figs):
-        html_parts.append(pio.to_html(
-            fig,
-            full_html=False,
-            include_plotlyjs=True if i == 0 else False,
-            config={"responsive": True},
-        ))
+    globe_html = pio.to_html(
+        fig_globe(articles),
+        div_id="globe-div",
+        full_html=False,
+        include_plotlyjs=True,
+        config={"responsive": True, "scrollZoom": False},
+    )
 
     deduped    = _deduplicate_articles(articles)
     hot_cards  = _hot_articles_html(deduped)
@@ -828,9 +943,23 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     a  {{ color: #00b4d8; text-decoration: none; }}
     a:active {{ opacity: 0.7; }}
 
-    /* ── Charts grid — 1 col mobile, 2 col desktop ──────── */
-    .grid {{ display: grid; grid-template-columns: 1fr; gap: 10px; }}
-    .card {{ background: #1a1d27; border-radius: 10px; padding: 6px; overflow: hidden; }}
+    /* ── Globe ──────────────────────────────────────────── */
+    .globe-card {{
+      background: #0e1117; border-radius: 10px;
+      overflow: hidden; margin-bottom: 10px; position: relative;
+    }}
+    #country-filter-bar {{
+      display: none; align-items: center; gap: 10px;
+      background: #1a1d27; border-radius: 8px;
+      padding: 10px 14px; margin-bottom: 10px; font-size: 13px;
+    }}
+    #country-filter-bar.visible {{ display: flex; }}
+    #country-filter-label {{ color: #00b4d8; flex: 1; }}
+    #country-filter-clear {{
+      background: #2a2d3a; color: #adb5bd; border: none;
+      border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px;
+    }}
+    #country-filter-clear:hover {{ background: #e63946; color: #fff; }}
 
     /* ── Hot articles ────────────────────────────────────── */
     .hot-card {{
@@ -893,11 +1022,10 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <h1>🤖 AI Radar — Dashboard de Veille</h1>
   <p>{total} articles · {date_lbl} · généré le {now}</p>
 
-  <div class="grid">
-    <div class="card">{html_parts[0]}</div>
-    <div class="card">{html_parts[1]}</div>
-    <div class="card">{html_parts[2]}</div>
-    <div class="card">{html_parts[3]}</div>
+  <div class="globe-card">{globe_html}</div>
+  <div id="country-filter-bar">
+    <span id="country-filter-label"></span>
+    <button id="country-filter-clear" onclick="clearCountryFilter()">✕ Effacer le filtre</button>
   </div>
 
   <h2>🔥 Hot Articles</h2>
@@ -930,6 +1058,49 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   </div>
 
   <script>
+    // ── ISO-3 → display name (mirrored from Python) ─────────────────────────
+    const ISO3_NAME = {json.dumps(ISO3_TO_NAME)};
+
+    // ── Globe click → country filter ────────────────────────────────────────
+    let selectedIso = '';
+
+    function applyCountryFilter() {{
+      const bar   = document.getElementById('country-filter-bar');
+      const label = document.getElementById('country-filter-label');
+      const allCards = document.querySelectorAll('[data-iso]');
+
+      if (selectedIso) {{
+        bar.classList.add('visible');
+        label.textContent = '🌍 Pays sélectionné : ' + (ISO3_NAME[selectedIso] || selectedIso);
+        allCards.forEach(el => {{
+          el.style.display = (el.dataset.iso === selectedIso) ? '' : 'none';
+        }});
+      }} else {{
+        bar.classList.remove('visible');
+        allCards.forEach(el => {{ el.style.display = ''; }});
+      }}
+      applyFilters();   // re-run text/sent/cat/src filters on top
+    }}
+
+    function clearCountryFilter() {{
+      selectedIso = '';
+      applyCountryFilter();
+    }}
+
+    // Attach Plotly globe click event after DOM is ready
+    window.addEventListener('load', function() {{
+      var gd = document.getElementById('globe-div');
+      if (!gd) return;
+      gd.on('plotly_click', function(data) {{
+        if (!data || !data.points || !data.points[0]) return;
+        var iso = data.points[0].location;
+        if (!iso) return;
+        selectedIso = (selectedIso === iso) ? '' : iso;   // toggle
+        applyCountryFilter();
+      }});
+    }});
+
+    // ── Table filters ────────────────────────────────────────────────────────
     const rows    = Array.from(document.querySelectorAll('#articles-table tbody tr'));
     const search  = document.getElementById('f-search');
     const fSent   = document.getElementById('f-sent');
@@ -944,6 +1115,11 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       const src  = fSrc.value;
       let visible = 0;
       rows.forEach(row => {{
+        // skip rows already hidden by country filter
+        if (selectedIso && row.dataset.iso !== selectedIso) {{
+          row.style.display = 'none';
+          return;
+        }}
         const match =
           (!q    || row.dataset.title.includes(q))    &&
           (!sent || row.dataset.sentiment === sent)    &&
