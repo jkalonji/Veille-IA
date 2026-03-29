@@ -398,66 +398,63 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             seen.add(a.url)
             unique.append(a)
 
-    # Filter: keep only AI-related articles
-    ai_keywords = {
-        # Core AI concepts
-        "ai", "artificial intelligence", "machine learning", "deep learning",
+    # Filter: keep only AI-related articles.
+    # Strong keywords are AI-specific enough to qualify an article on their own.
+    # Weak keywords are generic tech terms that require at least one companion match.
+    AI_STRONG_KEYWORDS = {
+        # Core concepts
+        "artificial intelligence", "machine learning", "deep learning",
         "llm", "large language model", "neural network", "chatgpt", "gpt",
-        "generative ai", "chatbot", "autonomous", "agi", "artificial general intelligence",
+        "generative ai", "chatbot", "agi", "artificial general intelligence",
         "intelligence artificielle", "apprentissage automatique",
-
         # Architectures & techniques
         "transformer", "mixture of experts", "moe", "diffusion model",
         "multimodal", "vision language model", "vlm", "reasoning model",
         "context window", "sparse model", "embedding", "vector database",
         "retrieval augmented generation", "rag", "fine-tuning", "rlhf",
         "test-time compute", "inference scaling",
-
         # Prompt & context engineering
         "prompt engineering", "context engineering", "system prompt",
         "few-shot", "zero-shot", "chain of thought", "prompt optimization",
         "prompt injection", "jailbreak",
-
-        # Vibe coding & AI-assisted dev
-        "vibe coding", "ai coding", "code generation", "copilot", "cursor",
-        "devin", "github copilot",
-
+        # AI-assisted dev
+        "vibe coding", "ai coding", "code generation", "github copilot",
+        "devin", "cursor ai",
         # Model optimization
-        "quantization", "pruning", "distillation", "knowledge distillation",
-        "lora", "qlora", "peft", "model compression", "speculative decoding",
-        "flash attention", "inference optimization", "efficient inference",
-
-        # Hardware: Nvidia, competitors & TSMC
-        "nvidia", "amd", "intel", "qualcomm", "tsmc", "h100", "h200", "b200",
-        "blackwell", "hopper", "tpu", "cerebras", "graphcore", "tenstorrent",
-        "gaudi", "arm chip",
-
-        # Major players (established)
-        "openai", "anthropic", "deepmind", "gemini", "meta ai", "mistral",
-        "xai", "grok", "cohere", "hugging face", "stability ai", "runway",
-
+        "quantization", "knowledge distillation", "lora", "qlora", "peft",
+        "model compression", "speculative decoding", "flash attention",
+        "inference optimization", "efficient inference",
+        # AI hardware
+        "tpu", "cerebras", "graphcore", "tenstorrent", "h100", "h200", "b200",
+        "blackwell", "hopper",
+        # Established AI companies
+        "openai", "anthropic", "deepmind", "meta ai", "hugging face",
+        "stability ai", "runway", "cohere", "mistral", "xai",
         # Emerging players
         "deepseek", "qwen", "perplexity", "together ai",
-
         # Agents & autonomy
-        "ai agent", "agentic", "model context protocol", "mcp", "autonomous agent",
-
+        "ai agent", "agentic", "model context protocol", "autonomous agent",
         # Safety, ethics & regulation
         "ai safety", "alignment", "hallucination", "ai regulation", "eu ai act",
         "responsible ai", "interpretability", "explainability", "deepfake",
-        "ai governance", "bias",
-
-        # Performance & benchmarks
-        "benchmark", "evals", "open source model", "open weights", "edge ai",
-        "on-device ai",
-
-        # Infrastructure
-        "data center", "semiconductor", "chip", "robot", "automation",
+        "ai governance",
+        # Performance
+        "open source model", "open weights", "edge ai", "on-device ai", "evals",
+    }
+    # Weak: generic terms that need a companion keyword to be AI-relevant
+    AI_WEAK_KEYWORDS = {
+        "ai", "grok", "gemini", "copilot", "cursor",
+        "nvidia", "amd", "intel", "qualcomm", "tsmc", "gaudi", "arm chip",
+        "chip", "semiconductor", "data center", "robot", "automation",
+        "benchmark", "bias", "pruning", "distillation",
     }
     filtered = []
     for a in unique:
         text = (a.title + " " + a.description).lower()
-        if any(kw in text for kw in ai_keywords):
+        strong_hits = sum(1 for kw in AI_STRONG_KEYWORDS if kw in text)
+        weak_hits   = sum(1 for kw in AI_WEAK_KEYWORDS   if kw in text)
+        # Pass if: 1 strong keyword OR 2+ keyword matches in total
+        if strong_hits >= 1 or (strong_hits + weak_hits) >= 2:
             filtered.append(a)
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
