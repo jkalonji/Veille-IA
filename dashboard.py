@@ -235,6 +235,13 @@ HOT_SOURCE_META: list[dict] = [
 ]
 _SOURCE_ORDER = {m["key"]: i for i, m in enumerate(HOT_SOURCE_META)}
 
+# Brief du jour — 3 angles affiché en haut de page
+_BRIEF_CONFIG = [
+    ("debat",    "🔴 À surveiller", "#e63946"),
+    ("tech",     "🟢 Opportunité",  "#2a9d8f"),
+    ("tendance", "🔮 Tendance",     "#9d4edd"),
+]
+
 # Mapping emoji-flag → world region (covers all sources in sources.json)
 COUNTRY_TO_REGION: dict[str, str] = {
     "🇺🇸": "Amérique du Nord",
@@ -390,6 +397,156 @@ def _hot_sort_key(a: dict):
     except Exception:
         ts = 0.0
     return (supa, ts, -a.get("mention_count", 0))
+
+
+# ---------------------------------------------------------------------------
+# Brief du jour
+# ---------------------------------------------------------------------------
+
+def _compute_daily_brief(articles: list[dict]) -> list[dict]:
+    """Return the top hot article for each of the 3 brief angles (debat/tech/tendance).
+    Falls back to last 7 days if no hot articles found today."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for cutoff in (today, ""):
+        pool = [
+            a for a in articles
+            if a.get("hot_topic") and (not cutoff or a.get("published", "") >= cutoff)
+        ]
+        if pool:
+            break
+    result = []
+    for key, label, color in _BRIEF_CONFIG:
+        group = [a for a in pool if (a.get("hot_reason") or "") == key]
+        if not group:
+            continue
+        best = sorted(group, key=_hot_sort_key)[0]
+        result.append({
+            "label":   label,
+            "color":   color,
+            "title":   best.get("title", ""),
+            "url":     best.get("url", "#"),
+            "summary": (best.get("summary") or best.get("description") or "")[:110].strip(),
+        })
+        if len(result) == 3:
+            break
+    return result
+
+
+def _brief_html_block(brief_items: list[dict]) -> str:
+    """Return an HTML card for the brief du jour section (Streamlit & export)."""
+    if not brief_items:
+        return ""
+    rows_html = ""
+    for item in brief_items:
+        summ = ""
+        if item["summary"]:
+            s = item["summary"]
+            if not s.endswith((".", "!", "?")):
+                s += "…"
+            summ = (f'<span style="color:#888;font-size:12px;margin-left:6px;">— {s}</span>')
+        rows_html += (
+            f'<div style="padding:7px 0;border-bottom:1px solid #2a2d3a;line-height:1.5;">'
+            f'<span style="font-weight:700;color:{item["color"]};">{item["label"]}</span>'
+            f'&nbsp;·&nbsp;'
+            f'<a href="{item["url"]}" target="_blank" '
+            f'style="color:#fafafa;text-decoration:none;font-weight:500;">{item["title"]}</a>'
+            f'{summ}</div>'
+        )
+    return (
+        '<div style="background:linear-gradient(135deg,#1a1d27,#12151e);'
+        'border:1px solid #2a2d3a;border-left:4px solid #00b4d8;'
+        'border-radius:10px;padding:14px 18px;margin-bottom:16px;">'
+        '<div style="font-size:11px;font-weight:700;letter-spacing:1.5px;'
+        'color:#00b4d8;margin-bottom:10px;">⚡ BRIEF DU JOUR</div>'
+        f'{rows_html}'
+        '</div>'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Weekly summary text (feature 6)
+# ---------------------------------------------------------------------------
+
+def _generate_weekly_text(articles: list[dict]) -> str:
+    """Generate a copy-paste weekly summary from articles (last 7 days).
+    Calls Groq for synthesis if GROQ_API_KEY is available."""
+    from collections import Counter as _Counter
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    week_arts = [a for a in articles if a.get("published", "") >= week_ago]
+    if not week_arts:
+        week_arts = articles
+
+    hot  = [a for a in week_arts if a.get("hot_topic")]
+    supa = [a for a in week_arts if a.get("supa_hot")]
+    by_cat = _Counter(a.get("category", "?") for a in week_arts)
+    top_cat = by_cat.most_common(1)[0][0] if by_cat else "—"
+    top_hot = sorted(
+        hot,
+        key=lambda a: (a.get("supa_hot", False), a.get("mention_count", 0)),
+        reverse=True,
+    )[:5]
+
+    now = datetime.now(timezone.utc)
+    week_start = (now - timedelta(days=7)).strftime("%d/%m")
+    week_end   = now.strftime("%d/%m/%Y")
+
+    lines = [
+        f"📊 RADAR IA — Bilan de la semaine",
+        f"🗓 {week_start} → {week_end}",
+        "",
+        f"📰 {len(week_arts)} articles collectés",
+        f"🔥 {len(hot)} hot topics  ·  🌋 {len(supa)} supra-hot",
+        f"🏆 Catégorie dominante : {CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat}",
+        "",
+        "📊 Répartition par catégorie :",
+    ]
+    for cat, n in by_cat.most_common():
+        lines.append(f"  {CATEGORY_EMOJI.get(cat, '📌')} {cat} : {n}")
+    lines += ["", "🔥 TOP 5 SUJETS DE LA SEMAINE", ""]
+
+    for i, a in enumerate(top_hot, 1):
+        badge = "🌋" if a.get("supa_hot") else "🔥"
+        lines.append(f"{i}. {badge} {a.get('title', '')}")
+        blurb = (a.get("summary") or a.get("description") or "")[:120].strip()
+        if blurb:
+            if not blurb.endswith((".", "!", "?")):
+                blurb += "…"
+            lines.append(f"   {blurb}")
+        lines.append(f"   🔗 {a.get('url', '')}")
+        lines.append("")
+
+    # Optional Groq synthesis
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if groq_key and top_hot:
+        try:
+            from groq import Groq as _Groq
+            groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+            client = _Groq(api_key=groq_key)
+            articles_text = "\n".join(
+                f"- {a['title']}"
+                + (f" | {(a.get('summary') or a.get('description', ''))[:100]}" if (a.get('summary') or a.get('description')) else "")
+                for a in top_hot
+            )
+            resp = client.chat.completions.create(
+                model=groq_model,
+                messages=[
+                    {"role": "system", "content": (
+                        "Tu es un analyste IA senior. Rédige une synthèse qualitative en 3-4 points, "
+                        "en français, sous forme de bullet points. Chaque point : un thème + la tendance + 1 exemple. "
+                        "Sois direct, factuel. Commence immédiatement par le premier bullet."
+                    )},
+                    {"role": "user", "content": f"Articles de la semaine :\n{articles_text}"},
+                ],
+                temperature=0.3,
+                max_tokens=500,
+            )
+            synthesis = resp.choices[0].message.content.strip()
+            lines += ["", "🤖 SYNTHÈSE IA", "", synthesis]
+        except Exception:
+            pass
+
+    lines += ["", "---", "🤖 Généré par Cobalt.xyz · AI Radar"]
+    return "\n".join(lines)
 
 
 def load_articles(days: int) -> list[dict]:
@@ -669,12 +826,13 @@ def run_streamlit() -> None:
         if "days" not in st.session_state:
             st.session_state["days"] = 7
         st.caption("Période rapide")
-        p1, p2, p3 = st.columns(3)
-        if p1.button("1j", use_container_width=True): st.session_state["days"] = 1
-        if p2.button("3j", use_container_width=True): st.session_state["days"] = 3
-        if p3.button("7j", use_container_width=True): st.session_state["days"] = 7
+        p1, p2, p3, p4 = st.columns(4)
+        if p1.button("1j",  use_container_width=True): st.session_state["days"] = 1
+        if p2.button("3j",  use_container_width=True): st.session_state["days"] = 3
+        if p3.button("7j",  use_container_width=True): st.session_state["days"] = 7
+        if p4.button("30j", use_container_width=True): st.session_state["days"] = 30
 
-        days = st.slider("Fenêtre d'analyse (jours)", 1, 7, key="days")
+        days = st.slider("Fenêtre d'analyse (jours)", 1, 30, key="days")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
@@ -717,6 +875,9 @@ def run_streamlit() -> None:
         if st.button("🔄 Rafraîchir", use_container_width=True):
             _cached_load.clear()
             st.rerun()
+        st.markdown("---")
+        if st.button("📥 Résumé de la semaine", use_container_width=True):
+            st.session_state["show_weekly"] = True
         st.caption("Données : Supabase · Classif : Groq")
 
     # ── Apply global filters to both periods ──────────────────────────────────
@@ -758,11 +919,29 @@ def run_streamlit() -> None:
     k4.metric("Sources actives",     nb_src,         delta=nb_src - prev_nb_src)
     k5.metric("Catégorie dominante", f"{CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
 
+    # ── Brief du jour ─────────────────────────────────────────────────────────
+    brief_items = _compute_daily_brief(filtered)
+    brief_html  = _brief_html_block(brief_items)
+    if brief_html:
+        st.markdown(brief_html, unsafe_allow_html=True)
+
+    # ── Résumé hebdo (on demand) ──────────────────────────────────────────────
+    if st.session_state.get("show_weekly"):
+        with st.expander("📥 Résumé de la semaine — copy-paste", expanded=True):
+            with st.spinner("Génération du résumé…"):
+                weekly_text = _generate_weekly_text(filtered)
+            st.text_area("", weekly_text, height=420, label_visibility="collapsed")
+            if st.button("✕ Fermer le résumé"):
+                st.session_state["show_weekly"] = False
+                st.rerun()
+
     st.markdown("---")
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
         st.session_state["globe_country"] = None
+    if "show_weekly" not in st.session_state:
+        st.session_state["show_weekly"] = False
 
     col_globe, col_ranking = st.columns([3, 2])
     with col_ranking:
@@ -1059,9 +1238,10 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         config={"responsive": True},
     )
 
-    deduped    = _deduplicate_articles(articles)
-    hot_cards  = _hot_articles_html(deduped)
-    table_rows = _articles_to_html_table(deduped)
+    deduped     = _deduplicate_articles(articles)
+    brief_block = _brief_html_block(_compute_daily_brief(articles))
+    hot_cards   = _hot_articles_html(deduped)
+    table_rows  = _articles_to_html_table(deduped)
 
     # Build filter option lists for the HTML selects
     def _options(values: list[str]) -> str:
@@ -1191,6 +1371,8 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     <span id="country-filter-label"></span>
     <button id="country-filter-clear" onclick="clearCountryFilter()">✕ Effacer le filtre</button>
   </div>
+
+  {brief_block}
 
   <h2>🔥 Hot Articles</h2>
   {hot_cards}
