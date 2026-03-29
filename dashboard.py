@@ -599,7 +599,7 @@ def _render_hot_articles(articles: list[dict], container) -> None:
         groups[src if src != "unknown" else "debat"].append(a)
 
     tab_labels = [
-        f"{m['icon']} {m['label']}" + (f" ({len(groups[m['key']])})" if groups[m["key"]] else "")
+        f"{m['icon']} {m['label']} ({len(groups[m['key']])})"
         for m in named_meta
     ]
     tabs = container.tabs(tab_labels)
