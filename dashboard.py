@@ -937,11 +937,11 @@ def _hot_articles_html(articles: list[dict]) -> str:
             btn_style = f"border-color:{m['border']};color:{m['color']};" if is_active else ""
             onclick   = ""
         active_cls = " hot-tab--active" if is_active and not is_empty else ""
-        count_html = f'<span class="hot-tab__count">{count}</span>' if count else ""
         buttons += (
             f'<button class="hot-tab{active_cls}" data-group="{m["key"]}" '
             f'style="{btn_style}" {onclick}>'
-            f'{m["icon"]} {m["label"]}{count_html}'
+            f'{m["icon"]} {m["label"]}'
+            f'<span class="hot-tab__count">{count}</span>'
             f'</button>'
         )
 
@@ -1205,6 +1205,27 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     // ── Globe click → country filter ────────────────────────────────────────
     let selectedIso = '';
 
+    function updateHotTabCounts() {{
+      document.querySelectorAll('.hot-tab[data-group]').forEach(function(btn) {{
+        var group = btn.dataset.group;
+        var panel = document.getElementById('hot-' + group);
+        if (!panel) return;
+        var cards = panel.querySelectorAll('[data-iso]');
+        var visible = 0;
+        cards.forEach(function(c) {{
+          if (!selectedIso || c.dataset.iso === selectedIso) visible++;
+        }});
+        var span = btn.querySelector('.hot-tab__count');
+        if (span) span.textContent = visible;
+        // Dim button when count is 0, restore otherwise
+        if (visible === 0) {{
+          btn.style.opacity = '0.35';
+        }} else {{
+          btn.style.opacity = '';
+        }}
+      }});
+    }}
+
     function applyCountryFilter() {{
       const bar   = document.getElementById('country-filter-bar');
       const label = document.getElementById('country-filter-label');
@@ -1220,7 +1241,8 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         bar.classList.remove('visible');
         allCards.forEach(el => {{ el.style.display = ''; }});
       }}
-      applyFilters();   // re-run text/sent/cat/src filters on top
+      updateHotTabCounts();  // sync tab button counts with visible cards
+      applyFilters();         // re-run text/sent/cat/src filters on top
     }}
 
     function clearCountryFilter() {{
