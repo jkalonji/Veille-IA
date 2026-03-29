@@ -568,14 +568,14 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
         yaxis=dict(tickfont=dict(size=11, color="#fafafa"), automargin=True),
         legend=dict(
             orientation="h",
-            yanchor="bottom", y=1.02,
-            xanchor="right", x=1,
+            yanchor="top", y=-0.04,
+            xanchor="center", x=0.5,
             font=dict(size=10, color="#adb5bd"),
         ),
         paper_bgcolor="#0e1117",
         plot_bgcolor="#0e1117",
-        margin=dict(l=10, r=20, t=60, b=20),
-        height=420,
+        margin=dict(l=10, r=20, t=50, b=55),
+        height=450,
     )
     return fig
 
