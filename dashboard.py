@@ -630,7 +630,7 @@ def run_streamlit() -> None:
 
     st.set_page_config(
         layout="wide",
-        page_title="AI Radar",
+        page_title="Cobalt.xyz · AI Radar",
         page_icon="🤖",
     )
 
@@ -640,7 +640,8 @@ def run_streamlit() -> None:
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.title("🤖 AI Radar")
+        st.title("🤖 Cobalt.xyz · AI Radar")
+        st.caption("L'actualité IA mondiale : tendances, innovations et influences.")
         st.markdown("---")
 
         # Période rapide — preset buttons update the slider via session_state
@@ -1056,7 +1057,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e1117">
-  <title>AI Radar — Dashboard</title>
+  <title>Cobalt.xyz · AI Radar</title>
   <style>
     /* ── Reset & base ───────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
@@ -1157,7 +1158,8 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   </style>
 </head>
 <body>
-  <h1>🤖 AI Radar — Dashboard de Veille</h1>
+  <h1>🤖 Cobalt.xyz · AI Radar</h1>
+  <p style="color:#adb5bd;font-size:0.9rem;margin-bottom:4px;">L'actualité IA mondiale : tendances, innovations et influences.</p>
   <p>{total} articles · {date_lbl} · généré le {now}</p>
 
   <div class="charts-row">
