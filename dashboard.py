@@ -132,6 +132,81 @@ def _country_to_iso3(country: str) -> str | None:
     return TEXT_TO_ISO3.get(country)
 
 
+# ---------------------------------------------------------------------------
+# AI Power influence — groupings & scoring
+# ---------------------------------------------------------------------------
+
+# ISO-3 sets for each major AI power bloc
+_POWER_ISO3: dict[str, set[str]] = {
+    "USA":    {"USA"},
+    "Chine":  {"CHN"},
+    "Europe": {"FRA", "GBR", "DEU", "NLD", "ITA", "ESP", "SWE", "BEL",
+               "CHE", "DNK", "FIN", "NOR", "POL"},
+    "Taiwan": {"TWN"},
+    "Russie": {"RUS"},
+}
+# Groq sometimes outputs "Europe" as a region text — catch it directly
+_EUROPE_TEXT: set[str] = {"Europe", "EU", "UE", "European Union"}
+
+_POWER_META: dict[str, dict] = {
+    "USA":    {"label": "🇺🇸 USA",    "color": "#00b4d8"},
+    "Chine":  {"label": "🇨🇳 Chine",  "color": "#e63946"},
+    "Europe": {"label": "🇪🇺 Europe", "color": "#f4a261"},
+    "Taiwan": {"label": "🇹🇼 Taiwan", "color": "#2a9d8f"},
+    "Russie": {"label": "🇷🇺 Russie", "color": "#9d4edd"},
+}
+
+
+def _article_to_power(article: dict) -> str | None:
+    """Return the AI power group key for an article, or None."""
+    country = (article.get("country") or "").strip()
+    if country in _EUROPE_TEXT:
+        return "Europe"
+    iso = _country_to_iso3(country)
+    if not iso:
+        return None
+    for power, iso_set in _POWER_ISO3.items():
+        if iso in iso_set:
+            return power
+    return None
+
+
+def _compute_power_scores(articles: list[dict]) -> dict[str, dict[str, float]]:
+    """Compute 3 normalized influence scores (0–100) for each AI power bloc.
+
+    Couverture  = article volume weighted by source diversity
+    Innovation  = absolute count of hot articles classified as 'tech' by Groq
+    Influence virale = hot-article count boosted by average mention density
+    """
+    by_power: dict[str, list[dict]] = {p: [] for p in _POWER_ISO3}
+    for a in articles:
+        power = _article_to_power(a)
+        if power:
+            by_power[power].append(a)
+
+    raw: dict[str, dict[str, float]] = {}
+    for power, arts in by_power.items():
+        n         = len(arts)
+        hot_arts  = [a for a in arts if a.get("hot_topic")]
+        tech_arts = [a for a in hot_arts if a.get("hot_reason") == "tech"]
+        sources   = {a.get("source") for a in arts if a.get("source")}
+        avg_mention = sum(a.get("mention_count", 0) for a in arts) / n if n else 0
+        raw[power] = {
+            "couverture": n * (1 + 0.3 * (len(sources) ** 0.5)),
+            "innovation": float(len(tech_arts)),
+            "virale":     len(hot_arts) * (1 + avg_mention * 0.3),
+        }
+
+    # Min-max normalize each metric to 0–100
+    scores: dict[str, dict[str, float]] = {p: {} for p in _POWER_ISO3}
+    for metric in ("couverture", "innovation", "virale"):
+        vals  = [raw[p][metric] for p in _POWER_ISO3]
+        max_v = max(vals) if max(vals) > 0 else 1
+        for power in _POWER_ISO3:
+            scores[power][metric] = round(raw[power][metric] / max_v * 100, 1)
+    return scores
+
+
 # Also extend COUNTRY_TO_REGION to handle Groq text values ──────────────────
 _GROQ_REGION_MAP: dict[str, str] = {
     "USA": "Amérique du Nord", "US": "Amérique du Nord", "United States": "Amérique du Nord",
@@ -462,6 +537,62 @@ def fig_globe(articles: list[dict]) -> go.Figure:
     return fig
 
 
+def fig_influence_radar(articles: list[dict]) -> go.Figure:
+    """Radar chart: AI power influence across 3 dimensions (all from Supabase data)."""
+    scores = _compute_power_scores(articles)
+    axes   = ["Couverture", "Innovation", "Influence virale"]
+    theta  = axes + [axes[0]]   # close the polygon
+
+    fig = go.Figure()
+    for power, meta in _POWER_META.items():
+        s      = scores[power]
+        values = [s["couverture"], s["innovation"], s["virale"], s["couverture"]]
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=theta,
+            fill="toself",
+            fillcolor=meta["color"] + "28",   # ~15 % opacity fill
+            line=dict(color=meta["color"], width=2.5),
+            name=meta["label"],
+            hovertemplate="%{theta} : <b>%{r:.0f}</b> / 100<extra>" + meta["label"] + "</extra>",
+        ))
+
+    fig.update_layout(
+        template=PLOTLY_TEMPLATE,
+        polar=dict(
+            bgcolor="#0e1117",
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickfont=dict(size=8, color="#555"),
+                gridcolor="#2a2d3a",
+                linecolor="#2a2d3a",
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=12, color="#adb5bd"),
+                gridcolor="#2a2d3a",
+                linecolor="#2a2d3a",
+            ),
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom", y=-0.22,
+            xanchor="center", x=0.5,
+            font=dict(size=11, color="#adb5bd"),
+        ),
+        title=dict(
+            text="⚡ Score d'influence IA — Grandes puissances",
+            font=dict(size=14, color="#adb5bd"),
+            x=0.5, xanchor="center",
+        ),
+        paper_bgcolor="#0e1117",
+        margin=dict(l=50, r=50, t=55, b=80),
+        height=480,
+    )
+    return fig
+
+
 def _render_hot_articles(articles: list[dict], container) -> None:
     """Render hot articles as tabs grouped by detection source in Streamlit."""
     import streamlit as st
@@ -620,17 +751,21 @@ def run_streamlit() -> None:
 
     st.markdown("---")
 
-    # ── 3D Globe ──────────────────────────────────────────────────────────────
+    # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
         st.session_state["globe_country"] = None
 
-    globe_event = st.plotly_chart(
-        fig_globe(filtered),
-        use_container_width=True,
-        on_select="rerun",
-        key="globe_chart",
-        selection_mode="points",
-    )
+    col_globe, col_radar = st.columns([3, 2])
+    with col_radar:
+        st.plotly_chart(fig_influence_radar(filtered), use_container_width=True)
+    with col_globe:
+        globe_event = st.plotly_chart(
+            fig_globe(filtered),
+            use_container_width=True,
+            on_select="rerun",
+            key="globe_chart",
+            selection_mode="points",
+        )
     # Capture click → toggle country filter
     if globe_event and globe_event.selection and globe_event.selection.points:
         clicked_iso = globe_event.selection.points[0].get("location")
@@ -907,6 +1042,13 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         include_plotlyjs=True,
         config={"responsive": True, "scrollZoom": False},
     )
+    radar_html = pio.to_html(
+        fig_influence_radar(articles),
+        div_id="radar-div",
+        full_html=False,
+        include_plotlyjs=False,   # already bundled by globe_html
+        config={"responsive": True},
+    )
 
     deduped    = _deduplicate_articles(articles)
     hot_cards  = _hot_articles_html(deduped)
@@ -943,10 +1085,19 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     a  {{ color: #00b4d8; text-decoration: none; }}
     a:active {{ opacity: 0.7; }}
 
-    /* ── Globe ──────────────────────────────────────────── */
-    .globe-card {{
+    /* ── Charts grid (globe + radar) ────────────────────── */
+    .charts-row {{
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }}
+    @media (min-width: 640px) {{
+      .charts-row {{ grid-template-columns: 3fr 2fr; }}
+    }}
+    .globe-card, .radar-card {{
       background: #0e1117; border-radius: 10px;
-      overflow: hidden; margin-bottom: 10px; position: relative;
+      overflow: hidden; position: relative;
     }}
     #country-filter-bar {{
       display: none; align-items: center; gap: 10px;
@@ -1022,7 +1173,10 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <h1>🤖 AI Radar — Dashboard de Veille</h1>
   <p>{total} articles · {date_lbl} · généré le {now}</p>
 
-  <div class="globe-card">{globe_html}</div>
+  <div class="charts-row">
+    <div class="globe-card">{globe_html}</div>
+    <div class="radar-card">{radar_html}</div>
+  </div>
   <div id="country-filter-bar">
     <span id="country-filter-label"></span>
     <button id="country-filter-clear" onclick="clearCountryFilter()">✕ Effacer le filtre</button>
