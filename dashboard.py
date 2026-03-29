@@ -561,20 +561,41 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
             font=dict(size=14, color="#adb5bd"),
             x=0.5, xanchor="center",
         ),
+        annotations=[dict(
+            text=(
+                "📰 <b>Couverture</b> = volume × sources &nbsp;·&nbsp; "
+                "🚀 <b>Innovation</b> = articles tech viraux &nbsp;·&nbsp; "
+                "🔥 <b>Influence</b> = hot topics × engagement"
+            ),
+            x=0.5, y=1.07, xref="paper", yref="paper",
+            showarrow=False,
+            font=dict(size=9, color="#666"),
+            align="center",
+        )],
         xaxis=dict(
-            title="Score / 100", range=[0, 108],
-            gridcolor="#2a2d3a", tickfont=dict(size=10),
+            title=dict(
+                text="Score / 100",
+                font=dict(size=10, color="#666"),
+                standoff=8,
+            ),
+            range=[0, 108],
+            gridcolor="#2a2d3a",
+            tickfont=dict(size=10),
         ),
         yaxis=dict(tickfont=dict(size=11, color="#fafafa"), automargin=True),
+        # Legend as a boxed container, anchored to the right
         legend=dict(
-            orientation="h",
-            yanchor="top", y=-0.04,
-            xanchor="center", x=0.5,
+            orientation="v",
+            yanchor="middle", y=0.5,
+            xanchor="left",   x=1.02,
             font=dict(size=10, color="#adb5bd"),
+            bgcolor="#1a1d27",
+            bordercolor="#2a2d3a",
+            borderwidth=1,
         ),
         paper_bgcolor="#0e1117",
         plot_bgcolor="#0e1117",
-        margin=dict(l=10, r=20, t=50, b=55),
+        margin=dict(l=10, r=130, t=68, b=30),
         height=450,
     )
     return fig
