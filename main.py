@@ -40,6 +40,7 @@ class Article:
     supa_hot: bool = False
     hot_source: str = ""    # pipe-separated detection signals: "trends|hn|github|db"
     hot_reason: str = ""    # groq content classification: "debat"|"tech"|"societe"|"tendance"
+    summary: str = ""       # groq-generated 1-sentence summary in French
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -499,7 +500,9 @@ _GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque arti
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
-- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global")."""
+- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global").
+
+- "summary": une phrase de synthese en francais (20-30 mots max) qui explique l'essentiel de l'article. Commence directement par le fait principal, sans tourner autour du pot."""
 
 _GROQ_PROMPT_HOT_REASON = """
 - "hot_reason": pourquoi cet article serait notable ou viral, parmi ces quatre valeurs EXACTES:
@@ -536,7 +539,8 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
         user_msg += f"\nDescription: {article.description}"
 
     system_prompt = GROQ_SYSTEM_PROMPT if article.hot_topic else GROQ_SYSTEM_PROMPT_LITE
-    max_tokens    = 160                 if article.hot_topic else 100
+    # hot articles need tokens for hot_reason; all articles now include summary
+    max_tokens    = 220 if article.hot_topic else 160
 
     try:
         response = await client.chat.completions.create(
@@ -555,6 +559,7 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
         article.category  = cat  if cat  in VALID_CATEGORIES else "Innovation / Tech"
         article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
         article.country   = result.get("country", "Global") or "Global"
+        article.summary   = (result.get("summary") or "").strip()
         if article.hot_topic:
             reason = result.get("hot_reason", "tech")
             article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
@@ -605,23 +610,27 @@ def save_to_supabase(articles: list[Article]) -> None:
             "hot_topic": a.hot_topic,
             "hot_source": a.hot_source,
             "hot_reason": a.hot_reason,
+            "summary": a.summary,
         }
         for a in articles
     ]
+
+    # Columns that may be absent if migrations haven't been applied yet
+    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary")
 
     try:
         client.table("articles").upsert(rows, on_conflict="url").execute()
         logging.info(f"Supabase: upserted {len(rows)} articles")
     except Exception as e:
-        # Fallback: retry without new columns if migration not yet run
-        if "hot_source" in str(e) or "hot_reason" in str(e):
-            logging.warning("hot_source/hot_reason columns missing — run migration. Retrying without them.")
+        missing = [c for c in _OPTIONAL_COLS if c in str(e)]
+        if missing:
+            logging.warning(f"Columns missing ({missing}) — run migration. Retrying without them.")
             for row in rows:
-                row.pop("hot_source", None)
-                row.pop("hot_reason", None)
+                for col in missing:
+                    row.pop(col, None)
             try:
                 client.table("articles").upsert(rows, on_conflict="url").execute()
-                logging.info(f"Supabase: upserted {len(rows)} articles (without hot_source/hot_reason)")
+                logging.info(f"Supabase: upserted {len(rows)} articles (partial columns)")
             except Exception as e2:
                 logging.error(f"Supabase upsert error: {e2}")
         else:
@@ -698,16 +707,17 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
             badge = f"🌋 <b>SUPA HOT · {article.mention_count} sources</b>\n"
         else:
             badge = "🔥 "
-        desc = article.description.strip()
-        if desc and not desc.endswith((".", "!", "?")):
-            desc += "…"
+        # Prefer the Groq-generated summary; fall back to raw description snippet
+        blurb = (article.summary or article.description).strip()
+        if blurb and not blurb.endswith((".", "!", "?")):
+            blurb += "…"
 
         entry_lines = [
             f"{badge}{sent_emoji} <b>{article.title}</b>",
             f"{cat_emoji} {article.category} | {article.country} {article.source}",
         ]
-        if desc:
-            entry_lines.append(f"<i>{desc}</i>")
+        if blurb:
+            entry_lines.append(f"<i>{blurb}</i>")
         entry_lines.append(f'<a href="{article.url}">🔗 Lire l\'article</a>')
         entry = "\n".join(entry_lines)
 
