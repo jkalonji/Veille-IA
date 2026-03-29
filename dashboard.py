@@ -625,9 +625,9 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     names = [r["name"] for r in ranking_rev]
 
     metrics = [
-        ("couverture", "📰 Couverture",       "#00b4d8"),
-        ("innovation", "🚀 Innovation",        "#f4a261"),
         ("virale",     "🔥 Influence virale",  "#e63946"),
+        ("innovation", "🚀 Innovation",        "#f4a261"),
+        ("couverture", "📰 Couverture",       "#00b4d8"),
     ]
     fig = go.Figure()
     for key, label, color in metrics:
@@ -735,23 +735,16 @@ def run_streamlit() -> None:
     def _cached_load(days: int) -> list[dict]:
         return load_articles(days)
 
+    # Initialise days before data load
+    if "days" not in st.session_state:
+        st.session_state["days"] = 7
+    days = st.session_state["days"]
+
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
         st.title("🤖 Cobalt.xyz · AI Radar")
         st.caption("L'actualité IA mondiale : tendances, innovations et influences.")
         st.markdown("---")
-
-        # Période rapide — preset buttons update the slider via session_state
-        if "days" not in st.session_state:
-            st.session_state["days"] = 7
-        st.caption("Période rapide")
-        p1, p2, p3, p4 = st.columns(4)
-        if p1.button("1j",  use_container_width=True): st.session_state["days"] = 1
-        if p2.button("3j",  use_container_width=True): st.session_state["days"] = 3
-        if p3.button("7j",  use_container_width=True): st.session_state["days"] = 7
-        if p4.button("30j", use_container_width=True): st.session_state["days"] = 30
-
-        days = st.slider("Fenêtre d'analyse (jours)", 1, 30, key="days")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
@@ -829,6 +822,17 @@ def run_streamlit() -> None:
     prev_pos_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Positif") / max(prev_total, 1) * 100)
     prev_neg_pct = round(sum(1 for a in prev_filtered if a["sentiment"] == "Negatif") / max(prev_total, 1) * 100)
     prev_nb_src  = len({a["source"] for a in prev_filtered})
+
+    # ── Période d'analyse ─────────────────────────────────────────────────────
+    st.markdown("#### 🗓 Période d'analyse")
+    col_slider, col_1j, col_3j, col_7j, col_30j = st.columns([5, 1, 1, 1, 1])
+    with col_slider:
+        st.slider("Fenêtre (jours)", 1, 30, key="days", label_visibility="collapsed")
+    if col_1j.button("1j",   use_container_width=True): st.session_state["days"] = 1;  st.rerun()
+    if col_3j.button("3j",   use_container_width=True): st.session_state["days"] = 3;  st.rerun()
+    if col_7j.button("7j",   use_container_width=True): st.session_state["days"] = 7;  st.rerun()
+    if col_30j.button("30j", use_container_width=True): st.session_state["days"] = 30; st.rerun()
+    st.markdown("---")
 
     st.markdown(f"## 📰 {total} articles · {date_lbl}")
     k1, k2, k3, k4, k5 = st.columns(5)
