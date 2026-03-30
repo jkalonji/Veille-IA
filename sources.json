@@ -62,6 +62,13 @@
       "enabled": true
     },
     {
+      "name": "Euronews Tech",
+      "type": "rss",
+      "url": "https://feeds.euronews.com/news/technology",
+      "country": "🇪🇺",
+      "enabled": true
+    },
+    {
       "comment": "=== AFRIQUE ===",
       "name": "Techpoint Africa",
       "type": "rss",
