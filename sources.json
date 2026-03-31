@@ -69,6 +69,13 @@
       "enabled": true
     },
     {
+      "name": "ZDNet France",
+      "type": "rss",
+      "url": "https://www.zdnet.fr/feeds/rss/actualites/",
+      "country": "🇫🇷",
+      "enabled": true
+    },
+    {
       "comment": "=== AFRIQUE ===",
       "name": "Techpoint Africa",
       "type": "rss",
