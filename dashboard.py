@@ -1366,6 +1366,22 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     // ── Globe click → country filter ────────────────────────────────────────
     let selectedIso = '';
 
+    // ── Globe auto-rotation (1 tour / 8 s = 2.25°/50 ms) ───────────────────
+    var _globeLon = 0;
+    var _rotateTimer = null;
+    var _globeEl = null;
+    function _startRotation() {{
+      if (!_globeEl || _rotateTimer) return;
+      _rotateTimer = setInterval(function() {{
+        _globeLon = (_globeLon + 2.25) % 360;
+        Plotly.relayout(_globeEl, {{'geo.projection.rotation.lon': _globeLon}});
+      }}, 50);
+    }}
+    function _stopRotation() {{
+      clearInterval(_rotateTimer);
+      _rotateTimer = null;
+    }}
+
     function updateHotTabCounts() {{
       document.querySelectorAll('.hot-tab[data-group]').forEach(function(btn) {{
         var group = btn.dataset.group;
@@ -1409,45 +1425,23 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     function clearCountryFilter() {{
       selectedIso = '';
       applyCountryFilter();
+      _startRotation();
     }}
 
-    // Attach Plotly globe click event after DOM is ready
+    // Attach Plotly globe click event + start auto-rotation after DOM is ready
     window.addEventListener('load', function() {{
       var gd = document.getElementById('globe-div');
       if (!gd) return;
+      _globeEl = gd;
+      _startRotation();
       gd.on('plotly_click', function(data) {{
         if (!data || !data.points || !data.points[0]) return;
         var iso = data.points[0].location;
         if (!iso) return;
         selectedIso = (selectedIso === iso) ? '' : iso;   // toggle
         applyCountryFilter();
+        if (selectedIso) {{ _stopRotation(); }} else {{ _startRotation(); }}
       }});
-
-      // Mobile: require 2 fingers to rotate the globe (1 finger = page scroll)
-      (function () {{
-        var overlay = document.createElement('div');
-        overlay.style.cssText = [
-          'position:absolute', 'inset:0', 'z-index:50',
-          'background:transparent', 'touch-action:pan-y',
-        ].join(';');
-        gd.style.position = 'relative';
-        gd.appendChild(overlay);
-
-        overlay.addEventListener('touchstart', function (e) {{
-          if (e.touches.length < 2) return;
-          overlay.style.pointerEvents = 'none';
-          try {{
-            gd.dispatchEvent(new TouchEvent('touchstart', {{
-              touches: e.touches, targetTouches: e.targetTouches,
-              changedTouches: e.changedTouches, bubbles: true, cancelable: true,
-            }}));
-          }} catch (err) {{}}
-        }}, {{ passive: true }});
-
-        document.addEventListener('touchend', function (e) {{
-          if (e.touches.length === 0) overlay.style.pointerEvents = '';
-        }}, {{ passive: true }});
-      }})();
     }});
 
     // ── Table filters ────────────────────────────────────────────────────────
