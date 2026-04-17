@@ -878,47 +878,31 @@ def run_streamlit() -> None:
             key="globe_chart",
             selection_mode="points",
         )
-        # Mobile: require 2 fingers to rotate the globe (1 finger = page scroll)
+        # Auto-rotate globe: 1 full turn every 8 s (45°/s, 50 ms tick = 2.25°/step)
         import streamlit.components.v1 as components
         components.html("""
 <script>
 (function () {
-  function installOverlay() {
+  function installRotation() {
     var doc = window.parent.document;
+    var Plotly = window.parent.Plotly;
+    if (!Plotly) return;
     var charts = doc.querySelectorAll('.js-plotly-plot');
     charts.forEach(function (el) {
-      if (el._mobileGlobePatch) return;
+      if (el._autoRotate) return;
       var layout = el._fullLayout;
       if (!layout || !layout.geo) return;
-      el._mobileGlobePatch = true;
-
-      var overlay = doc.createElement('div');
-      overlay.style.cssText = [
-        'position:absolute', 'inset:0', 'z-index:50',
-        'background:transparent', 'touch-action:pan-y',
-      ].join(';');
-      el.style.position = 'relative';
-      el.appendChild(overlay);
-
-      overlay.addEventListener('touchstart', function (e) {
-        if (e.touches.length < 2) return;
-        // 2 fingers detected: let Plotly handle the gesture
-        overlay.style.pointerEvents = 'none';
-        try {
-          el.dispatchEvent(new TouchEvent('touchstart', {
-            touches: e.touches, targetTouches: e.targetTouches,
-            changedTouches: e.changedTouches, bubbles: true, cancelable: true,
-          }));
-        } catch (err) {}
-      }, { passive: true });
-
-      doc.addEventListener('touchend', function (e) {
-        if (e.touches.length === 0) overlay.style.pointerEvents = '';
-      }, { passive: true });
+      el._autoRotate = true;
+      // Persist current longitude across Streamlit reruns
+      if (typeof window.parent._globeLon === 'undefined') window.parent._globeLon = 0;
+      setInterval(function () {
+        window.parent._globeLon = (window.parent._globeLon + 2.25) % 360;
+        Plotly.relayout(el, {'geo.projection.rotation.lon': window.parent._globeLon});
+      }, 50);
     });
   }
   // Retry at intervals — Streamlit renders async
-  [800, 1600, 3000].forEach(function (t) { setTimeout(installOverlay, t); });
+  [800, 1600, 3000].forEach(function (t) { setTimeout(installRotation, t); });
 })();
 </script>
 """, height=0)
