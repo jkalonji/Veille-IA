@@ -1438,6 +1438,32 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         selectedIso = (selectedIso === iso) ? '' : iso;   // toggle
         applyCountryFilter();
       }});
+
+      // Mobile: require 2 fingers to rotate the globe (1 finger = page scroll)
+      (function () {{
+        var overlay = document.createElement('div');
+        overlay.style.cssText = [
+          'position:absolute', 'inset:0', 'z-index:50',
+          'background:transparent', 'touch-action:pan-y',
+        ].join(';');
+        gd.style.position = 'relative';
+        gd.appendChild(overlay);
+
+        overlay.addEventListener('touchstart', function (e) {{
+          if (e.touches.length < 2) return;
+          overlay.style.pointerEvents = 'none';
+          try {{
+            gd.dispatchEvent(new TouchEvent('touchstart', {{
+              touches: e.touches, targetTouches: e.targetTouches,
+              changedTouches: e.changedTouches, bubbles: true, cancelable: true,
+            }}));
+          }} catch (err) {{}}
+        }}, {{ passive: true }});
+
+        document.addEventListener('touchend', function (e) {{
+          if (e.touches.length === 0) overlay.style.pointerEvents = '';
+        }}, {{ passive: true }});
+      }})();
     }});
 
     // ── Table filters ────────────────────────────────────────────────────────
