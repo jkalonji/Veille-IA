@@ -135,6 +135,20 @@
       "enabled": true
     },
     {
+      "name": "Analytics India Magazine",
+      "type": "rss",
+      "url": "https://analyticsindiamag.com/feed/",
+      "country": "🇮🇳",
+      "enabled": true
+    },
+    {
+      "name": "YourStory Tech",
+      "type": "rss",
+      "url": "https://yourstory.com/feed",
+      "country": "🇮🇳",
+      "enabled": true
+    },
+    {
       "comment": "=== ASIE DE L'EST ===",
       "name": "Nikkei Asia Tech",
       "type": "rss",
@@ -176,6 +190,43 @@
       "type": "rss",
       "url": "https://console.kr-asia.com/feed",
       "country": "🌏",
+      "enabled": true
+    },
+    {
+      "name": "Tech in Asia",
+      "type": "rss",
+      "url": "https://www.techinasia.com/feed",
+      "country": "🇸🇬",
+      "enabled": true
+    },
+    {
+      "name": "e27",
+      "type": "rss",
+      "url": "https://e27.co/feed/",
+      "country": "🇸🇬",
+      "enabled": true
+    },
+    {
+      "comment": "=== CORÉE DU SUD ===",
+      "name": "The Korea Herald Tech",
+      "type": "rss",
+      "url": "https://www.koreaherald.com/rss/021",
+      "country": "🇰🇷",
+      "enabled": true
+    },
+    {
+      "name": "Bloter",
+      "type": "rss",
+      "url": "https://www.bloter.net/feed",
+      "country": "🇰🇷",
+      "enabled": true
+    },
+    {
+      "comment": "=== TAÏWAN ===",
+      "name": "DigiTimes Asia",
+      "type": "rss",
+      "url": "https://www.digitimes.com/rss/daily.xml",
+      "country": "🇹🇼",
       "enabled": true
     },
     {
