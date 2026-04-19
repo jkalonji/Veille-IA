@@ -125,11 +125,17 @@ def fetch_hot_keywords() -> set[str]:
         from pytrends.request import TrendReq  # optional dependency
 
         pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 25))
-        pytrends.build_payload(["generative AI"], timeframe="now 7-d", geo="")
+        pytrends.build_payload(["generative AI", "AI"], timeframe="now 7-d", geo="")
         related = pytrends.related_queries()
 
-        top_df = related.get("generative AI", {}).get("top")
-        rising_df = related.get("generative AI", {}).get("rising")
+        top_df_gen = related.get("generative AI", {}).get("top")
+        rising_df_gen = related.get("generative AI", {}).get("rising")
+        top_df_ai = related.get("AI", {}).get("top")
+        rising_df_ai = related.get("AI", {}).get("rising")
+
+        import pandas as pd
+        top_df = pd.concat([df for df in [top_df_gen, top_df_ai] if df is not None]) if any(df is not None for df in [top_df_gen, top_df_ai]) else None
+        rising_df = pd.concat([df for df in [rising_df_gen, rising_df_ai] if df is not None]) if any(df is not None for df in [rising_df_gen, rising_df_ai]) else None
 
         keywords: set[str] = set()
         if top_df is not None:
@@ -148,15 +154,15 @@ def fetch_hot_keywords() -> set[str]:
 
 
 async def _fetch_hn_debate_keywords(session: aiohttp.ClientSession) -> set[str]:
-    """Keywords extracted from HN AI stories with >20 comments in the last 48h.
+    """Keywords extracted from HN AI stories with >10 comments in the last 7 days.
     High comment count = active debate, not just passive reading."""
-    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(hours=48)).timestamp())
+    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp())
     keywords: set[str] = set()
     for query in ["AI", "LLM", "OpenAI", "Claude", "machine learning", "AGI"]:
         params = {
             "query": query,
             "tags": "story",
-            "numericFilters": f"num_comments>20,created_at_i>{cutoff_ts}",
+            "numericFilters": f"num_comments>10,created_at_i>{cutoff_ts}",
             "hitsPerPage": 10,
         }
         try:
@@ -180,7 +186,7 @@ async def _fetch_github_trending_keywords(session: aiohttp.ClientSession) -> set
     A repo gaining 200+ stars overnight signals a viral paper or tool."""
     since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
     keywords: set[str] = set()
-    for topic in ["artificial-intelligence", "large-language-model", "llm"]:
+    for topic in ["artificial-intelligence", "large-language-model", "llm", "computer-vision", "robotics", "predictive-analysis"]:
         params = {
             "q": f"topic:{topic} pushed:>{since}",
             "sort": "stars",
