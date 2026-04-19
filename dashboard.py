@@ -896,7 +896,7 @@ def run_streamlit() -> None:
       // Persist current longitude across Streamlit reruns
       if (typeof window.parent._globeLon === 'undefined') window.parent._globeLon = 0;
       setInterval(function () {
-        window.parent._globeLon = (window.parent._globeLon + 2.25) % 360;
+        window.parent._globeLon = (window.parent._globeLon + 1.8) % 360;
         Plotly.relayout(el, {'geo.projection.rotation.lon': window.parent._globeLon});
       }, 50);
     });
@@ -1366,14 +1366,14 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     // ── Globe click → country filter ────────────────────────────────────────
     let selectedIso = '';
 
-    // ── Globe auto-rotation (1 tour / 8 s = 2.25°/50 ms) ───────────────────
+    // ── Globe auto-rotation (1 tour / 10 s = 1.8°/50 ms) ───────────────────
     var _globeLon = 0;
     var _rotateTimer = null;
     var _globeEl = null;
     function _startRotation() {{
       if (!_globeEl || _rotateTimer) return;
       _rotateTimer = setInterval(function() {{
-        _globeLon = (_globeLon + 2.25) % 360;
+        _globeLon = (_globeLon + 1.8) % 360;
         Plotly.relayout(_globeEl, {{'geo.projection.rotation.lon': _globeLon}});
       }}, 50);
     }}
