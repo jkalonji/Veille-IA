@@ -280,6 +280,33 @@ def _normalize_date(s: str) -> str:
     return s[:10] if s else s
 
 
+def _fmt_pub_date(published_str: str) -> str:
+    """Format a publication datetime as a short human-readable date.
+    Same day → 'HH:MM', yesterday → 'Hier HH:MM', otherwise → 'DD/MM HH:MM' or 'DD/MM/YY'."""
+    if not published_str:
+        return "—"
+    try:
+        s = published_str.replace("Z", "+00:00")
+        try:
+            pub = datetime.fromisoformat(s)
+        except ValueError:
+            pub = datetime.strptime(s[:10], "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        if pub.tzinfo is None:
+            pub = pub.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        has_time = len(published_str) > 10
+        time_part = pub.strftime("%H:%M") if has_time else ""
+        if pub.date() == now.date():
+            return time_part if time_part else "Aujourd'hui"
+        if (now.date() - pub.date()).days == 1:
+            return f"Hier {time_part}".strip()
+        if has_time:
+            return pub.strftime("%d/%m %H:%M")
+        return pub.strftime("%d/%m/%y")
+    except Exception:
+        return published_str[:10]
+
+
 def _time_ago(published_str: str) -> str:
     """Convert a published datetime string to a human-readable elapsed time."""
     if not published_str:
@@ -961,7 +988,7 @@ def run_streamlit() -> None:
         df["lien"]      = df["url"].apply(lambda u: f"[↗]({u})")
         df["hot_topic"] = df.get("hot_topic", False).fillna(False)
         df["age"] = df.apply(
-            lambda r: _time_ago(r.get("published_raw") or r.get("published", "")), axis=1
+            lambda r: _fmt_pub_date(r.get("published_raw") or r.get("published", "")), axis=1
         )
         # Hot topic articles are already first (ordered by Supabase); add 🔥 badge in title
         df["title"] = df.apply(

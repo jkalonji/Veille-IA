@@ -278,7 +278,7 @@ async def fetch_rss(session: aiohttp.ClientSession, source: dict) -> list[Articl
             url=link,
             source=source["name"],
             country=source["country"],
-            published=pub_date.strftime("%Y-%m-%d") if pub_date else datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
             description=clean_html(entry.get("summary", ""))[:200],
         ))
 
@@ -311,7 +311,7 @@ async def fetch_reddit(session: aiohttp.ClientSession, source: dict) -> list[Art
             url=link,
             source=source["name"],
             country=source["country"],
-            published=pub_date.strftime("%Y-%m-%d") if pub_date else datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
             description=clean_html(entry.get("summary", ""))[:200],
         ))
 
@@ -356,7 +356,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
                 url=url,
                 source=source["name"],
                 country=source["country"],
-                published=datetime.fromtimestamp(hit.get("created_at_i", 0), tz=timezone.utc).strftime("%Y-%m-%d"),
+                published=datetime.fromtimestamp(hit.get("created_at_i", 0), tz=timezone.utc).isoformat(),
                 description=(hit.get("story_text") or "")[:200],
             ))
 
