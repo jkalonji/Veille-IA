@@ -574,6 +574,9 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         cat    = result.get("category",  "Innovation / Tech")
         sent   = result.get("sentiment", "Neutre")
         article.category  = cat  if cat  in VALID_CATEGORIES else "Innovation / Tech"
+        # arXiv sources are always academic — override Groq's guess
+        if article.source.startswith("ArXiv"):
+            article.category = "Recherche Académique"
         article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
