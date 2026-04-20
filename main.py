@@ -506,7 +506,10 @@ _GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque arti
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
-- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global").
+- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global")."""
+
+# Only requested for hot articles (full model) — saves tokens on non-hot majority
+_GROQ_PROMPT_SUMMARY = """
 
 - "summary": une phrase de synthese en francais (20-30 mots max) qui explique l'essentiel de l'article. Commence directement par le fait principal, sans tourner autour du pot."""
 
@@ -520,7 +523,9 @@ _GROQ_PROMPT_HOT_REASON = """
 
 _GROQ_PROMPT_FOOTER = "\n\nNe renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."
 
-GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_HOT_REASON + _GROQ_PROMPT_FOOTER
+# Hot articles: full model — category + sentiment + country + summary + hot_reason
+GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_SUMMARY + _GROQ_PROMPT_HOT_REASON + _GROQ_PROMPT_FOOTER
+# Non-hot articles: fast model — category + sentiment + country only
 GROQ_SYSTEM_PROMPT_LITE = _GROQ_PROMPT_BASE + _GROQ_PROMPT_FOOTER
 
 VALID_CATEGORIES = {
@@ -536,17 +541,23 @@ VALID_SENTIMENTS  = {"Positif", "Negatif", "Neutre"}
 VALID_HOT_REASONS = {"debat", "tech", "societe", "tendance"}
 
 
-async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None:
+async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> None:
     """Classify a single article in-place.
-    hot_reason is only requested for articles already tagged as hot_topic,
-    saving tokens on the majority of articles that will never need that field."""
+    Hot articles use model_full (70b): category + sentiment + country + summary + hot_reason.
+    Non-hot articles use model_fast (8b): category + sentiment + country only.
+    This cuts ~65% of 70b token usage on a typical day."""
     user_msg = f"Titre: {article.title}\nSource: {article.source}"
     if article.description:
         user_msg += f"\nDescription: {article.description}"
 
-    system_prompt = GROQ_SYSTEM_PROMPT if article.hot_topic else GROQ_SYSTEM_PROMPT_LITE
-    # hot articles need tokens for hot_reason; all articles now include summary
-    max_tokens    = 220 if article.hot_topic else 160
+    if article.hot_topic:
+        model         = model_full
+        system_prompt = GROQ_SYSTEM_PROMPT
+        max_tokens    = 220   # category + sentiment + country + summary + hot_reason
+    else:
+        model         = model_fast
+        system_prompt = GROQ_SYSTEM_PROMPT_LITE
+        max_tokens    = 80    # category + sentiment + country only
 
     try:
         response = await client.chat.completions.create(
@@ -565,8 +576,8 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
         article.category  = cat  if cat  in VALID_CATEGORIES else "Innovation / Tech"
         article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
         article.country   = result.get("country", "Global") or "Global"
-        article.summary   = (result.get("summary") or "").strip()
         if article.hot_topic:
+            article.summary = (result.get("summary") or "").strip()
             reason = result.get("hot_reason", "tech")
             article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
     except Exception as e:
@@ -577,13 +588,17 @@ async def _classify_one(client: AsyncGroq, model: str, article: Article) -> None
 
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
-    client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+    client     = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
+    model_full = os.environ.get("GROQ_MODEL",      "llama-3.3-70b-versatile").strip("'\"").strip()
+    model_fast = os.environ.get("GROQ_MODEL_FAST", "llama-3.1-8b-instant").strip("'\"").strip()
+
+    hot_count  = sum(1 for a in articles if a.hot_topic)
+    logging.info(f"Groq: {len(articles)} articles — {hot_count} hot ({model_full}) + {len(articles)-hot_count} non-hot ({model_fast})")
 
     batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
     for batch_idx, batch in enumerate(batches):
         logging.info(f"Groq: classifying batch {batch_idx + 1}/{len(batches)} ({len(batch)} articles)")
-        await asyncio.gather(*[_classify_one(client, model, a) for a in batch])
+        await asyncio.gather(*[_classify_one(client, model_fast, model_full, a) for a in batch])
         if batch_idx < len(batches) - 1:
             logging.info(f"Groq: sleeping {batch_pause}s before next batch")
             await asyncio.sleep(batch_pause)
@@ -617,12 +632,17 @@ def save_to_supabase(articles: list[Article]) -> None:
             "hot_source": a.hot_source,
             "hot_reason": a.hot_reason,
             "summary": a.summary,
+            "mention_count": a.mention_count,
+            "supa_hot": a.supa_hot,
         }
         for a in articles
     ]
 
-    # Columns that may be absent if migrations haven't been applied yet
-    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary")
+    # Columns that may be absent if migrations haven't been applied yet.
+    # Migration required for mention_count / supa_hot:
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS mention_count INTEGER DEFAULT 0;
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS supa_hot BOOLEAN DEFAULT FALSE;
+    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot")
 
     try:
         client.table("articles").upsert(rows, on_conflict="url").execute()
