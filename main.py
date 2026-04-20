@@ -19,7 +19,7 @@ import feedparser
 from groq import AsyncGroq
 import requests
 from supabase import create_client
-from twitter_scraper import fetch_all_twitter
+from bluesky_scraper import fetch_all_bluesky
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -385,9 +385,9 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
         else:
             articles.extend(result)
 
-    # Fetch Twitter sources (sequential, twikit has its own HTTP client)
-    twitter_dicts = await fetch_all_twitter(sources)
-    for d in twitter_dicts:
+    # Fetch Bluesky sources
+    bluesky_dicts = await fetch_all_bluesky(sources)
+    for d in bluesky_dicts:
         articles.append(Article(
             title=d["title"],
             url=d["url"],

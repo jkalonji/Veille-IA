@@ -230,12 +230,76 @@
       "enabled": true
     },
     {
-      "comment": "=== TWITTER / X ===",
+      "comment": "=== BLUESKY ===",
+      "name": "Bluesky - Generative AI",
+      "type": "bluesky",
+      "query": "generative AI",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 25,
+      "count": 20
+    },
+    {
+      "name": "Bluesky - LLM & Model Releases",
+      "type": "bluesky",
+      "query": "LLM model release benchmark",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 20,
+      "count": 20
+    },
+    {
+      "name": "Bluesky - OpenAI & Anthropic",
+      "type": "bluesky",
+      "query": "OpenAI Anthropic Claude GPT",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 30,
+      "count": 20
+    },
+    {
+      "name": "Bluesky - Open Source Models",
+      "type": "bluesky",
+      "query": "DeepSeek Llama Mistral open source AI",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 20,
+      "count": 20
+    },
+    {
+      "name": "Bluesky - AI Agents & Dev Tools",
+      "type": "bluesky",
+      "query": "AI agent agentic vibe coding MCP",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 20,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - Robotics & Embodied AI",
+      "type": "bluesky",
+      "query": "robotics humanoid robot AI embodied",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - AI Regulation & Ethics",
+      "type": "bluesky",
+      "query": "AI regulation safety ethics policy",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "comment": "=== TWITTER / X (désactivé — remplacé par Bluesky) ===",
       "name": "Twitter - AI Agents",
       "type": "twitter",
       "query": "AI agent agentic -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 200,
       "count": 20
     },
@@ -244,7 +308,7 @@
       "type": "twitter",
       "query": "LLM benchmark release -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 150,
       "count": 20
     },
@@ -253,7 +317,7 @@
       "type": "twitter",
       "query": "(OpenAI OR Anthropic OR Claude OR GPT) -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 300,
       "count": 20
     },
@@ -262,7 +326,7 @@
       "type": "twitter",
       "query": "(DeepSeek OR Llama OR Mistral OR Qwen) AI -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 150,
       "count": 20
     },
@@ -271,7 +335,7 @@
       "type": "twitter",
       "query": "AI regulation policy safety -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 100,
       "count": 15
     },
@@ -280,7 +344,7 @@
       "type": "twitter",
       "query": "(vibe coding OR cursor AI OR copilot OR devin) -filter:retweets lang:en",
       "country": "🌐",
-      "enabled": true,
+      "enabled": false,
       "min_likes": 150,
       "count": 15
     },
