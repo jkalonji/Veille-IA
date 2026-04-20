@@ -364,6 +364,13 @@
       "enabled": true
     },
     {
+      "name": "Product Hunt — AI",
+      "type": "rss",
+      "url": "https://www.producthunt.com/feed",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
       "comment": "=== RECHERCHE ACADÉMIQUE ===",
       "name": "Hugging Face Blog",
       "type": "rss",
@@ -394,6 +401,35 @@
       "enabled": true
     },
     {
+      "comment": "=== PODCASTS IA ===",
+      "name": "Lex Fridman Podcast",
+      "type": "rss",
+      "url": "https://lexfridman.com/feed/podcast/",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "Latent Space",
+      "type": "rss",
+      "url": "https://www.latent.space/feed",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Practical AI",
+      "type": "rss",
+      "url": "https://changelog.com/practicalai/feed",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "TWIML AI Podcast",
+      "type": "rss",
+      "url": "https://twimlai.com/feed/",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
       "comment": "=== DÉSACTIVÉES ===",
       "name": "Ars Technica AI",
       "type": "rss",
@@ -409,9 +445,31 @@
       "enabled": false
     },
     {
+      "comment": "=== arXiv (papers du jour) ===",
       "name": "ArXiv cs.AI",
       "type": "rss",
       "url": "https://rss.arxiv.org/rss/cs.AI",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "ArXiv cs.LG",
+      "type": "rss",
+      "url": "https://rss.arxiv.org/rss/cs.LG",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "ArXiv cs.CL",
+      "type": "rss",
+      "url": "https://rss.arxiv.org/rss/cs.CL",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "ArXiv cs.RO",
+      "type": "rss",
+      "url": "https://rss.arxiv.org/rss/cs.RO",
       "country": "🌐",
       "enabled": true
     },
