@@ -414,16 +414,26 @@ def _hot_sort_key(a: dict):
     return (supa, ts, -a.get("mention_count", 0))
 
 
+_OLD_HOT_REASONS = {"debat", "tech", "societe", "tendance", "unknown", "autre"}
+
+
 def _extract_hot_topics(articles: list[dict]) -> list[dict]:
     """Group hot articles by topic label (hot_reason) and return sorted list.
+
+    Only considers articles from the last 2 days to avoid stale pre-migration
+    data (old hot_reason values: debat/tech/societe/tendance) polluting the tabs.
 
     Returns a list of topic dicts: {label, articles, count, has_supra, color}
     sorted by: supra_hot presence first, then article count desc.
     """
-    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
     hot = _deduplicate_articles([
         a for a in articles
-        if a.get("hot_topic") and a.get("published", "") >= week_ago
+        if (
+            a.get("hot_topic")
+            and a.get("published", "") >= two_days_ago
+            and (a.get("hot_reason") or "").lower() not in _OLD_HOT_REASONS
+        )
     ])
 
     groups: dict[str, list[dict]] = defaultdict(list)

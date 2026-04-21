@@ -800,7 +800,12 @@ async def main():
         return
 
     # 2b. Extract topic clusters and mark hot articles
-    clusters = extract_topic_clusters(articles)
+    # Try strict threshold first (≥3 articles, ≥2 sources); fall back to relaxed (≥2 articles)
+    clusters = extract_topic_clusters(articles, min_articles=3)
+    if not clusters:
+        logging.info("No clusters at min=3 — retrying with min=2")
+        clusters = extract_topic_clusters(articles, min_articles=2)
+
     if clusters:
         groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
         model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
