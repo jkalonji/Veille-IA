@@ -109,6 +109,29 @@ _NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
     "report", "says", "look", "now", "back", "move", "inside",
     "before", "between", "while", "through", "against", "without",
     "around", "next", "within", "each", "such", "does", "did",
+    # Generic AI/tech domain words — useless as cluster identifiers
+    "artificial", "intelligence", "machine", "learning", "technology",
+    "digital", "software", "platform", "online", "system", "systems",
+    "tool", "tools", "model", "models", "neural", "network", "networks",
+    "generative", "language", "large", "latest", "based", "driven",
+    "powered", "enabled", "future", "global", "world", "industry",
+    "company", "companies", "startup", "startups", "researchers",
+    "research", "paper", "papers", "study", "team", "users", "space",
+    "launches", "launch", "release", "releases", "announces", "announced",
+    "introduces", "unveils", "brings", "update", "updates", "version",
+}
+
+# Ngram-level blocklist — phrases too generic to define a meaningful cluster
+_GENERIC_NGRAMS: set[str] = {
+    "artificial intelligence", "machine learning", "deep learning",
+    "large language", "language model", "language models",
+    "generative ai", "neural network", "neural networks",
+    "open source", "new model", "latest model", "ai model", "ai models",
+    "ai tools", "ai tool", "ai system", "ai systems", "ai research",
+    "ai company", "ai startup", "ai technology", "ai applications",
+    "tech news", "tech industry", "tech company",
+    "research paper", "new paper", "new study", "new research",
+    "ai era", "ai future", "ai development", "ai capabilities",
 }
 
 
@@ -144,8 +167,11 @@ def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> 
             ngram_to_arts.setdefault(ng, []).append(a)
 
     # Keep ngrams with ≥ min_articles distinct articles AND ≥ 2 distinct sources
+    # AND not in the generic-phrases blocklist
     candidate_clusters = []
     for ng, arts in ngram_to_arts.items():
+        if ng in _GENERIC_NGRAMS:
+            continue
         if len(arts) < min_articles:
             continue
         sources = {a.source for a in arts}
@@ -208,20 +234,39 @@ async def name_topic_clusters(clusters: list[dict], client, model: str) -> list[
             messages=[{
                 "role": "user",
                 "content": (
-                    "For each topic below, provide a concise English label (2-4 words, Title Case) "
-                    "that best describes the subject. Use the sample titles for context.\n"
+                    "You are an AI news editor naming topic clusters for a news dashboard.\n"
+                    "For each cluster, create a SPECIFIC label (2-5 words, Title Case) that names "
+                    "the EXACT subject — which company, model, person, event, or technology.\n\n"
+                    "RULES:\n"
+                    "- Use proper nouns from the sample titles whenever possible\n"
+                    "- Be specific: 'GPT-5 Launch' not 'New Model', 'Meta Llama 4' not 'Open Source Model'\n"
+                    "- FORBIDDEN words (never use): AI, Tech, Model, Artificial Intelligence, "
+                    "Machine Learning, Technology, Research, Innovation, Development\n"
+                    "- The label must answer: WHAT specifically is happening? WHO is involved?\n"
+                    "- Examples of good labels: 'OpenAI GPT-5', 'EU AI Act Vote', "
+                    "'Anthropic Claude 4', 'NVIDIA Blackwell GPU', 'Sam Altman Senate Hearing'\n\n"
                     "Return JSON: {\"labels\": [{\"id\": <id>, \"label\": \"...\"}]}\n\n"
                     + json.dumps(items, ensure_ascii=False)
                 ),
             }],
             temperature=0.1,
-            max_tokens=400,
+            max_tokens=500,
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content)
         id_to_label = {item["id"]: item["label"] for item in data.get("labels", [])}
+        _LABEL_BLOCKLIST = {
+            "ai", "tech", "model", "models", "artificial intelligence",
+            "machine learning", "technology", "research", "innovation",
+            "development", "news", "update", "latest", "new",
+        }
         for i, c in enumerate(top):
-            c["label"] = id_to_label.get(i, c["phrase"].title())
+            raw = id_to_label.get(i, "")
+            # Reject label if it's in the blocklist or is a single generic word
+            if raw and raw.lower() not in _LABEL_BLOCKLIST and len(raw) > 3:
+                c["label"] = raw
+            else:
+                c["label"] = c["phrase"].title()
         logging.info(f"Topic clusters named: {[c['label'] for c in top]}")
     except Exception as e:
         logging.warning(f"Topic naming failed: {e} — using phrase-based labels")
