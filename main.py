@@ -96,142 +96,142 @@ def _compute_article_mentions(articles: list[Article]) -> None:
         a.mention_count = count
         a.supa_hot = a.hot_topic and count > 5 and a.published == today
 
+
 # ---------------------------------------------------------------------------
-# 0. Hot keywords (via Google Trends / fallback static list)
+# 0b. Topic clustering (replaces keyword-based hot detection)
 # ---------------------------------------------------------------------------
 
-# Fallback list — update manually when major AI topics shift.
-# Use terms broad enough to appear in article titles/descriptions.
-HOT_KEYWORDS_FALLBACK = {
-    # Models & releases
-    "gpt-5", "claude 4", "gemini 2", "deepseek", "llama 4", "grok",
-    "qwen", "mistral", "o3", "o4", "reasoning model",
-    # Techniques in the spotlight
-    "vibe coding", "agentic", "ai agent", "model context protocol", "mcp",
-    "test-time compute", "inference scaling", "computer use",
-    # Regulation & societal
-    "ai act", "sam altman", "openai", "anthropic",
-    # Hardware
-    "blackwell", "nvidia", "tsmc", "h100", "h200",
-    # General hot signals
-    "benchmark", "open source model", "open weights", "jailbreak",
+_NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
+    "using", "will", "make", "take", "open", "help", "work", "need",
+    "many", "them", "know", "find", "some", "here", "even", "like",
+    "time", "year", "week", "ways", "could", "would", "your", "our",
+    "first", "show", "use", "say", "get", "give", "being", "most",
+    "report", "says", "look", "now", "back", "move", "inside",
+    "before", "between", "while", "through", "against", "without",
+    "around", "next", "within", "each", "such", "does", "did",
 }
 
 
-def fetch_hot_keywords() -> set[str]:
-    """Try to fetch trending AI queries from Google Trends (7-day window).
-    Falls back to HOT_KEYWORDS_FALLBACK if pytrends or network is unavailable."""
-    try:
-        from pytrends.request import TrendReq  # optional dependency
-
-        pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 25))
-        pytrends.build_payload(["generative AI", "AI"], timeframe="now 7-d", geo="")
-        related = pytrends.related_queries()
-
-        top_df_gen = related.get("generative AI", {}).get("top")
-        rising_df_gen = related.get("generative AI", {}).get("rising")
-        top_df_ai = related.get("AI", {}).get("top")
-        rising_df_ai = related.get("AI", {}).get("rising")
-
-        import pandas as pd
-        top_df = pd.concat([df for df in [top_df_gen, top_df_ai] if df is not None]) if any(df is not None for df in [top_df_gen, top_df_ai]) else None
-        rising_df = pd.concat([df for df in [rising_df_gen, rising_df_ai] if df is not None]) if any(df is not None for df in [rising_df_gen, rising_df_ai]) else None
-
-        keywords: set[str] = set()
-        if top_df is not None:
-            keywords.update(top_df["query"].str.lower().head(10).tolist())
-        if rising_df is not None:
-            keywords.update(rising_df["query"].str.lower().head(10).tolist())
-
-        if keywords:
-            logging.info(f"Hot keywords fetched from Google Trends: {keywords}")
-            return keywords
-
-    except Exception as e:
-        logging.warning(f"Google Trends unavailable ({e}), using fallback hot keywords")
-
-    return HOT_KEYWORDS_FALLBACK
+def _extract_title_ngrams(title: str) -> set[str]:
+    """Extract bigrams and trigrams from a title, filtering stopwords."""
+    # Match word tokens including hyphenated terms (gpt-4o, ai-agent)
+    words = re.findall(r"[a-z][a-z0-9\-]*", title.lower())
+    words = [w for w in words if len(w) >= 2 and w not in _NGRAM_STOPWORDS]
+    ngrams: set[str] = set()
+    for i in range(len(words) - 1):
+        ngrams.add(f"{words[i]} {words[i + 1]}")
+    for i in range(len(words) - 2):
+        ngrams.add(f"{words[i]} {words[i + 1]} {words[i + 2]}")
+    return ngrams
 
 
-async def _fetch_hn_debate_keywords(session: aiohttp.ClientSession) -> set[str]:
-    """Keywords extracted from HN AI stories with >10 comments in the last 7 days.
-    High comment count = active debate, not just passive reading."""
-    cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp())
-    keywords: set[str] = set()
-    for query in ["AI", "LLM", "OpenAI", "Claude", "machine learning", "AGI"]:
-        params = {
-            "query": query,
-            "tags": "story",
-            "numericFilters": f"num_comments>10,created_at_i>{cutoff_ts}",
-            "hitsPerPage": 10,
+def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> list[dict]:
+    """Cluster articles by shared bigrams/trigrams in their titles.
+
+    Returns a list of clusters sorted by score (article_count × source_count),
+    each with: phrase, label, articles, article_count, source_count, score.
+    Only clusters with ≥ min_articles distinct articles are returned.
+    """
+    if not articles:
+        return []
+
+    art_ngrams = [(a, _extract_title_ngrams(a.title)) for a in articles]
+
+    # Count how many articles contain each ngram
+    ngram_to_arts: dict[str, list] = {}
+    for a, ngrams in art_ngrams:
+        for ng in ngrams:
+            ngram_to_arts.setdefault(ng, []).append(a)
+
+    # Keep ngrams with ≥ min_articles distinct articles AND ≥ 2 distinct sources
+    candidate_clusters = []
+    for ng, arts in ngram_to_arts.items():
+        if len(arts) < min_articles:
+            continue
+        sources = {a.source for a in arts}
+        if len(sources) < 2:
+            continue
+        score = len(arts) * len(sources)
+        candidate_clusters.append({
+            "phrase": ng,
+            "label": ng.title(),   # placeholder, overwritten by name_topic_clusters
+            "articles": arts,
+            "article_count": len(arts),
+            "source_count": len(sources),
+            "score": score,
+        })
+
+    if not candidate_clusters:
+        return []
+
+    # Sort by score desc, then merge highly-overlapping clusters (≥70% article overlap)
+    candidate_clusters.sort(key=lambda c: (-c["score"], -len(c["phrase"])))
+    merged: list[dict] = []
+    for c in candidate_clusters:
+        urls = {a.url for a in c["articles"]}
+        is_duplicate = False
+        for existing in merged:
+            existing_urls = {a.url for a in existing["articles"]}
+            union = urls | existing_urls
+            overlap = len(urls & existing_urls) / len(union) if union else 0
+            if overlap >= 0.7:
+                # Keep longer phrase as the label candidate
+                if len(c["phrase"]) > len(existing["phrase"]):
+                    existing["phrase"] = c["phrase"]
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            merged.append(c)
+
+    merged.sort(key=lambda c: -c["score"])
+    logging.info(f"Topic clusters: {len(merged)} clusters from {len(articles)} articles")
+    return merged
+
+
+async def name_topic_clusters(clusters: list[dict], client, model: str) -> list[dict]:
+    """Ask Groq to assign clean English labels to topic clusters (single batch call)."""
+    if not clusters:
+        return clusters
+
+    top = clusters[:12]
+    items = [
+        {
+            "id": i,
+            "phrase": c["phrase"],
+            "titles": [a.title for a in c["articles"][:3]],
         }
-        try:
-            async with session.get(
-                "https://hn.algolia.com/api/v1/search",
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                data = await resp.json()
-            for hit in data.get("hits", []):
-                words = re.findall(r"[a-z]{4,}", hit.get("title", "").lower())
-                keywords.update(w for w in words if w not in _MENTION_STOPWORDS)
-        except Exception as e:
-            logging.warning(f"HN debate keywords failed for '{query}': {e}")
-    logging.info(f"HN debate keywords: {len(keywords)} terms")
-    return keywords
-
-
-async def _fetch_github_trending_keywords(session: aiohttp.ClientSession) -> set[str]:
-    """Keywords from AI repos that spiked on GitHub in the last 24h.
-    A repo gaining 200+ stars overnight signals a viral paper or tool."""
-    since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-    keywords: set[str] = set()
-    for topic in ["artificial-intelligence", "large-language-model", "llm", "computer-vision", "robotics", "predictive-analysis"]:
-        params = {
-            "q": f"topic:{topic} pushed:>{since}",
-            "sort": "stars",
-            "order": "desc",
-            "per_page": 15,
-        }
-        try:
-            async with session.get(
-                "https://api.github.com/search/repositories",
-                params=params,
-                headers={"Accept": "application/vnd.github+json"},
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                data = await resp.json()
-            for repo in data.get("items", []):
-                text = f"{repo.get('name', '')} {repo.get('description', '') or ''}".lower()
-                words = re.findall(r"[a-z]{4,}", text)
-                keywords.update(w for w in words if w not in _MENTION_STOPWORDS)
-        except Exception as e:
-            logging.warning(f"GitHub trending keywords failed for '{topic}': {e}")
-    logging.info(f"GitHub trending keywords: {len(keywords)} terms")
-    return keywords
-
-
-def _fetch_db_trending_keywords() -> set[str]:
-    """Extract keywords that appear in 3+ article titles collected today.
-    Self-bootstrapping: our own data reveals what's dominating the conversation."""
-    url  = os.environ.get("SUPABASE_URL")
-    key  = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        return set()
+        for i, c in enumerate(top)
+    ]
     try:
-        client  = create_client(url, key)
-        cutoff  = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        resp    = client.table("articles").select("title").gte("published", cutoff).execute()
-        counts: Counter = Counter()
-        for a in (resp.data or []):
-            words = re.findall(r"[a-z]{4,}", a.get("title", "").lower())
-            counts.update(w for w in words if w not in _MENTION_STOPWORDS)
-        keywords = {w for w, c in counts.items() if c >= 3}
-        logging.info(f"DB self-bootstrap keywords: {len(keywords)} terms (freq ≥ 3)")
-        return keywords
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "For each topic below, provide a concise English label (2-4 words, Title Case) "
+                    "that best describes the subject. Use the sample titles for context.\n"
+                    "Return JSON: {\"labels\": [{\"id\": <id>, \"label\": \"...\"}]}\n\n"
+                    + json.dumps(items, ensure_ascii=False)
+                ),
+            }],
+            temperature=0.1,
+            max_tokens=400,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content)
+        id_to_label = {item["id"]: item["label"] for item in data.get("labels", [])}
+        for i, c in enumerate(top):
+            c["label"] = id_to_label.get(i, c["phrase"].title())
+        logging.info(f"Topic clusters named: {[c['label'] for c in top]}")
     except Exception as e:
-        logging.warning(f"DB trending keywords failed: {e}")
-        return set()
+        logging.warning(f"Topic naming failed: {e} — using phrase-based labels")
+        for c in top:
+            c["label"] = c["phrase"].title()
+
+    for c in clusters[12:]:
+        c["label"] = c["phrase"].title()
+
+    return clusters
 
 
 # ---------------------------------------------------------------------------
@@ -466,33 +466,6 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
 
-    # Build enriched hot keyword set from all sources
-    hot_keywords = fetch_hot_keywords()  # Google Trends or fallback
-    async with aiohttp.ClientSession() as kw_session:
-        hn_kw, gh_kw = await asyncio.gather(
-            _fetch_hn_debate_keywords(kw_session),
-            _fetch_github_trending_keywords(kw_session),
-        )
-    db_kw = _fetch_db_trending_keywords()
-    logging.info(f"Hot keywords: trends={len(hot_keywords)} hn={len(hn_kw)} github={len(gh_kw)} db={len(db_kw)}")
-
-    # Tag hot topics — track which source(s) triggered each article
-    keywords_by_source = [
-        ("trends", hot_keywords),
-        ("hn",     hn_kw),
-        ("github", gh_kw),
-        ("db",     db_kw),
-    ]
-    hot_count = 0
-    for a in filtered:
-        text = (a.title + " " + a.description).lower()
-        reasons = [src for src, kws in keywords_by_source if any(kw in text for kw in kws)]
-        if reasons:
-            a.hot_topic = True
-            a.hot_source = "|".join(reasons)
-            hot_count += 1
-    logging.info(f"{hot_count} articles tagged as hot topic")
-
     return filtered
 
 # ---------------------------------------------------------------------------
@@ -513,18 +486,10 @@ _GROQ_PROMPT_SUMMARY = """
 
 - "summary": une phrase de synthese en francais (20-30 mots max) qui explique l'essentiel de l'article. Commence directement par le fait principal, sans tourner autour du pot."""
 
-_GROQ_PROMPT_HOT_REASON = """
-- "hot_reason": pourquoi cet article serait notable ou viral, parmi ces quatre valeurs EXACTES:
-  * "debat"    — suscite une controverse, des opinions polarisees, un debat public ou du drama (ex: licenciements, echec d'un modele, proces, critique d'une entreprise)
-  * "tech"     — annonce technique, sortie d'un modele, outil dev, benchmark, mise a jour produit (ex: lancement GPT-5, nouveau framework, record de performance)
-  * "societe"  — impact sur la societe, l'emploi, l'ethique, la regulation, les droits (ex: loi IA, impact sur les metiers, biais algorithmique)
-  * "tendance" — concept emergent, nouvelle direction de recherche, sujet qui monte progressivement (ex: MCP, vibe coding, nouveau paradigme)
-  Si tu n'es pas sur, choisis la valeur la plus proche du contenu reel de l'article."""
-
 _GROQ_PROMPT_FOOTER = "\n\nNe renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."
 
-# Hot articles: full model — category + sentiment + country + summary + hot_reason
-GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_SUMMARY + _GROQ_PROMPT_HOT_REASON + _GROQ_PROMPT_FOOTER
+# Hot articles: full model — category + sentiment + country + summary
+GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_SUMMARY + _GROQ_PROMPT_FOOTER
 # Non-hot articles: fast model — category + sentiment + country only
 GROQ_SYSTEM_PROMPT_LITE = _GROQ_PROMPT_BASE + _GROQ_PROMPT_FOOTER
 
@@ -538,12 +503,11 @@ VALID_CATEGORIES = {
 }
 
 VALID_SENTIMENTS  = {"Positif", "Negatif", "Neutre"}
-VALID_HOT_REASONS = {"debat", "tech", "societe", "tendance"}
 
 
 async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> None:
     """Classify a single article in-place.
-    Hot articles use model_full (70b): category + sentiment + country + summary + hot_reason.
+    Hot articles use model_full (70b): category + sentiment + country + summary.
     Non-hot articles use model_fast (8b): category + sentiment + country only.
     This cuts ~65% of 70b token usage on a typical day."""
     user_msg = f"Titre: {article.title}\nSource: {article.source}"
@@ -553,7 +517,7 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
     if article.hot_topic:
         model         = model_full
         system_prompt = GROQ_SYSTEM_PROMPT
-        max_tokens    = 220   # category + sentiment + country + summary + hot_reason
+        max_tokens    = 180   # category + sentiment + country + summary
     else:
         model         = model_fast
         system_prompt = GROQ_SYSTEM_PROMPT_LITE
@@ -581,8 +545,6 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
             article.summary = (result.get("summary") or "").strip()
-            reason = result.get("hot_reason", "tech")
-            article.hot_reason = reason if reason in VALID_HOT_REASONS else "tech"
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
         article.category  = "Innovation / Tech"
@@ -792,12 +754,39 @@ async def main():
         send_telegram([])
         return
 
+    # 2b. Extract topic clusters and mark hot articles
+    clusters = extract_topic_clusters(articles)
+    if clusters:
+        groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
+        model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+        clusters = await name_topic_clusters(clusters, groq_client_for_topics, model_full)
+
+    # Build url → cluster map and apply to articles
+    url_to_cluster: dict[str, dict] = {}
+    for c in clusters:
+        for art in c["articles"]:
+            if art.url not in url_to_cluster or c["score"] > url_to_cluster[art.url]["score"]:
+                url_to_cluster[art.url] = c
+
+    hot_count = 0
+    for art in articles:
+        cluster = url_to_cluster.get(art.url)
+        if cluster:
+            art.hot_topic = True
+            art.hot_reason = cluster["label"]
+            art.mention_count = cluster["article_count"]
+            art.supa_hot = cluster["article_count"] >= 5
+            hot_count += 1
+        else:
+            art.hot_topic = False
+            art.hot_reason = ""
+            art.mention_count = 0
+            art.supa_hot = False
+    logging.info(f"{hot_count} articles tagged hot via topic clustering")
+
     # 3. Classify with Groq
     logging.info(f"Classifying {len(articles)} articles with Groq...")
     classified = await classify_articles(articles)
-
-    # 3b. Compute mention counts and supa_hot flags
-    _compute_article_mentions(classified)
 
     # 4. Save to Supabase
     save_to_supabase(classified)
