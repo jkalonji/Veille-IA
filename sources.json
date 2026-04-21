@@ -294,61 +294,6 @@
       "count": 15
     },
     {
-      "comment": "=== TWITTER / X (désactivé — remplacé par Bluesky) ===",
-      "name": "Twitter - AI Agents",
-      "type": "twitter",
-      "query": "AI agent agentic -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 200,
-      "count": 20
-    },
-    {
-      "name": "Twitter - LLM & Benchmarks",
-      "type": "twitter",
-      "query": "LLM benchmark release -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 150,
-      "count": 20
-    },
-    {
-      "name": "Twitter - OpenAI & Anthropic",
-      "type": "twitter",
-      "query": "(OpenAI OR Anthropic OR Claude OR GPT) -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 300,
-      "count": 20
-    },
-    {
-      "name": "Twitter - Open Source Models",
-      "type": "twitter",
-      "query": "(DeepSeek OR Llama OR Mistral OR Qwen) AI -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 150,
-      "count": 20
-    },
-    {
-      "name": "Twitter - AI Regulation",
-      "type": "twitter",
-      "query": "AI regulation policy safety -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 100,
-      "count": 15
-    },
-    {
-      "name": "Twitter - Vibe Coding & Dev",
-      "type": "twitter",
-      "query": "(vibe coding OR cursor AI OR copilot OR devin) -filter:retweets lang:en",
-      "country": "🌐",
-      "enabled": false,
-      "min_likes": 150,
-      "count": 15
-    },
-    {
       "comment": "=== BUSINESS / INDUSTRIE ===",
       "name": "TechCrunch AI",
       "type": "rss",
@@ -514,6 +459,60 @@
       "url": "https://www.usine-digitale.fr/rss",
       "country": "🇫🇷",
       "enabled": false
+    },
+    {
+      "name": "Bluesky - New Architectures",
+      "type": "bluesky",
+      "query": "transformer architecture MoE mixture experts SSM Mamba diffusion",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - Multimodal & Generation",
+      "type": "bluesky",
+      "query": "multimodal image video audio generation Sora Runway Kling",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - AI & Work",
+      "type": "bluesky",
+      "query": "AI jobs automation workforce displacement productivity future work",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - AI Safety & Alignment",
+      "type": "bluesky",
+      "query": "AI safety alignment AGI existential risk interpretability",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - AI Hardware & Infra",
+      "type": "bluesky",
+      "query": "GPU chip NVIDIA data center inference cost training compute",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - AI in Science & Health",
+      "type": "bluesky",
+      "query": "AI drug discovery biology genomics health medicine clinical",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 10,
+      "count": 15
     }
   ]
 }
