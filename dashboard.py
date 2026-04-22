@@ -940,7 +940,9 @@ def run_streamlit() -> None:
             key="globe_chart",
             selection_mode="points",
         )
-        # Auto-rotate globe: 1 full turn every 8 s (45°/s, 50 ms tick = 2.25°/step)
+        # Auto-rotate globe: 1 full turn every ~10 s (100 ms tick = 1.8°/step)
+        # Uses Plotly.animate instead of relayout to avoid black-band artifacts
+        # during polygon clipping at hemisphere edges.
         import streamlit.components.v1 as components
         components.html("""
 <script>
@@ -955,15 +957,16 @@ def run_streamlit() -> None:
       var layout = el._fullLayout;
       if (!layout || !layout.geo) return;
       el._autoRotate = true;
-      // Persist current longitude across Streamlit reruns
       if (typeof window.parent._globeLon === 'undefined') window.parent._globeLon = 0;
       setInterval(function () {
         window.parent._globeLon = (window.parent._globeLon + 1.8) % 360;
-        Plotly.relayout(el, {'geo.projection.rotation.lon': window.parent._globeLon});
-      }, 50);
+        Plotly.animate(el,
+          { layout: { 'geo.projection.rotation.lon': window.parent._globeLon } },
+          { transition: { duration: 80, easing: 'linear' }, frame: { duration: 80, redraw: false } }
+        );
+      }, 100);
     });
   }
-  // Retry at intervals — Streamlit renders async
   [800, 1600, 3000].forEach(function (t) { setTimeout(installRotation, t); });
 })();
 </script>
