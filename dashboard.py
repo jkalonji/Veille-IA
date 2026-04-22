@@ -13,6 +13,19 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
+# ---------------------------------------------------------------------------
+# Globe.gl custom Streamlit component (lazy-init, only used in Streamlit mode)
+# ---------------------------------------------------------------------------
+_globe_gl_comp = None
+
+def _get_globe_component():
+    global _globe_gl_comp
+    if _globe_gl_comp is None:
+        import streamlit.components.v1 as _stc
+        _comp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_globe_component")
+        _globe_gl_comp = _stc.declare_component("globe_gl", path=_comp_dir)
+    return _globe_gl_comp
+
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -933,52 +946,30 @@ def run_streamlit() -> None:
             "🔥 **Influence** = hot topics × engagement"
         )
     with col_globe:
-        globe_event = st.plotly_chart(
-            fig_globe(filtered),
-            use_container_width=True,
-            on_select="rerun",
+        # Build iso_counts for the Globe.gl component
+        _iso_counts: dict[str, int] = {}
+        for _a in filtered:
+            _iso = _country_to_iso3(_a.get("country", ""))
+            if _iso:
+                _iso_counts[_iso] = _iso_counts.get(_iso, 0) + 1
+
+        _globe_comp = _get_globe_component()
+        _globe_result = _globe_comp(
+            iso_counts=_iso_counts,
+            iso_to_name=ISO3_TO_NAME,
+            selected_iso=st.session_state["globe_country"],
             key="globe_chart",
-            selection_mode="points",
+            default=None,
         )
-        # Auto-rotate globe: 1 full turn every ~10 s (100 ms tick = 1.8°/step)
-        # Uses Plotly.animate instead of relayout to avoid black-band artifacts
-        # during polygon clipping at hemisphere edges.
-        import streamlit.components.v1 as components
-        components.html("""
-<script>
-(function () {
-  function installRotation() {
-    var doc = window.parent.document;
-    var Plotly = window.parent.Plotly;
-    if (!Plotly) return;
-    var charts = doc.querySelectorAll('.js-plotly-plot');
-    charts.forEach(function (el) {
-      if (el._autoRotate) return;
-      var layout = el._fullLayout;
-      if (!layout || !layout.geo) return;
-      el._autoRotate = true;
-      if (typeof window.parent._globeLon === 'undefined') window.parent._globeLon = 0;
-      setInterval(function () {
-        window.parent._globeLon = (window.parent._globeLon + 1.8) % 360;
-        Plotly.animate(el,
-          { layout: { 'geo.projection.rotation.lon': window.parent._globeLon } },
-          { transition: { duration: 80, easing: 'linear' }, frame: { duration: 80, redraw: false } }
-        );
-      }, 100);
-    });
-  }
-  [800, 1600, 3000].forEach(function (t) { setTimeout(installRotation, t); });
-})();
-</script>
-""", height=0)
-    # Capture click → toggle country filter
-    if globe_event and globe_event.selection and globe_event.selection.points:
-        clicked_iso = globe_event.selection.points[0].get("location")
-        if clicked_iso:
-            if st.session_state["globe_country"] == clicked_iso:
-                st.session_state["globe_country"] = None   # second click = deselect
-            else:
-                st.session_state["globe_country"] = clicked_iso
+        # A new click is detected when the timestamp increases
+        _last_ts = st.session_state.get("_globe_ts", 0)
+        if (
+            _globe_result
+            and isinstance(_globe_result, dict)
+            and _globe_result.get("ts", 0) > _last_ts
+        ):
+            st.session_state["_globe_ts"] = _globe_result["ts"]
+            st.session_state["globe_country"] = _globe_result.get("country")
 
     selected_iso = st.session_state["globe_country"]
 

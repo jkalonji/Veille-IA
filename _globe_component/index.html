@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 460px; background: #0e1117; overflow: hidden; }
+  #title {
+    position: absolute; top: 8px; left: 0; right: 0; text-align: center;
+    color: #adb5bd; font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    z-index: 10; pointer-events: none; user-select: none;
+  }
+  #globe { width: 100%; height: 460px; }
+</style>
+</head>
+<body>
+<div id="title">🌍 Couverture mondiale &nbsp;·&nbsp; cliquez sur un pays pour filtrer</div>
+<div id="globe"></div>
+
+<script src="https://unpkg.com/globe.gl@2.29.2/dist/globe.gl.min.js"></script>
+<script>
+// ── Streamlit component protocol ─────────────────────────────────────────────
+function _post(msg) {
+  window.parent.postMessage(Object.assign({ isStreamlitMessage: true }, msg), '*');
+}
+function setComponentValue(v) { _post({ type: 'streamlit:setComponentValue', value: v }); }
+function setFrameHeight(h)    { _post({ type: 'streamlit:setFrameHeight',    height: h }); }
+function componentReady()     { _post({ type: 'streamlit:componentReady',    apiVersion: 1 }); }
+
+// ── Color scale (mirrors Python gradient) ─────────────────────────────────────
+const SCALE = [
+  [0.00, '#0d3b5e'],
+  [0.15, '#0077b6'],
+  [0.40, '#00b4d8'],
+  [0.70, '#f4a261'],
+  [1.00, '#e63946'],
+];
+function hexToRgb(h) {
+  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+}
+function interpolateColor(t) {
+  for (let i = 1; i < SCALE.length; i++) {
+    if (t <= SCALE[i][0]) {
+      const f = (t - SCALE[i-1][0]) / (SCALE[i][0] - SCALE[i-1][0]);
+      const [r0,g0,b0] = hexToRgb(SCALE[i-1][1]);
+      const [r1,g1,b1] = hexToRgb(SCALE[i][1]);
+      return `rgb(${Math.round(r0+(r1-r0)*f)},${Math.round(g0+(g1-g0)*f)},${Math.round(b0+(b1-b0)*f)})`;
+    }
+  }
+  return SCALE[SCALE.length-1][1];
+}
+
+// ── Globe state ───────────────────────────────────────────────────────────────
+let globe    = null;
+let geoData  = null;
+let args     = { iso_counts: {}, iso_to_name: {}, selected_iso: null };
+
+function capColor(feat) {
+  const iso3 = feat.properties.ISO_A3;
+  if (!iso3 || iso3 === '-99') return '#1a1d27';
+  if (iso3 === args.selected_iso) return '#ffd60a';
+  const counts = args.iso_counts;
+  const max = Math.max(1, ...Object.values(counts));
+  const c = counts[iso3] || 0;
+  return c > 0 ? interpolateColor(c / max) : '#1a1d27';
+}
+
+function polyAlt(feat) {
+  return feat.properties.ISO_A3 === args.selected_iso ? 0.06 : 0.01;
+}
+
+function polyLabel(feat) {
+  const iso3 = feat.properties.ISO_A3;
+  if (!iso3 || iso3 === '-99') return '';
+  const name = (args.iso_to_name && args.iso_to_name[iso3]) || feat.properties.ADMIN || iso3;
+  const c = (args.iso_counts && args.iso_counts[iso3]) || 0;
+  const bg = c ? '#0e1117' : '#1a1d27';
+  const col = c ? '#fff' : '#adb5bd';
+  const cnt = c ? `<br/>${c} article${c>1?'s':''}` : '';
+  return `<div style="background:${bg};padding:4px 8px;border-radius:4px;color:${col};font-size:12px"><b>${name}</b>${cnt}</div>`;
+}
+
+function refreshPolygons() {
+  if (!globe || !geoData) return;
+  globe
+    .polygonCapColor(capColor)
+    .polygonAltitude(polyAlt)
+    .polygonLabel(polyLabel);
+}
+
+function initGlobe() {
+  const el = document.getElementById('globe');
+  globe = Globe({ animateIn: false })(el)
+    .width(window.innerWidth || 400)
+    .height(460)
+    .backgroundColor('#0e1117')
+    .showAtmosphere(true)
+    .atmosphereColor('#1a2744')
+    .atmosphereAltitude(0.12)
+    .polygonsData(geoData.features)
+    .polygonCapColor(capColor)
+    .polygonSideColor(() => 'rgba(42,45,58,0.4)')
+    .polygonStrokeColor(() => '#2a2d3a')
+    .polygonAltitude(polyAlt)
+    .polygonLabel(polyLabel)
+    .onPolygonClick(feat => {
+      const iso3 = feat.properties.ISO_A3;
+      if (!iso3 || iso3 === '-99') return;
+      const newSel = (iso3 === args.selected_iso) ? null : iso3;
+      setComponentValue({ country: newSel, ts: Date.now() });
+    });
+
+  const ctrl = globe.controls();
+  ctrl.autoRotate      = true;
+  ctrl.autoRotateSpeed = 0.8;
+  ctrl.enableZoom      = false;
+  ctrl.enablePan       = false;
+}
+
+// ── Load GeoJSON then init ────────────────────────────────────────────────────
+fetch('https://cdn.jsdelivr.net/gh/vasturiano/globe.gl@master/example/datasets/ne_110m_admin_0_countries.geojson')
+  .then(r => r.json())
+  .then(data => {
+    geoData = data;
+    initGlobe();
+  })
+  .catch(err => console.error('[globe.gl] GeoJSON load failed:', err));
+
+// ── Streamlit messages ────────────────────────────────────────────────────────
+window.addEventListener('message', function(e) {
+  if (!e.data || e.data.type !== 'streamlit:render') return;
+  args = e.data.args || args;
+  if (globe) refreshPolygons();
+});
+
+window.addEventListener('load', function() {
+  setFrameHeight(460);
+  componentReady();
+});
+</script>
+</body>
+</html>
