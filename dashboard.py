@@ -582,7 +582,7 @@ def _expand_query_groq(query: str) -> list[str]:
                 {"role": "user", "content": f"Sujet de recherche : {query}"},
             ],
             temperature=0.2,
-            max_tokens=200,
+            max_tokens=400,
         )
         raw = resp.choices[0].message.content.strip()
         keywords = [k.strip().lower() for k in raw.split(",") if k.strip()]
