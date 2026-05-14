@@ -812,16 +812,17 @@ def run_streamlit() -> None:
 
     # ── Période d'analyse — en haut de page, avant chargement ────────────────
     if "days" not in st.session_state:
-        st.session_state["days"] = 7
+        st.session_state["days"] = 30
 
     st.markdown("#### 🗓 Période d'analyse")
-    col_slider, col_1j, col_3j, col_7j, col_30j = st.columns([5, 1, 1, 1, 1])
+    col_slider, col_1j, col_3j, col_7j, col_30j, col_100j = st.columns([5, 1, 1, 1, 1, 1])
     with col_slider:
-        st.slider("Fenêtre (jours)", 1, 30, key="days", label_visibility="collapsed")
-    if col_1j.button("1j",   use_container_width=True): st.session_state["days"] = 1;  st.rerun()
-    if col_3j.button("3j",   use_container_width=True): st.session_state["days"] = 3;  st.rerun()
-    if col_7j.button("7j",   use_container_width=True): st.session_state["days"] = 7;  st.rerun()
-    if col_30j.button("30j", use_container_width=True): st.session_state["days"] = 30; st.rerun()
+        st.slider("Fenêtre (jours)", 1, 100, key="days", label_visibility="collapsed")
+    if col_1j.button("1j",    use_container_width=True): st.session_state["days"] = 1;   st.rerun()
+    if col_3j.button("3j",    use_container_width=True): st.session_state["days"] = 3;   st.rerun()
+    if col_7j.button("7j",    use_container_width=True): st.session_state["days"] = 7;   st.rerun()
+    if col_30j.button("30j",  use_container_width=True): st.session_state["days"] = 30;  st.rerun()
+    if col_100j.button("100j", use_container_width=True): st.session_state["days"] = 100; st.rerun()
     st.markdown("---")
 
     days = st.session_state["days"]
