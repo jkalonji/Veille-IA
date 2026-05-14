@@ -559,6 +559,56 @@ def _generate_weekly_text(articles: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _expand_query_groq(query: str) -> list[str]:
+    """Expand a search query into related keywords using Groq."""
+    groq_key = os.environ.get("GROQ_API_KEY")
+    if not groq_key or not query.strip():
+        return [t.lower() for t in query.split() if len(t) > 2]
+    try:
+        from groq import Groq as _Groq
+        groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+        client = _Groq(api_key=groq_key)
+        resp = client.chat.completions.create(
+            model=groq_model,
+            messages=[
+                {"role": "system", "content": (
+                    "Tu es un assistant de recherche documentaire. "
+                    "L'utilisateur cherche des articles de presse sur un sujet lié à l'IA. "
+                    "Génère une liste de 10 à 14 mots-clés et synonymes pertinents (en français ET en anglais) "
+                    "pour retrouver un maximum d'articles sur ce sujet. "
+                    "Inclus des variantes orthographiques courantes et des termes techniques associés. "
+                    "Réponds UNIQUEMENT avec les mots/expressions séparés par des virgules, sans aucune explication."
+                )},
+                {"role": "user", "content": f"Sujet de recherche : {query}"},
+            ],
+            temperature=0.2,
+            max_tokens=200,
+        )
+        raw = resp.choices[0].message.content.strip()
+        keywords = [k.strip().lower() for k in raw.split(",") if k.strip()]
+        # Always include the original query tokens
+        keywords += [t.lower() for t in query.split() if len(t) > 2]
+        return list(dict.fromkeys(keywords))  # deduplicate, preserve order
+    except Exception:
+        return [t.lower() for t in query.split() if len(t) > 2]
+
+
+def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
+    """Score articles by keyword match across title + description + summary, ranked by hits."""
+    results = []
+    for a in articles:
+        corpus = " ".join([
+            a.get("title") or "",
+            a.get("description") or "",
+            a.get("summary") or "",
+        ]).lower()
+        hits = sum(1 for kw in keywords if kw in corpus)
+        if hits > 0:
+            results.append({**a, "_search_score": hits})
+    results.sort(key=lambda x: x["_search_score"], reverse=True)
+    return results
+
+
 def load_articles(days: int) -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -993,19 +1043,48 @@ def run_streamlit() -> None:
     display_articles = _deduplicate_articles(display_articles)
     st.markdown("### 📋 Derniers articles")
 
-    fa, fb, fc, fd = st.columns([3, 2, 1, 1])
-    search   = fa.text_input("🔍 Recherche dans les titres", placeholder="ex: GPT, OpenAI, Mistral…")
+    # Search form — Groq expansion triggered on submit only
+    with st.form("search_form", clear_on_submit=False):
+        fs_a, fs_b = st.columns([5, 1])
+        search_input = fs_a.text_input(
+            "🔍 Recherche sémantique",
+            value=st.session_state.get("search_query", ""),
+            placeholder="ex: impact IA sur l'emploi, régulation européenne, GPT-5…",
+        )
+        submitted = fs_b.form_submit_button("Chercher", use_container_width=True)
+
+    if submitted:
+        st.session_state["search_query"] = search_input.strip()
+        if search_input.strip():
+            with st.spinner("Analyse de la requête…"):
+                st.session_state["search_keywords"] = _expand_query_groq(search_input.strip())
+        else:
+            st.session_state["search_keywords"] = []
+
+    search_query    = st.session_state.get("search_query", "")
+    search_keywords = st.session_state.get("search_keywords", [])
+
+    if search_keywords:
+        st.caption(f"Mots-clés recherchés : *{', '.join(search_keywords)}*")
+
+    fb, fc, fd = st.columns([3, 1, 1])
     all_srcs = sorted({a["source"] for a in display_articles})
     sel_srcs = fb.multiselect("Source", all_srcs, default=all_srcs, label_visibility="visible")
     only_new = fc.checkbox("Nouveautés 24h", value=False)
     only_top = fd.checkbox("Catégorie dominante", value=False)
 
-    # Apply local filters to the display dataframe only
+    # Apply filters — semantic search takes priority over simple title match
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    if search_keywords:
+        base_rows = _semantic_search(display_articles, search_keywords)
+    elif search_query:
+        base_rows = [a for a in display_articles if search_query.lower() in a.get("title", "").lower()]
+    else:
+        base_rows = display_articles
+
     table_rows = [
-        a for a in display_articles
-        if  (not search   or search.lower() in a.get("title", "").lower())
-        and (a["source"]  in sel_srcs)
+        a for a in base_rows
+        if  (a["source"]  in sel_srcs)
         and (not only_new or a["published"] >= today_str)
         and (not only_top or a.get("category") == top_cat)
     ]
