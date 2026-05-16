@@ -43,20 +43,24 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 CATEGORY_COLORS = {
-    "Innovation / Tech":      "#00b4d8",
-    "Politique / Regulation": "#f4a261",
-    "Business / Industrie":   "#2a9d8f",
-    "Societe / Ethique":      "#e9c46a",
-    "Recherche Academique":   "#a8dadc",
-    "Drama / Controverses":   "#e63946",
+    "Innovation / Tech":        "#00b4d8",
+    "Politique / Regulation":   "#f4a261",
+    "Business / Industrie":     "#2a9d8f",
+    "Societe / Ethique":        "#e9c46a",
+    "Recherche Academique":     "#a8dadc",
+    "Drama / Controverses":     "#e63946",
+    "Energie / Environnement":  "#6db33f",
+    "Semiconducteurs / Hardware": "#9b5de5",
 }
 CATEGORY_EMOJI = {
-    "Innovation / Tech":      "🚀",
-    "Politique / Regulation": "⚖️",
-    "Business / Industrie":   "💼",
-    "Societe / Ethique":      "🤝",
-    "Recherche Academique":   "🎓",
-    "Drama / Controverses":   "💥",
+    "Innovation / Tech":        "🚀",
+    "Politique / Regulation":   "⚖️",
+    "Business / Industrie":     "💼",
+    "Societe / Ethique":        "🤝",
+    "Recherche Academique":     "🎓",
+    "Drama / Controverses":     "💥",
+    "Energie / Environnement":  "⚡",
+    "Semiconducteurs / Hardware": "🔬",
 }
 
 # Legacy category mapping (for articles already stored in Supabase)

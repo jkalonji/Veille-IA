@@ -519,8 +519,11 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 
 _GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec les cles suivantes :
 
-- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses"]
-  Note: les articles de geopolitique, regulation internationale et diplomatie tech vont dans "Politique / Regulation".
+- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses", "Energie / Environnement", "Semiconducteurs / Hardware"]
+  Notes de classification :
+  - "Politique / Regulation" : geopolitique, regulation internationale, diplomatie tech, export controls chips, CHIPS Act, guerre commerciale semi-conducteurs.
+  - "Energie / Environnement" : consommation energetique de l'IA, data centers et reseau electrique, transition energetique, energies renouvelables, nucleaire, rapports IEA/AIE, prix de l'energie.
+  - "Semiconducteurs / Hardware" : industrie des semi-conducteurs (hors geopolitique), GPU/NPU/puces IA, fonderies (TSMC, Samsung, Intel Foundry), equipementiers (ASML), nouveaux procedes de fabrication, marche des chips.
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
@@ -545,6 +548,8 @@ VALID_CATEGORIES = {
     "Societe / Ethique",
     "Recherche Academique",
     "Drama / Controverses",
+    "Energie / Environnement",
+    "Semiconducteurs / Hardware",
 }
 
 VALID_SENTIMENTS  = {"Positif", "Negatif", "Neutre"}
@@ -679,12 +684,14 @@ def save_to_supabase(articles: list[Article]) -> None:
 
 SENTIMENT_EMOJI = {"Positif": "🟢", "Negatif": "🔴", "Neutre": "⚪"}
 CATEGORY_EMOJI = {
-    "Innovation / Tech":      "🚀",
-    "Politique / Regulation": "⚖️",
-    "Business / Industrie":   "💼",
-    "Societe / Ethique":      "🤝",
-    "Recherche Academique":   "🎓",
-    "Drama / Controverses":   "💥",
+    "Innovation / Tech":          "🚀",
+    "Politique / Regulation":     "⚖️",
+    "Business / Industrie":       "💼",
+    "Societe / Ethique":          "🤝",
+    "Recherche Academique":       "🎓",
+    "Drama / Controverses":       "💥",
+    "Energie / Environnement":    "⚡",
+    "Semiconducteurs / Hardware": "🔬",
     "Geopolitique":           "🌍",
 }
 

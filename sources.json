@@ -331,6 +331,78 @@
       "enabled": true
     },
     {
+      "comment": "=== ÉNERGIE / ENVIRONNEMENT ===",
+      "name": "Electrek",
+      "type": "rss",
+      "url": "https://electrek.co/feed/",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "Canary Media",
+      "type": "rss",
+      "url": "https://www.canarymedia.com/feed.xml",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "Energy Monitor",
+      "type": "rss",
+      "url": "https://www.energymonitor.ai/feed/",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Connaissance des Énergies",
+      "type": "rss",
+      "url": "https://www.connaissancedesenergies.org/feed",
+      "country": "🇫🇷",
+      "enabled": true
+    },
+    {
+      "name": "Révolution Énergétique",
+      "type": "rss",
+      "url": "https://www.revolution-energetique.com/feed/",
+      "country": "🇫🇷",
+      "enabled": true
+    },
+    {
+      "comment": "=== SEMICONDUCTEURS / HARDWARE ===",
+      "name": "IEEE Spectrum",
+      "type": "rss",
+      "url": "https://spectrum.ieee.org/feeds/feed.rss",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "EE Times",
+      "type": "rss",
+      "url": "https://www.eetimes.com/feed/",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Semiconductor Engineering",
+      "type": "rss",
+      "url": "https://semiengineering.com/feed/",
+      "country": "🌐",
+      "enabled": true
+    },
+    {
+      "name": "Tom's Hardware",
+      "type": "rss",
+      "url": "https://www.tomshardware.com/feeds/all",
+      "country": "🇺🇸",
+      "enabled": true
+    },
+    {
+      "name": "The Register",
+      "type": "rss",
+      "url": "https://www.theregister.com/headlines.rss",
+      "country": "🇬🇧",
+      "enabled": true
+    },
+    {
       "comment": "=== GÉOPOLITIQUE ===",
       "name": "War on the Rocks",
       "type": "rss",
@@ -512,6 +584,33 @@
       "country": "🌐",
       "enabled": true,
       "min_score": 10,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - Energy & AI Power",
+      "type": "bluesky",
+      "query": "AI energy data center power consumption electricity grid nuclear",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - Semiconducteurs Industrie",
+      "type": "bluesky",
+      "query": "TSMC semiconductor chips foundry fab supply chain ASML wafer",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
+      "count": 15
+    },
+    {
+      "name": "Bluesky - Chip War & Geopolitique",
+      "type": "bluesky",
+      "query": "chip war export controls CHIPS Act semiconductor ban NVIDIA China",
+      "country": "🌐",
+      "enabled": true,
+      "min_score": 15,
       "count": 15
     }
   ]
