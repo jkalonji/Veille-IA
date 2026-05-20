@@ -527,7 +527,7 @@ _GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque arti
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
-- "country": le pays ou la region principalement concerne(e) (ex: "USA", "Chine", "France", "Europe", "Global")."""
+- "country": le pays principalement concerne(e) par l'evenement (ex: "USA", "Chine", "France", "Japon"). N'utilise pas de region contenant plus d'un pays. Le pays que tu donneras fait reference a l'endroit ou se passe l'action, ou l'origine de l'entreprise concernee. Priorise l'endroit geographique ou se passe l'action. Si tu ne trouves rien de pertinent, utilise le label "Global". N'utilise jamais la nationalite du media qui relaie la news, car un media francais peut parler d'une news americaine par exemple."""
 
 # Only requested for hot articles (full model) — saves tokens on non-hot majority
 _GROQ_PROMPT_SUMMARY = """
