@@ -819,6 +819,84 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     return fig
 
 
+def fig_category_radar(articles: list[dict]) -> go.Figure:
+    """Radar chart: article count per category, normalized so the dominant category = 100."""
+    CATEGORY_ORDER = [
+        "Innovation / Tech",
+        "Politique / Regulation",
+        "Business / Industrie",
+        "Societe / Ethique",
+        "Recherche Académique",
+        "Drama / Controverses",
+        "Energie / Environnement",
+        "Semiconducteurs / Hardware",
+    ]
+
+    counts = {cat: 0 for cat in CATEGORY_ORDER}
+    for a in articles:
+        cat = a.get("category", "")
+        if cat in counts:
+            counts[cat] += 1
+
+    max_count = max(counts.values()) or 1
+    raw        = [counts[c] for c in CATEGORY_ORDER]
+    normalized = [round(v / max_count * 100, 1) for v in raw]
+
+    # Close the polygon loop
+    cats_closed = CATEGORY_ORDER + [CATEGORY_ORDER[0]]
+    norm_closed = normalized + [normalized[0]]
+    raw_closed  = raw + [raw[0]]
+
+    if not any(raw):
+        fig = go.Figure()
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE, height=380, paper_bgcolor="#0e1117",
+            title=dict(text="📊 Répartition par catégorie — aucune donnée", font=dict(color="#adb5bd")),
+        )
+        return fig
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=norm_closed,
+        theta=cats_closed,
+        fill="toself",
+        fillcolor="rgba(0, 180, 216, 0.15)",
+        line=dict(color="#00b4d8", width=2),
+        customdata=raw_closed,
+        hovertemplate="<b>%{theta}</b><br>%{customdata} articles<extra></extra>",
+    ))
+    fig.update_layout(
+        template=PLOTLY_TEMPLATE,
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickvals=[25, 50, 75, 100],
+                tickfont=dict(size=9, color="#555"),
+                gridcolor="#2a2d3a",
+                linecolor="#2a2d3a",
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=10, color="#adb5bd"),
+                gridcolor="#2a2d3a",
+                linecolor="#2a2d3a",
+            ),
+            bgcolor="#0e1117",
+        ),
+        title=dict(
+            text="📊 Répartition par catégorie",
+            font=dict(size=14, color="#adb5bd"),
+            x=0.5, xanchor="center",
+        ),
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        height=380,
+        margin=dict(l=60, r=60, t=50, b=30),
+        showlegend=False,
+    )
+    return fig
+
+
 def _render_hot_articles(articles: list[dict], container) -> None:
     """Render hot articles as dynamic topic tabs in Streamlit."""
     import streamlit as st
@@ -994,12 +1072,8 @@ def run_streamlit() -> None:
 
     col_globe, col_ranking = st.columns([3, 2])
     with col_ranking:
-        st.plotly_chart(fig_country_ranking(filtered), use_container_width=True)
-        st.caption(
-            "📰 **Couverture** = volume × diversité des sources  ·  "
-            "🚀 **Innovation** = articles tech viraux  ·  "
-            "🔥 **Influence** = hot topics × engagement"
-        )
+        st.plotly_chart(fig_category_radar(filtered), use_container_width=True)
+        st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
     with col_globe:
         # Build iso_counts for the Globe.gl component
         _iso_counts: dict[str, int] = {}
@@ -1299,7 +1373,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         config={"responsive": True, "scrollZoom": False},
     )
     radar_html = pio.to_html(
-        fig_country_ranking(articles),
+        fig_category_radar(articles),
         div_id="radar-div",
         full_html=False,
         include_plotlyjs=False,   # already bundled by globe_html
@@ -1435,9 +1509,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     <div class="radar-card">
       {radar_html}
       <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
-        📰 <b>Couverture</b> = volume × diversité des sources &nbsp;·&nbsp;
-        🚀 <b>Innovation</b> = articles tech viraux &nbsp;·&nbsp;
-        🔥 <b>Influence</b> = hot topics × engagement
+        L'axe maximal correspond à la catégorie dominante (étalon = 100).
       </p>
     </div>
   </div>
