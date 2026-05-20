@@ -71,18 +71,24 @@ let rotation = [0, -20, 0];
 let autoRotate = true;
 
 // ── Canvas & projection setup ─────────────────────────────────────────────────
+const wrap   = document.getElementById('wrap');
 const canvas = document.getElementById('globe');
 const ctx    = canvas.getContext('2d');
-const W      = Math.max(window.innerWidth || 0, 320);
 const H      = 460;
 const dpr    = Math.min(window.devicePixelRatio || 1, 2);
-canvas.width  = W * dpr;
-canvas.height = H * dpr;
-canvas.style.width  = W + 'px';
-canvas.style.height = H + 'px';
-ctx.scale(dpr, dpr);
 
-const RADIUS = Math.min(W, H) * 0.43;
+let W      = Math.max(wrap.clientWidth || window.innerWidth || 320, 320);
+let RADIUS = Math.min(W, H) * 0.43;
+
+function applyCanvasSize() {
+  canvas.width        = W * dpr;
+  canvas.height       = H * dpr;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+applyCanvasSize();
+
 const projection = d3.geoOrthographic()
   .scale(RADIUS)
   .translate([W / 2, H / 2])
@@ -92,6 +98,18 @@ const projection = d3.geoOrthographic()
 const pathGen   = d3.geoPath().projection(projection).context(ctx);
 const graticule = d3.geoGraticule()();
 const sphere    = { type: 'Sphere' };
+
+// Recompute canvas + projection when the container resizes
+const _ro = new ResizeObserver(() => {
+  const newW = Math.max(wrap.clientWidth || window.innerWidth || 320, 320);
+  if (Math.abs(newW - W) < 2) return; // ignore sub-pixel jitter
+  W      = newW;
+  RADIUS = Math.min(W, H) * 0.43;
+  applyCanvasSize();
+  projection.scale(RADIUS).translate([W / 2, H / 2]);
+  render();
+});
+_ro.observe(wrap);
 
 // ── Dot color helper ──────────────────────────────────────────────────────────
 function dotColor(iso3) {
@@ -243,35 +261,32 @@ let dragStart  = null;
 let rotStart   = null;
 let dragMoved  = false;
 
-canvas.addEventListener('mousedown', e => {
+function startDrag(clientX, clientY) {
   isDragging = true;
   dragMoved  = false;
   autoRotate = false;
-  dragStart  = [e.clientX, e.clientY];
+  dragStart  = [clientX, clientY];
   rotStart   = [...rotation];
-  canvas.style.cursor = 'grabbing';
   tooltip.style.display = 'none';
-});
+}
 
-document.addEventListener('mousemove', e => {
+function moveDrag(clientX, clientY) {
   if (!isDragging || !dragStart) return;
-  const dx = e.clientX - dragStart[0];
-  const dy = e.clientY - dragStart[1];
+  const dx = clientX - dragStart[0];
+  const dy = clientY - dragStart[1];
   if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
   rotation[0] = rotStart[0] + dx * 0.35;
   rotation[1] = Math.max(-75, Math.min(75, rotStart[1] - dy * 0.35));
   projection.rotate(rotation);
   render();
-});
+}
 
-document.addEventListener('mouseup', e => {
+function endDrag(clientX, clientY) {
   if (!isDragging) return;
   isDragging = false;
-  canvas.style.cursor = 'grab';
-
   if (!dragMoved) {
     const rect = canvas.getBoundingClientRect();
-    const feat = featureAt(e.clientX - rect.left, e.clientY - rect.top);
+    const feat = featureAt(clientX - rect.left, clientY - rect.top);
     if (feat) {
       const iso3   = feat.properties.ISO_A3;
       const newSel = (iso3 && iso3 !== '-99') ? ((iso3 === args.selected_iso) ? null : iso3) : null;
@@ -281,7 +296,36 @@ document.addEventListener('mouseup', e => {
     }
   }
   setTimeout(() => { autoRotate = true; }, 300);
+}
+
+// Mouse
+canvas.addEventListener('mousedown', e => {
+  startDrag(e.clientX, e.clientY);
+  canvas.style.cursor = 'grabbing';
 });
+document.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+document.addEventListener('mouseup',   e => {
+  endDrag(e.clientX, e.clientY);
+  canvas.style.cursor = 'grab';
+});
+
+// Touch
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  startDrag(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  moveDrag(t.clientX, t.clientY);
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+  const t = e.changedTouches[0];
+  endDrag(t.clientX, t.clientY);
+}, { passive: false });
 
 // Hover tooltip (throttled to rAF)
 let hoverPending = false;
