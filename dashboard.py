@@ -29,6 +29,7 @@ def _get_globe_component():
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.io as pio
+from plotly.offline import get_plotlyjs
 from supabase import create_client
 
 # Load .env (local only, no-op if absent)
@@ -1274,12 +1275,13 @@ def run_streamlit() -> None:
 # HTML export (CI mode)
 # ---------------------------------------------------------------------------
 
-def _articles_to_html_table(articles: list[dict]) -> str:
+def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str] | None = None) -> str:
     """Build HTML table rows with data-* attributes for JS filtering."""
+    cat_emoji_map = category_emoji or CATEGORY_EMOJI
     rows = []
     for a in articles:
         cat   = a.get("category", "")
-        emoji = CATEGORY_EMOJI.get(cat, "📌")
+        emoji = cat_emoji_map.get(cat, "📌")
         title = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
         url   = a.get("url", "#")
         sent  = a.get("sentiment", "")
@@ -1343,18 +1345,24 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
     </div>"""
 
 
-def _hot_articles_html(articles: list[dict]) -> str:
-    """Build hot articles as dynamic topic tabs for CI HTML export."""
+def _hot_articles_html(articles: list[dict], category_emoji: dict[str, str] | None = None, domain: str = "ia") -> str:
+    """Build hot articles as dynamic topic tabs for CI HTML export.
+
+    `domain` scopes element ids and the click-handler's queries to this
+    domain's own container, so the same page can embed one of these per
+    domain (Phase 1's export toggle) without id collisions or cross-domain
+    click handlers firing on each other's tabs.
+    """
     topics = _extract_hot_topics(articles)
     if not topics:
         return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
 
-    first_key = "topic-0"
+    wrap_id = f"hot-articles-{domain}"
 
     # ── Tab buttons ────────────────────────────────────────────────────────
     buttons = ""
     for i, t in enumerate(topics):
-        key       = f"topic-{i}"
+        key       = f"{domain}-topic-{i}"
         color     = t["color"]
         is_active = i == 0
         icon      = "🌋" if t["has_supra"] else "🔥"
@@ -1372,9 +1380,9 @@ def _hot_articles_html(articles: list[dict]) -> str:
     # ── Tab panels ─────────────────────────────────────────────────────────
     panels = ""
     for i, t in enumerate(topics):
-        key     = f"topic-{i}"
+        key     = f"{domain}-topic-{i}"
         display = "block" if i == 0 else "none"
-        cards   = "".join(_render_hot_card_html(a, t["color"]) for a in t["articles"])
+        cards   = "".join(_render_hot_card_html(a, t["color"], category_emoji=category_emoji) for a in t["articles"])
         panels += f'<div class="hot-panel" id="hot-{key}" style="display:{display}">{cards}</div>'
 
     return f"""
@@ -1395,18 +1403,22 @@ def _hot_articles_html(articles: list[dict]) -> str:
     padding: 1px 7px; font-size: 11px; margin-left: 6px; font-weight: 400;
   }}
 </style>
-<div class="hot-tabs">{buttons}</div>
-<div>{panels}</div>
+<div id="{wrap_id}">
+  <div class="hot-tabs">{buttons}</div>
+  <div>{panels}</div>
+</div>
 <script>
 (function() {{
-  document.querySelectorAll('.hot-tab').forEach(function(btn) {{
+  var root = document.getElementById('{wrap_id}');
+  if (!root) return;
+  root.querySelectorAll('.hot-tab').forEach(function(btn) {{
     btn.addEventListener('click', function() {{
-      document.querySelectorAll('.hot-tab').forEach(function(b) {{
+      root.querySelectorAll('.hot-tab').forEach(function(b) {{
         b.classList.remove('hot-tab--active');
         b.style.borderColor = '#2a2d3a';
         b.style.color = '';
       }});
-      document.querySelectorAll('.hot-panel').forEach(function(p) {{
+      root.querySelectorAll('.hot-panel').forEach(function(p) {{
         p.style.display = 'none';
       }});
       btn.classList.add('hot-tab--active');
@@ -1420,43 +1432,46 @@ def _hot_articles_html(articles: list[dict]) -> str:
 </script>"""
 
 
-def run_export(days: int, output: str = "dashboard.html") -> None:
-    print(f"Chargement des articles ({days} derniers jours)...")
-    try:
-        articles = load_articles(days)
-    except RuntimeError as e:
-        print(f"Erreur : {e}", file=sys.stderr)
-        sys.exit(1)
+def _render_domain_export_section(domain: str, articles: list[dict], active: bool, now: str) -> str:
+    """Build one domain's full self-contained section for the static export —
+    charts, hot topics, filter toolbar and table — with every element id/class
+    scoped to `domain` so several of these can live in the same page and be
+    toggled client-side without colliding."""
+    domain_meta   = DOMAIN_META.get(domain, DOMAIN_META["ia"])
+    cat_emoji_map = DOMAIN_CATEGORY_EMOJI.get(domain, {})
+    cat_order     = DOMAIN_CATEGORY_ORDER.get(domain, DOMAIN_CATEGORY_ORDER["ia"])
+    display       = "block" if active else "none"
 
     if not articles:
-        print("Aucun article trouvé.")
-        sys.exit(0)
+        return f"""
+  <section class="domain-panel" data-domain="{domain}" style="display:{display}">
+    <p class="domain-headline">{domain_meta['emoji']} {domain_meta['label']} — aucun article sur la période sélectionnée.</p>
+  </section>"""
 
     total    = len(articles)
     dates    = sorted({a["published"] for a in articles})
     date_lbl = f"{dates[0]} → {dates[-1]}" if dates else "—"
-    print(f"{total} articles trouvés ({date_lbl})")
+    print(f"[{domain}] {total} articles trouvés ({date_lbl})")
 
     globe_html = pio.to_html(
         fig_globe(articles),
-        div_id="globe-div",
+        div_id=f"globe-div-{domain}",
         full_html=False,
-        include_plotlyjs=True,
+        include_plotlyjs=False,   # bundled once at the page level
         config={"responsive": True, "scrollZoom": False},
     )
     radar_html = pio.to_html(
-        fig_category_radar(articles),
-        div_id="radar-div",
+        fig_category_radar(articles, category_order=cat_order),
+        div_id=f"radar-div-{domain}",
         full_html=False,
-        include_plotlyjs=False,   # already bundled by globe_html
+        include_plotlyjs=False,
         config={"responsive": True},
     )
 
-    deduped     = _deduplicate_articles(articles)
-    hot_cards   = _hot_articles_html(articles)
-    table_rows  = _articles_to_html_table(deduped)
+    deduped    = _deduplicate_articles(articles)
+    hot_cards  = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain)
+    table_rows = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
 
-    # Build filter option lists for the HTML selects
     def _options(values: list[str]) -> str:
         return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
 
@@ -1464,14 +1479,90 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     opt_cat  = _options([a.get("category",  "") for a in articles if a.get("category")])
     opt_src  = _options([a.get("source",    "") for a in articles if a.get("source")])
 
+    return f"""
+  <section class="domain-panel" data-domain="{domain}" style="display:{display}">
+    <p class="domain-headline">{domain_meta['emoji']} {domain_meta['label']} — {total} articles · {date_lbl} · généré le {now}</p>
+
+    <div class="charts-row">
+      <div class="globe-card">{globe_html}</div>
+      <div class="radar-card">
+        {radar_html}
+        <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
+          L'axe maximal correspond à la catégorie dominante (étalon = 100).
+        </p>
+      </div>
+    </div>
+    <div class="country-filter-bar" id="country-filter-bar-{domain}">
+      <span class="country-filter-label" id="country-filter-label-{domain}"></span>
+      <button class="country-filter-clear" data-domain="{domain}">✕ Effacer le filtre</button>
+    </div>
+
+    <h2>🔥 Hot Articles</h2>
+    {hot_cards}
+
+    <h2>📋 Derniers articles</h2>
+    <div class="toolbar">
+      <input  class="f-search" data-domain="{domain}" type="search" placeholder="🔍 Recherche dans les titres…" autocomplete="off">
+      <select class="f-sent" data-domain="{domain}"><option value="">Tous les sentiments</option>{opt_sent}</select>
+      <select class="f-cat" data-domain="{domain}"><option value="">Toutes les catégories</option>{opt_cat}</select>
+      <select class="f-src" data-domain="{domain}"><option value="">Toutes les sources</option>{opt_src}</select>
+      <span class="count" data-domain="{domain}"></span>
+    </div>
+    <div class="table-wrap">
+      <table class="articles-table" id="articles-table-{domain}">
+        <thead>
+          <tr>
+            <th>Publié</th>
+            <th>Sent.</th>
+            <th>Titre</th>
+            <th class="col-source">Source</th>
+            <th class="col-country">Pays</th>
+            <th>Catégorie</th>
+          </tr>
+        </thead>
+        <tbody>
+{table_rows}
+        </tbody>
+      </table>
+    </div>
+  </section>"""
+
+
+def run_export(days: int, output: str = "dashboard.html") -> None:
+    print(f"Chargement des articles ({days} derniers jours)...")
+    domains = list(DOMAIN_META)
+    articles_by_domain: dict[str, list[dict]] = {}
+    try:
+        for domain in domains:
+            articles_by_domain[domain] = load_articles(days, domain)
+    except RuntimeError as e:
+        print(f"Erreur : {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not any(articles_by_domain.values()):
+        print("Aucun article trouvé.")
+        sys.exit(0)
+
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+    default_domain = "ia" if articles_by_domain.get("ia") else domains[0]
+
+    toggle_buttons = "".join(
+        f'<button class="domain-toggle-btn{" active" if d == default_domain else ""}" data-domain="{d}">'
+        f'{DOMAIN_META[d]["emoji"]} {DOMAIN_META[d]["label"]}</button>'
+        for d in domains
+    )
+    domain_sections = "".join(
+        _render_domain_export_section(d, articles_by_domain[d], active=(d == default_domain), now=now)
+        for d in domains
+    )
+
     full_html = f"""<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e1117">
-  <title>Cobalt.xyz · AI Radar</title>
+  <title>Cobalt.xyz · Radars</title>
   <style>
     /* ── Reset & base ───────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
@@ -1487,6 +1578,18 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     a  {{ color: #00b4d8; text-decoration: none; }}
     a:active {{ opacity: 0.7; }}
 
+    /* ── Domain toggle ────────────────────────────────────── */
+    .domain-toggle {{ display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }}
+    .domain-toggle-btn {{
+      background: #1a1d27; color: #adb5bd;
+      border: 2px solid #2a2d3a; border-radius: 20px;
+      padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: all 0.15s ease;
+    }}
+    .domain-toggle-btn:hover {{ background: #252836; color: #fafafa; }}
+    .domain-toggle-btn.active {{ background: #00b4d8; color: #0e1117; border-color: #00b4d8; }}
+    .domain-headline {{ color: #adb5bd; font-size: 0.9rem; margin-bottom: 12px; }}
+
     /* ── Charts grid (globe + radar) ────────────────────── */
     .charts-row {{
       display: grid;
@@ -1501,18 +1604,18 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       background: #0e1117; border-radius: 10px;
       overflow: hidden; position: relative;
     }}
-    #country-filter-bar {{
+    .country-filter-bar {{
       display: none; align-items: center; gap: 10px;
       background: #1a1d27; border-radius: 8px;
       padding: 10px 14px; margin-bottom: 10px; font-size: 13px;
     }}
-    #country-filter-bar.visible {{ display: flex; }}
-    #country-filter-label {{ color: #00b4d8; flex: 1; }}
-    #country-filter-clear {{
+    .country-filter-bar.visible {{ display: flex; }}
+    .country-filter-label {{ color: #00b4d8; flex: 1; }}
+    .country-filter-clear {{
       background: #2a2d3a; color: #adb5bd; border: none;
       border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px;
     }}
-    #country-filter-clear:hover {{ background: #e63946; color: #fff; }}
+    .country-filter-clear:hover {{ background: #e63946; color: #fff; }}
 
     /* ── Hot articles ────────────────────────────────────── */
     .hot-card {{
@@ -1535,7 +1638,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       -webkit-appearance: none; appearance: none;
     }}
     .toolbar input::placeholder {{ color: #555; }}
-    #count {{ color: #888; font-size: 12px; text-align: right; }}
+    .count {{ color: #888; font-size: 12px; text-align: right; }}
 
     /* ── Table — scrolls horizontally on small screens ───── */
     .table-wrap {{
@@ -1565,165 +1668,97 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       .toolbar {{ flex-direction: row; flex-wrap: wrap; align-items: center; }}
       .toolbar input  {{ flex: 1; min-width: 180px; width: auto; }}
       .toolbar select {{ min-width: 140px; width: auto; }}
-      #count {{ margin-left: auto; }}
+      .count {{ margin-left: auto; }}
       tr:hover td {{ background: #1a1d27; }}
       .col-country, .col-source {{ display: table-cell; }}
     }}
   </style>
 </head>
 <body>
-  <h1>🤖 Cobalt.xyz · AI Radar</h1>
-  <p style="color:#adb5bd;font-size:0.9rem;margin-bottom:4px;">L'actualité IA mondiale : tendances, innovations et influences.</p>
-  <p>{total} articles · {date_lbl} · généré le {now}</p>
+  <h1>Cobalt.xyz</h1>
+  <script>{get_plotlyjs()}</script>
 
-  <div class="charts-row">
-    <div class="globe-card">{globe_html}</div>
-    <div class="radar-card">
-      {radar_html}
-      <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
-        L'axe maximal correspond à la catégorie dominante (étalon = 100).
-      </p>
-    </div>
-  </div>
-  <div id="country-filter-bar">
-    <span id="country-filter-label"></span>
-    <button id="country-filter-clear" onclick="clearCountryFilter()">✕ Effacer le filtre</button>
-  </div>
-
-  <h2>🔥 Hot Articles</h2>
-  {hot_cards}
-
-  <h2>📋 Derniers articles</h2>
-  <div class="toolbar">
-    <input  id="f-search" type="search" placeholder="🔍 Recherche dans les titres…" autocomplete="off">
-    <select id="f-sent"><option value="">Tous les sentiments</option>{opt_sent}</select>
-    <select id="f-cat"><option value="">Toutes les catégories</option>{opt_cat}</select>
-    <select id="f-src"><option value="">Toutes les sources</option>{opt_src}</select>
-    <span id="count"></span>
-  </div>
-  <div class="table-wrap">
-    <table id="articles-table">
-      <thead>
-        <tr>
-          <th>Publié</th>
-          <th>Sent.</th>
-          <th>Titre</th>
-          <th class="col-source">Source</th>
-          <th class="col-country">Pays</th>
-          <th>Catégorie</th>
-        </tr>
-      </thead>
-      <tbody>
-{table_rows}
-      </tbody>
-    </table>
-  </div>
+  <div class="domain-toggle">{toggle_buttons}</div>
+{domain_sections}
 
   <script>
     // ── ISO-3 → display name (mirrored from Python) ─────────────────────────
     const ISO3_NAME = {json.dumps(ISO3_TO_NAME)};
+    const DOMAINS   = {json.dumps(domains)};
+    let activeDomain = {json.dumps(default_domain)};
 
-    // ── Globe click → country filter ────────────────────────────────────────
-    let selectedIso = '';
+    // Per-domain state: selected country filter, globe element, rotation timer/angle.
+    const domainState = {{}};
+    DOMAINS.forEach(function(d) {{
+      domainState[d] = {{ selectedIso: '', globeEl: null, rotateTimer: null, lon: 0, filters: null }};
+    }});
 
-    // ── Globe auto-rotation (1 tour / 10 s = 1.8°/50 ms) ───────────────────
-    var _globeLon = 0;
-    var _rotateTimer = null;
-    var _globeEl = null;
-    function _startRotation() {{
-      if (!_globeEl || _rotateTimer) return;
-      _rotateTimer = setInterval(function() {{
-        _globeLon = (_globeLon + 1.8) % 360;
-        Plotly.relayout(_globeEl, {{'geo.projection.rotation.lon': _globeLon}});
+    function panelRoot(domain) {{
+      return document.querySelector('.domain-panel[data-domain="' + domain + '"]');
+    }}
+
+    // ── Globe auto-rotation (1 tour / 10 s = 1.8°/50 ms) — only the active domain spins ──
+    function startRotation(domain) {{
+      const st = domainState[domain];
+      if (!st.globeEl || st.rotateTimer) return;
+      st.rotateTimer = setInterval(function() {{
+        st.lon = (st.lon + 1.8) % 360;
+        Plotly.relayout(st.globeEl, {{'geo.projection.rotation.lon': st.lon}});
       }}, 50);
     }}
-    function _stopRotation() {{
-      clearInterval(_rotateTimer);
-      _rotateTimer = null;
+    function stopRotation(domain) {{
+      const st = domainState[domain];
+      clearInterval(st.rotateTimer);
+      st.rotateTimer = null;
     }}
 
-    function updateHotTabCounts() {{
-      document.querySelectorAll('.hot-tab[data-group]').forEach(function(btn) {{
-        var group = btn.dataset.group;
-        var panel = document.getElementById('hot-' + group);
+    function updateHotTabCounts(domain) {{
+      const root = panelRoot(domain);
+      if (!root) return;
+      const sel = domainState[domain].selectedIso;
+      root.querySelectorAll('.hot-tab[data-group]').forEach(function(btn) {{
+        const panel = document.getElementById('hot-' + btn.dataset.group);
         if (!panel) return;
-        var cards = panel.querySelectorAll('[data-iso]');
-        var visible = 0;
-        cards.forEach(function(c) {{
-          if (!selectedIso || c.dataset.iso === selectedIso) visible++;
-        }});
-        var span = btn.querySelector('.hot-tab__count');
+        const cards = panel.querySelectorAll('[data-iso]');
+        let visible = 0;
+        cards.forEach(function(c) {{ if (!sel || c.dataset.iso === sel) visible++; }});
+        const span = btn.querySelector('.hot-tab__count');
         if (span) span.textContent = visible;
-        // Dim button when count is 0, restore otherwise
-        if (visible === 0) {{
-          btn.style.opacity = '0.35';
-        }} else {{
-          btn.style.opacity = '';
-        }}
+        btn.style.opacity = visible === 0 ? '0.35' : '';
       }});
     }}
 
-    function applyCountryFilter() {{
-      const bar   = document.getElementById('country-filter-bar');
-      const label = document.getElementById('country-filter-label');
-      const allCards = document.querySelectorAll('[data-iso]');
+    function applyCountryFilter(domain) {{
+      const root = panelRoot(domain);
+      if (!root) return;
+      const bar   = document.getElementById('country-filter-bar-' + domain);
+      const label = document.getElementById('country-filter-label-' + domain);
+      const sel   = domainState[domain].selectedIso;
+      const allCards = root.querySelectorAll('[data-iso]');
 
-      if (selectedIso) {{
+      if (sel) {{
         bar.classList.add('visible');
-        label.textContent = '🌍 Pays sélectionné : ' + (ISO3_NAME[selectedIso] || selectedIso);
-        allCards.forEach(el => {{
-          el.style.display = (el.dataset.iso === selectedIso) ? '' : 'none';
-        }});
+        label.textContent = '🌍 Pays sélectionné : ' + (ISO3_NAME[sel] || sel);
+        allCards.forEach(el => {{ el.style.display = (el.dataset.iso === sel) ? '' : 'none'; }});
       }} else {{
         bar.classList.remove('visible');
         allCards.forEach(el => {{ el.style.display = ''; }});
       }}
-      updateHotTabCounts();  // sync tab button counts with visible cards
-      applyFilters();         // re-run text/sent/cat/src filters on top
+      updateHotTabCounts(domain);
+      applyFilters(domain);
     }}
 
-    function clearCountryFilter() {{
-      selectedIso = '';
-      applyCountryFilter();
-      _startRotation();
-    }}
-
-    // Attach Plotly globe click event + start auto-rotation after DOM is ready
-    window.addEventListener('load', function() {{
-      var gd = document.getElementById('globe-div');
-      if (!gd) return;
-      _globeEl = gd;
-      _startRotation();
-      gd.on('plotly_click', function(data) {{
-        if (!data || !data.points || !data.points[0]) return;
-        var iso = data.points[0].location;
-        if (!iso) return;
-        selectedIso = (selectedIso === iso) ? '' : iso;   // toggle
-        applyCountryFilter();
-        if (selectedIso) {{ _stopRotation(); }} else {{ _startRotation(); }}
-      }});
-    }});
-
-    // ── Table filters ────────────────────────────────────────────────────────
-    const rows    = Array.from(document.querySelectorAll('#articles-table tbody tr'));
-    const search  = document.getElementById('f-search');
-    const fSent   = document.getElementById('f-sent');
-    const fCat    = document.getElementById('f-cat');
-    const fSrc    = document.getElementById('f-src');
-    const counter = document.getElementById('count');
-
-    function applyFilters() {{
-      const q    = search.value.toLowerCase();
-      const sent = fSent.value;
-      const cat  = fCat.value;
-      const src  = fSrc.value;
+    function applyFilters(domain) {{
+      const f = domainState[domain].filters;
+      if (!f) return;
+      const q    = f.search.value.toLowerCase();
+      const sent = f.fSent.value;
+      const cat  = f.fCat.value;
+      const src  = f.fSrc.value;
+      const sel  = domainState[domain].selectedIso;
       let visible = 0;
-      rows.forEach(row => {{
-        // skip rows already hidden by country filter
-        if (selectedIso && row.dataset.iso !== selectedIso) {{
-          row.style.display = 'none';
-          return;
-        }}
+      f.rows.forEach(row => {{
+        if (sel && row.dataset.iso !== sel) {{ row.style.display = 'none'; return; }}
         const match =
           (!q    || row.dataset.title.includes(q))    &&
           (!sent || row.dataset.sentiment === sent)    &&
@@ -1732,11 +1767,78 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         row.style.display = match ? '' : 'none';
         if (match) visible++;
       }});
-      counter.textContent = visible + ' article' + (visible !== 1 ? 's' : '') + ' affiché' + (visible !== 1 ? 's' : '');
+      f.counter.textContent = visible + ' article' + (visible !== 1 ? 's' : '') + ' affiché' + (visible !== 1 ? 's' : '');
     }}
 
-    [search, fSent, fCat, fSrc].forEach(el => el.addEventListener('input', applyFilters));
-    applyFilters();
+    function initDomainGlobe(domain) {{
+      const gd = document.getElementById('globe-div-' + domain);
+      if (!gd) return;
+      domainState[domain].globeEl = gd;
+      gd.on('plotly_click', function(data) {{
+        if (!data || !data.points || !data.points[0]) return;
+        const iso = data.points[0].location;
+        if (!iso) return;
+        const st = domainState[domain];
+        st.selectedIso = (st.selectedIso === iso) ? '' : iso;   // toggle
+        applyCountryFilter(domain);
+        if (st.selectedIso) {{ stopRotation(domain); }} else if (domain === activeDomain) {{ startRotation(domain); }}
+      }});
+      const clearBtn = document.querySelector('.country-filter-clear[data-domain="' + domain + '"]');
+      if (clearBtn) clearBtn.addEventListener('click', function() {{
+        domainState[domain].selectedIso = '';
+        applyCountryFilter(domain);
+        if (domain === activeDomain) startRotation(domain);
+      }});
+    }}
+
+    function initDomainTableFilters(domain) {{
+      const root = panelRoot(domain);
+      if (!root) return;
+      const search = root.querySelector('.f-search');
+      if (!search) return;  // domain has no data → placeholder section, nothing to wire up
+      const f = {{
+        rows:    Array.from(root.querySelectorAll('.articles-table tbody tr')),
+        search:  search,
+        fSent:   root.querySelector('.f-sent'),
+        fCat:    root.querySelector('.f-cat'),
+        fSrc:    root.querySelector('.f-src'),
+        counter: root.querySelector('.count'),
+      }};
+      domainState[domain].filters = f;
+      [f.search, f.fSent, f.fCat, f.fSrc].forEach(el => el.addEventListener('input', function() {{ applyFilters(domain); }}));
+    }}
+
+    function showDomain(domain) {{
+      if (domain === activeDomain || !domainState[domain]) return;
+      document.querySelectorAll('.domain-panel').forEach(function(el) {{
+        el.style.display = (el.dataset.domain === domain) ? 'block' : 'none';
+      }});
+      document.querySelectorAll('.domain-toggle-btn').forEach(function(btn) {{
+        btn.classList.toggle('active', btn.dataset.domain === domain);
+      }});
+      stopRotation(activeDomain);
+      activeDomain = domain;
+      const st = domainState[domain];
+      if (st.globeEl) {{
+        Plotly.Plots.resize(st.globeEl);
+        if (!st.selectedIso) startRotation(domain);
+      }}
+      const radarEl = document.getElementById('radar-div-' + domain);
+      if (radarEl) Plotly.Plots.resize(radarEl);
+    }}
+
+    window.addEventListener('load', function() {{
+      DOMAINS.forEach(function(domain) {{
+        initDomainGlobe(domain);
+        initDomainTableFilters(domain);
+        applyFilters(domain);
+        updateHotTabCounts(domain);
+      }});
+      startRotation(activeDomain);
+      document.querySelectorAll('.domain-toggle-btn').forEach(function(btn) {{
+        btn.addEventListener('click', function() {{ showDomain(btn.dataset.domain); }});
+      }});
+    }});
   </script>
 </body>
 </html>"""
