@@ -86,16 +86,20 @@ Une ligne par symbole suivi et par jour de collecte. Le dashboard pourra tracer 
 
 ## 5. Sources par domaine
 
-### Phase 1 — Politique / Événements Majeurs
+### Phase 1 — Politique / Événements Majeurs ✅ (implémenté)
+
+> **Correction (constatée à l'implémentation)** : Reuters World et AP Top News ont discontinué leurs flux RSS publics — remplacés par The Guardian World et NPR World News. Et le GDELT Event Database brut (CSV 15 min, Goldstein Scale/CAMEO) a été jugé trop lourd/risqué pour un pipeline qui ne tourne qu'1x/jour (risque de dépasser le timeout CI de 20 min) — remplacé par l'**API GDELT DOC 2.0** (recherche d'articles par mot-clé, une requête HTTP légère par thème), voir détails ci-dessous.
 
 | Source | Type | Détails |
 |---|---|---|
-| Reuters World, AP Top News, Al Jazeera, France24 Monde, BBC World | RSS | Même logique que les flux existants |
-| **GDELT 2.0 Event Database** | Fichiers événementiels (CSV, mis à jour toutes les 15 min, gratuit, pas de clé) | Événements mondiaux structurés (conflits, protestations, diplomatie), filtrage possible par `Goldstein Scale` (intensité) et code CAMEO (type d'événement) |
-| **USGS Earthquake Feed** | API GeoJSON gratuite, pas de clé | Catastrophes naturelles (séismes), filtrage par magnitude ≥ seuil |
-| **ACLED** | API (clé gratuite sur inscription, usage académique/ONG/presse) | Conflits armés et manifestations, données les plus fines mais **accès à demander séparément** — ne bloque pas le lancement de la Phase 1, s'ajoute en 1b une fois l'accès obtenu |
+| BBC World, Al Jazeera, The Guardian World, France24 (EN), NPR World News | RSS | Même logique que les flux existants |
+| **GDELT DOC 2.0 API** (`fetch_gdelt_all` dans `main.py`) | API JSON (`api.gdeltproject.org/api/v2/doc/doc`), gratuite, pas de clé | 5 requêtes thématiques (Conflits, Manifestations, Coups d'État, Diplomatie, Sanctions) filtrées `sourcelang:english`, exécutées **séquentiellement** (10s entre chaque + 1 retry après 15s) car l'API rate-limite plus agressivement que documenté (~1 req/5s annoncé, mais des réponses vides ont été observées même en respectant ce rythme) |
+| **USGS Earthquake Feed** (`fetch_usgs`) | API GeoJSON gratuite, pas de clé (`significant_day.geojson`) | Catastrophes naturelles (séismes) — flux déjà pré-filtré "significatif" par l'USGS, pas de seuil de magnitude à gérer côté code |
+| **ACLED** | API (clé gratuite sur inscription, usage académique/ONG/presse) | Pas encore implémenté — accès à demander séparément, prévu en 1b |
 
-Indicateur `market_data` optionnel pour ce domaine : **VIX** (indice de volatilité/peur des marchés), pertinent comme baromètre de risque réagissant aux chocs politiques.
+Indicateur `market_data` optionnel pour ce domaine (**VIX**) : reporté, pas encore implémenté (arrivera avec `market_data` en Phase 2/3).
+
+Dashboard : sélecteur de domaine ajouté à la fois côté Streamlit interactif (`run_streamlit`) et côté export statique GitHub Pages (`run_export` — toggle JS entre sections pré-générées par domaine, pas de re-render serveur).
 
 ### Phase 2 — Matières Premières
 - RSS spécialisés (OilPrice.com, Reuters Commodities)
@@ -141,7 +145,7 @@ Un message par domaine par jour, même format compact que l'existant, ex :
 ## 8. Feuille de route
 
 1. **Phase 0 — Fondations ✅ (code fait, migration SQL à exécuter par l'utilisateur — voir `CLAUDE.md`)** : migration schéma (`domain` sur `articles`, table `market_data`), refactor classification Groq pour prendre une taxonomie par domaine (`DOMAIN_TAXONOMY` dans `main.py`), refactor hot-topic detection (clustering n-grammes) pour filtrer par domaine, refactor digest Telegram pour émettre un message par domaine (`DOMAIN_META`/`_send_domain_digest`). Le dashboard n'a pas encore de sélecteur de domaine (reporté en Phase 1, aucune donnée réelle à filtrer pour l'instant).
-2. **Phase 1 — Politique / Événements Majeurs** : sources RSS + GDELT + USGS, dashboard + Telegram pour ce domaine. ACLED en 1b si accès obtenu.
+2. **Phase 1 — Politique / Événements Majeurs ✅ (code fait et déployé)** : sources RSS + GDELT DOC 2.0 API + USGS, dashboard (Streamlit + export statique) et Telegram pour ce domaine, tous vérifiés fonctionnels. ACLED en 1b si accès obtenu. **Reste ouvert : justesse de la classification des articles dans ce domaine** (voir §9) — à retravailler avant de considérer la Phase 1 vraiment terminée.
 3. **Phase 2 — Matières Premières** : RSS + EIA `market_data`.
 4. **Phase 3 — Finance / Marchés** : RSS + yfinance/Alpha Vantage `market_data`.
 5. **Phase 4 — Services / Économie** : RSS + FRED `market_data`.
@@ -149,8 +153,9 @@ Un message par domaine par jour, même format compact que l'existant, ex :
 
 ## 9. Risques et points ouverts
 
+- **Justesse de la classification `politique_evenements` (ouvert, constaté après déploiement Phase 1)** : les articles remontés (RSS + GDELT + USGS) ne sont pas toujours classés dans la bonne catégorie de `DOMAIN_TAXONOMY["politique_evenements"]` par Groq. Cause probable : les requêtes GDELT DOC 2.0 matchent sur mots-clés dans le texte complet de l'article (pas juste le titre), ce qui ramène parfois des articles hors-sujet (ex: un article économique contenant incidemment le mot "conflict") que Groq classe ensuite tant bien que mal faute de signal clair. Pistes à explorer : resserrer les requêtes GDELT (opérateurs de proximité, exclusion de thèmes bruyants comme la finance/sport), enrichir les notes de classification du prompt Groq pour ce domaine, ou ajouter un filtre de pertinence a priori comme celui existant pour le domaine `ia` (`AI_STRONG/WEAK_KEYWORDS` dans `fetch_all`) plutôt que de laisser passer tout ce qui n'est pas `ia` sans filtre.
 - **ACLED** : accès sur inscription (académique/ONG/presse), délai incertain — ne doit pas bloquer la Phase 1.
-- **GDELT** : volumétrie importante (fichiers toutes les 15 min) — le pipeline ne tournant qu'1x/jour, il faudra agréger/filtrer fortement (ex: ne garder que les événements à fort Goldstein Scale du jour) pour éviter d'exploser le volume d'articles.
+- **GDELT** : l'API DOC 2.0 utilisée (voir §5) rate-limite plus agressivement que documenté — `fetch_gdelt_all` espace les requêtes de 10s et retente une fois après 15s, mais il reste possible qu'un ou plusieurs des 5 thèmes échouent silencieusement un jour donné (logué, non bloquant pour le reste du pipeline).
 - **yfinance** : librairie non officielle qui scrape Yahoo Finance, peut casser sans préavis — prévoir un fallback (Alpha Vantage) si instable.
 - **Charge Groq / durée du workflow GitHub Actions** : 5 domaines en parallèle vont multiplier le volume d'articles à classifier — surveiller le timeout du job (actuellement 20 min) et le quota Groq.
 - **Secrets à ajouter** : `EIA_API_KEY`, `ALPHAVANTAGE_API_KEY` (ou rien si yfinance), `FRED_API_KEY`, `ACLED_API_KEY` (phase 1b).
