@@ -33,6 +33,7 @@ class Article:
     country: str
     published: str  # "YYYY-MM-DD"
     description: str = ""
+    domain: str = "ia"
     category: str = ""
     sentiment: str = ""
     hot_topic: bool = False
@@ -101,7 +102,7 @@ def _compute_article_mentions(articles: list[Article]) -> None:
 # 0b. Topic clustering (replaces keyword-based hot detection)
 # ---------------------------------------------------------------------------
 
-_NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
+_BASE_NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
     "using", "will", "make", "take", "open", "help", "work", "need",
     "many", "them", "know", "find", "some", "here", "even", "like",
     "time", "year", "week", "ways", "could", "would", "your", "our",
@@ -109,7 +110,11 @@ _NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
     "report", "says", "look", "now", "back", "move", "inside",
     "before", "between", "while", "through", "against", "without",
     "around", "next", "within", "each", "such", "does", "did",
-    # Generic AI/tech domain words — useless as cluster identifiers
+}
+
+# Domain-specific stopword extensions — words too generic within a given
+# domain's news flow to define a meaningful cluster identifier.
+_IA_EXTRA_STOPWORDS = {
     "artificial", "intelligence", "machine", "learning", "technology",
     "digital", "software", "platform", "online", "system", "systems",
     "tool", "tools", "model", "models", "neural", "network", "networks",
@@ -121,25 +126,33 @@ _NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
     "introduces", "unveils", "brings", "update", "updates", "version",
 }
 
-# Ngram-level blocklist — phrases too generic to define a meaningful cluster
-_GENERIC_NGRAMS: set[str] = {
-    "artificial intelligence", "machine learning", "deep learning",
-    "large language", "language model", "language models",
-    "generative ai", "neural network", "neural networks",
-    "open source", "new model", "latest model", "ai model", "ai models",
-    "ai tools", "ai tool", "ai system", "ai systems", "ai research",
-    "ai company", "ai startup", "ai technology", "ai applications",
-    "tech news", "tech industry", "tech company",
-    "research paper", "new paper", "new study", "new research",
-    "ai era", "ai future", "ai development", "ai capabilities",
+DOMAIN_NGRAM_STOPWORDS: dict[str, set[str]] = {
+    "ia": _BASE_NGRAM_STOPWORDS | _IA_EXTRA_STOPWORDS,
+}
+
+# Ngram-level blocklist — phrases too generic to define a meaningful cluster,
+# scoped per domain (only "ia" has one populated for now).
+DOMAIN_GENERIC_NGRAMS: dict[str, set[str]] = {
+    "ia": {
+        "artificial intelligence", "machine learning", "deep learning",
+        "large language", "language model", "language models",
+        "generative ai", "neural network", "neural networks",
+        "open source", "new model", "latest model", "ai model", "ai models",
+        "ai tools", "ai tool", "ai system", "ai systems", "ai research",
+        "ai company", "ai startup", "ai technology", "ai applications",
+        "tech news", "tech industry", "tech company",
+        "research paper", "new paper", "new study", "new research",
+        "ai era", "ai future", "ai development", "ai capabilities",
+    },
 }
 
 
-def _extract_title_ngrams(title: str) -> set[str]:
-    """Extract bigrams and trigrams from a title, filtering stopwords."""
+def _extract_title_ngrams(title: str, domain: str = "ia") -> set[str]:
+    """Extract bigrams and trigrams from a title, filtering domain-scoped stopwords."""
+    stopwords = DOMAIN_NGRAM_STOPWORDS.get(domain, _BASE_NGRAM_STOPWORDS)
     # Match word tokens including hyphenated terms (gpt-4o, ai-agent)
     words = re.findall(r"[a-z][a-z0-9\-]*", title.lower())
-    words = [w for w in words if len(w) >= 2 and w not in _NGRAM_STOPWORDS]
+    words = [w for w in words if len(w) >= 2 and w not in stopwords]
     ngrams: set[str] = set()
     for i in range(len(words) - 1):
         ngrams.add(f"{words[i]} {words[i + 1]}")
@@ -148,8 +161,11 @@ def _extract_title_ngrams(title: str) -> set[str]:
     return ngrams
 
 
-def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> list[dict]:
+def extract_topic_clusters(articles: list["Article"], min_articles: int = 3, domain: str = "ia") -> list[dict]:
     """Cluster articles by shared bigrams/trigrams in their titles.
+
+    Assumes all articles belong to the same `domain` (callers group by domain
+    before calling this, so hot-topic clusters never mix domains).
 
     Returns a list of clusters sorted by score (article_count × source_count),
     each with: phrase, label, articles, article_count, source_count, score.
@@ -158,7 +174,8 @@ def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> 
     if not articles:
         return []
 
-    art_ngrams = [(a, _extract_title_ngrams(a.title)) for a in articles]
+    generic_ngrams = DOMAIN_GENERIC_NGRAMS.get(domain, set())
+    art_ngrams = [(a, _extract_title_ngrams(a.title, domain)) for a in articles]
 
     # Count how many articles contain each ngram
     ngram_to_arts: dict[str, list] = {}
@@ -170,7 +187,7 @@ def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> 
     # AND not in the generic-phrases blocklist
     candidate_clusters = []
     for ng, arts in ngram_to_arts.items():
-        if ng in _GENERIC_NGRAMS:
+        if ng in generic_ngrams:
             continue
         if len(arts) < min_articles:
             continue
@@ -214,11 +231,60 @@ def extract_topic_clusters(articles: list["Article"], min_articles: int = 3) -> 
     return merged
 
 
-async def name_topic_clusters(clusters: list[dict], client, model: str) -> list[dict]:
+# Per-domain config for the Groq cluster-naming prompt: words to forbid in
+# labels, example labels to steer style, and a lowercase blocklist used to
+# reject low-effort labels returned by Groq.
+DOMAIN_CLUSTER_NAMING: dict[str, dict] = {
+    "ia": {
+        "forbidden": "AI, Tech, Model, Artificial Intelligence, Machine Learning, Technology, Research, Innovation, Development",
+        "examples": "'OpenAI GPT-5', 'EU AI Act Vote', 'Anthropic Claude 4', 'NVIDIA Blackwell GPU', 'Sam Altman Senate Hearing'",
+        "label_blocklist": {
+            "ai", "tech", "model", "models", "artificial intelligence",
+            "machine learning", "technology", "research", "innovation",
+            "development", "news", "update", "latest", "new",
+        },
+    },
+    "politique_evenements": {
+        "forbidden": "Politics, World, News, Crisis, Conflict, Government, Country, International",
+        "examples": "'Sudan Coup Attempt', 'Turkey Earthquake Response', 'EU Russia Sanctions Package', 'Venezuela Election Protests'",
+        "label_blocklist": {
+            "politics", "world", "news", "crisis", "conflict", "government",
+            "country", "international", "update", "latest", "new",
+        },
+    },
+    "matieres_premieres": {
+        "forbidden": "Commodities, Prices, Market, Energy, Oil, Resources",
+        "examples": "'OPEC Production Cut', 'Brent Crude Rally', 'Lithium Supply Shortage', 'Chile Copper Strike'",
+        "label_blocklist": {
+            "commodities", "prices", "market", "energy", "oil", "resources",
+            "update", "latest", "new",
+        },
+    },
+    "finance": {
+        "forbidden": "Finance, Markets, Stocks, Economy, Banking",
+        "examples": "'Fed Rate Decision', 'Nvidia Earnings Beat', 'Nasdaq Correction', 'ECB Rate Hold'",
+        "label_blocklist": {
+            "finance", "markets", "stocks", "economy", "banking",
+            "update", "latest", "new",
+        },
+    },
+    "services": {
+        "forbidden": "Economy, Jobs, Services, Growth, Sector",
+        "examples": "'US Jobs Report', 'Eurozone Inflation Data', 'Retail Sales Slump', 'Housing Market Cooldown'",
+        "label_blocklist": {
+            "economy", "jobs", "services", "growth", "sector",
+            "update", "latest", "new",
+        },
+    },
+}
+
+
+async def name_topic_clusters(clusters: list[dict], client, model: str, domain: str = "ia") -> list[dict]:
     """Ask Groq to assign clean English labels to topic clusters (single batch call)."""
     if not clusters:
         return clusters
 
+    naming = DOMAIN_CLUSTER_NAMING.get(domain, DOMAIN_CLUSTER_NAMING["ia"])
     top = clusters[:12]
     items = [
         {
@@ -234,17 +300,14 @@ async def name_topic_clusters(clusters: list[dict], client, model: str) -> list[
             messages=[{
                 "role": "user",
                 "content": (
-                    "You are an AI news editor naming topic clusters for a news dashboard.\n"
+                    "You are a news editor naming topic clusters for a news dashboard.\n"
                     "For each cluster, create a SPECIFIC label (2-5 words, Title Case) that names "
-                    "the EXACT subject — which company, model, person, event, or technology.\n\n"
+                    "the EXACT subject — which entity, event, or place is involved.\n\n"
                     "RULES:\n"
                     "- Use proper nouns from the sample titles whenever possible\n"
-                    "- Be specific: 'GPT-5 Launch' not 'New Model', 'Meta Llama 4' not 'Open Source Model'\n"
-                    "- FORBIDDEN words (never use): AI, Tech, Model, Artificial Intelligence, "
-                    "Machine Learning, Technology, Research, Innovation, Development\n"
+                    f"- FORBIDDEN words (never use): {naming['forbidden']}\n"
                     "- The label must answer: WHAT specifically is happening? WHO is involved?\n"
-                    "- Examples of good labels: 'OpenAI GPT-5', 'EU AI Act Vote', "
-                    "'Anthropic Claude 4', 'NVIDIA Blackwell GPU', 'Sam Altman Senate Hearing'\n\n"
+                    f"- Examples of good labels: {naming['examples']}\n\n"
                     "Return JSON: {\"labels\": [{\"id\": <id>, \"label\": \"...\"}]}\n\n"
                     + json.dumps(items, ensure_ascii=False)
                 ),
@@ -255,11 +318,7 @@ async def name_topic_clusters(clusters: list[dict], client, model: str) -> list[
         )
         data = json.loads(resp.choices[0].message.content)
         id_to_label = {item["id"]: item["label"] for item in data.get("labels", [])}
-        _LABEL_BLOCKLIST = {
-            "ai", "tech", "model", "models", "artificial intelligence",
-            "machine learning", "technology", "research", "innovation",
-            "development", "news", "update", "latest", "new",
-        }
+        _LABEL_BLOCKLIST = naming["label_blocklist"]
         for i, c in enumerate(top):
             raw = id_to_label.get(i, "")
             # Reject label if it's in the blocklist or is a single generic word
@@ -325,6 +384,7 @@ async def fetch_rss(session: aiohttp.ClientSession, source: dict) -> list[Articl
             country=source["country"],
             published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
             description=clean_html(entry.get("summary", ""))[:200],
+            domain=source.get("domain", "ia"),
         ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -358,6 +418,7 @@ async def fetch_reddit(session: aiohttp.ClientSession, source: dict) -> list[Art
             country=source["country"],
             published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
             description=clean_html(entry.get("summary", ""))[:200],
+            domain=source.get("domain", "ia"),
         ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -403,6 +464,7 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
                 country=source["country"],
                 published=datetime.fromtimestamp(hit.get("created_at_i", 0), tz=timezone.utc).isoformat(),
                 description=(hit.get("story_text") or "")[:200],
+                domain=source.get("domain", "ia"),
             ))
 
     logging.info(f"[{source['name']}] {len(articles)} articles")
@@ -440,6 +502,7 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             country=d["country"],
             published=d["published"],
             description=d.get("description", ""),
+            domain=d.get("domain", "ia"),
         ))
 
     # Deduplicate by URL
@@ -500,8 +563,15 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
         "chip", "semiconductor", "data center", "robot", "automation",
         "benchmark", "bias", "pruning", "distillation",
     }
+    # This relevance filter only makes sense for the "ia" domain (its sources are
+    # broad tech/AI feeds that need narrowing). Other domains' sources are already
+    # on-topic by construction (e.g. an oil-price feed doesn't need an "is this
+    # about oil" check) — they pass through untouched.
     filtered = []
     for a in unique:
+        if a.domain != "ia":
+            filtered.append(a)
+            continue
         text = (a.title + " " + a.description).lower()
         strong_hits = sum(1 for kw in AI_STRONG_KEYWORDS if kw in text)
         weak_hits   = sum(1 for kw in AI_WEAK_KEYWORDS   if kw in text)
@@ -517,13 +587,88 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
 # 3. Classification with Groq
 # ---------------------------------------------------------------------------
 
-_GROQ_PROMPT_BASE = """Tu es un classificateur d'actualites IA. Pour chaque article, renvoie UNIQUEMENT un objet JSON avec les cles suivantes :
+# Category taxonomy, classification notes and fallback category, keyed by domain.
+# "ia" preserves the exact wording used before the multi-domain refactor so
+# classification behavior for that domain is unchanged.
+DOMAIN_TAXONOMY: dict[str, dict] = {
+    "ia": {
+        "categories": [
+            "Innovation / Tech", "Politique / Regulation", "Business / Industrie",
+            "Societe / Ethique", "Recherche Academique", "Drama / Controverses",
+            "Energie / Environnement", "Semiconducteurs / Hardware",
+        ],
+        "notes": (
+            '  - "Politique / Regulation" : geopolitique, regulation internationale, diplomatie tech, '
+            "export controls chips, CHIPS Act, guerre commerciale semi-conducteurs.\n"
+            '  - "Energie / Environnement" : consommation energetique de l\'IA, data centers et reseau '
+            "electrique, transition energetique, energies renouvelables, nucleaire, rapports IEA/AIE, "
+            "prix de l'energie.\n"
+            '  - "Semiconducteurs / Hardware" : industrie des semi-conducteurs (hors geopolitique), '
+            "GPU/NPU/puces IA, fonderies (TSMC, Samsung, Intel Foundry), equipementiers (ASML), "
+            "nouveaux procedes de fabrication, marche des chips."
+        ),
+        "default_category": "Innovation / Tech",
+    },
+    "politique_evenements": {
+        "categories": [
+            "Conflits / Guerres", "Soulevements / Manifestations", "Catastrophes naturelles",
+            "Changements de regime / Coups d'Etat", "Diplomatie / Sommets internationaux",
+            "Sanctions / Guerre economique",
+        ],
+        "notes": (
+            '  - "Catastrophes naturelles" : seismes, inondations, incendies, ouragans, secheresses '
+            "- evenements climatiques/geologiques uniquement, pas leurs consequences economiques "
+            "(preferer Sanctions / Guerre economique si l'angle est economique).\n"
+            '  - "Sanctions / Guerre economique" : sanctions internationales, embargos, guerre '
+            "commerciale, gel d'actifs.\n"
+            '  - "Changements de regime / Coups d\'Etat" : coups d\'Etat, chutes de gouvernement, '
+            "transitions de pouvoir non electorales."
+        ),
+        "default_category": "Diplomatie / Sommets internationaux",
+    },
+    "matieres_premieres": {
+        "categories": [
+            "Petrole / Gaz", "Metaux / Mines", "Agriculture / Denrees",
+            "Energie / Renouvelable", "Terres rares / Chaine d'approvisionnement",
+        ],
+        "notes": (
+            '  - "Terres rares / Chaine d\'approvisionnement" : approvisionnement en terres rares et '
+            "composants critiques pour l'industrie tech/IA (hors regulation, qui va dans le domaine IA "
+            "si l'angle est reglementaire).\n"
+            '  - "Energie / Renouvelable" : production et transition energetique (hors consommation '
+            "energetique des data centers IA, qui reste dans le domaine IA)."
+        ),
+        "default_category": "Petrole / Gaz",
+    },
+    "finance": {
+        "categories": [
+            "Marches actions", "Taux / Banques centrales", "Crypto-actifs",
+            "Fusions-acquisitions / IPO", "Dette / Obligations", "Nouveaux actifs IA",
+        ],
+        "notes": (
+            '  - "Nouveaux actifs IA" : hors crypto-monnaies classiques - economie des tokens IA '
+            "(trackers de prix de tokens, routers d'optimisation de tokens, marketplaces de "
+            "compute/inference).\n"
+            '  - "Crypto-actifs" : crypto-monnaies, blockchain, DeFi - hors sujets specifiquement '
+            "lies aux tokens IA (voir Nouveaux actifs IA)."
+        ),
+        "default_category": "Marches actions",
+    },
+    "services": {
+        "categories": [
+            "Emploi / Marche du travail", "Consommation / Retail", "Indicateurs macro",
+            "Immobilier", "Adoption IA (particuliers et entreprises)",
+        ],
+        "notes": (
+            '  - "Adoption IA (particuliers et entreprises)" : taux d\'usage de l\'IA, integration en '
+            "entreprise, outils grand public - angle adoption/usage, pas innovation technique "
+            "(qui reste dans le domaine IA)."
+        ),
+        "default_category": "Indicateurs macro",
+    },
+}
 
-- "category": une valeur parmi ["Innovation / Tech", "Politique / Regulation", "Business / Industrie", "Societe / Ethique", "Recherche Academique", "Drama / Controverses", "Energie / Environnement", "Semiconducteurs / Hardware"]
-  Notes de classification :
-  - "Politique / Regulation" : geopolitique, regulation internationale, diplomatie tech, export controls chips, CHIPS Act, guerre commerciale semi-conducteurs.
-  - "Energie / Environnement" : consommation energetique de l'IA, data centers et reseau electrique, transition energetique, energies renouvelables, nucleaire, rapports IEA/AIE, prix de l'energie.
-  - "Semiconducteurs / Hardware" : industrie des semi-conducteurs (hors geopolitique), GPU/NPU/puces IA, fonderies (TSMC, Samsung, Intel Foundry), equipementiers (ASML), nouveaux procedes de fabrication, marche des chips.
+_GROQ_PROMPT_COMMON_TAIL = """
 
 - "sentiment": une valeur parmi ["Positif", "Negatif", "Neutre"]
 
@@ -536,41 +681,46 @@ _GROQ_PROMPT_SUMMARY = """
 
 _GROQ_PROMPT_FOOTER = "\n\nNe renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."
 
-# Hot articles: full model — category + sentiment + country + summary
-GROQ_SYSTEM_PROMPT      = _GROQ_PROMPT_BASE + _GROQ_PROMPT_SUMMARY + _GROQ_PROMPT_FOOTER
-# Non-hot articles: fast model — category + sentiment + country only
-GROQ_SYSTEM_PROMPT_LITE = _GROQ_PROMPT_BASE + _GROQ_PROMPT_FOOTER
 
-VALID_CATEGORIES = {
-    "Innovation / Tech",
-    "Politique / Regulation",
-    "Business / Industrie",
-    "Societe / Ethique",
-    "Recherche Academique",
-    "Drama / Controverses",
-    "Energie / Environnement",
-    "Semiconducteurs / Hardware",
-}
+def _build_groq_prompt(domain: str, with_summary: bool) -> str:
+    """Assemble the Groq classification system prompt for a given domain."""
+    taxo = DOMAIN_TAXONOMY.get(domain, DOMAIN_TAXONOMY["ia"])
+    categories_json = json.dumps(taxo["categories"], ensure_ascii=False)
+    notes = f"\n  Notes de classification :\n{taxo['notes']}" if taxo.get("notes") else ""
+    prompt = (
+        "Tu es un classificateur d'actualites. Pour chaque article, renvoie UNIQUEMENT un objet "
+        "JSON avec les cles suivantes :\n\n"
+        f'- "category": une valeur parmi {categories_json}{notes}'
+        + _GROQ_PROMPT_COMMON_TAIL
+    )
+    if with_summary:
+        prompt += _GROQ_PROMPT_SUMMARY
+    return prompt + _GROQ_PROMPT_FOOTER
 
-VALID_SENTIMENTS  = {"Positif", "Negatif", "Neutre"}
+
+VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 
 async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> None:
-    """Classify a single article in-place.
+    """Classify a single article in-place, using its domain's taxonomy/prompt.
     Hot articles use model_full (70b): category + sentiment + country + summary.
     Non-hot articles use model_fast (8b): category + sentiment + country only.
     This cuts ~65% of 70b token usage on a typical day."""
+    taxo = DOMAIN_TAXONOMY.get(article.domain, DOMAIN_TAXONOMY["ia"])
+    valid_categories = set(taxo["categories"])
+    default_category = taxo["default_category"]
+
     user_msg = f"Titre: {article.title}\nSource: {article.source}"
     if article.description:
         user_msg += f"\nDescription: {article.description}"
 
     if article.hot_topic:
         model         = model_full
-        system_prompt = GROQ_SYSTEM_PROMPT
+        system_prompt = _build_groq_prompt(article.domain, with_summary=True)
         max_tokens    = 180   # category + sentiment + country + summary
     else:
         model         = model_fast
-        system_prompt = GROQ_SYSTEM_PROMPT_LITE
+        system_prompt = _build_groq_prompt(article.domain, with_summary=False)
         max_tokens    = 80    # category + sentiment + country only
 
     try:
@@ -585,19 +735,19 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
-        cat    = result.get("category",  "Innovation / Tech")
+        cat    = result.get("category",  default_category)
         sent   = result.get("sentiment", "Neutre")
-        article.category  = cat  if cat  in VALID_CATEGORIES else "Innovation / Tech"
-        # arXiv sources are always academic — override Groq's guess
-        if article.source.startswith("ArXiv"):
-            article.category = "Recherche Académique"
+        article.category  = cat  if cat  in valid_categories else default_category
+        # arXiv sources are always academic — override Groq's guess (ia domain only)
+        if article.domain == "ia" and article.source.startswith("ArXiv"):
+            article.category = "Recherche Academique"
         article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
             article.summary = (result.get("summary") or "").strip()
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
-        article.category  = "Innovation / Tech"
+        article.category  = default_category
         article.sentiment = "Neutre"
         article.country   = "Global"
 
@@ -641,6 +791,7 @@ def save_to_supabase(articles: list[Article]) -> None:
             "country": a.country,
             "published": a.published,
             "description": a.description,
+            "domain": a.domain,
             "category": a.category,
             "sentiment": a.sentiment,
             "hot_topic": a.hot_topic,
@@ -657,7 +808,9 @@ def save_to_supabase(articles: list[Article]) -> None:
     # Migration required for mention_count / supa_hot:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS mention_count INTEGER DEFAULT 0;
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS supa_hot BOOLEAN DEFAULT FALSE;
-    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot")
+    # Migration required for domain (multi-domain radars):
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'ia';
+    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain")
 
     try:
         client.table("articles").upsert(rows, on_conflict="url").execute()
@@ -683,16 +836,58 @@ def save_to_supabase(articles: list[Article]) -> None:
 # ---------------------------------------------------------------------------
 
 SENTIMENT_EMOJI = {"Positif": "🟢", "Negatif": "🔴", "Neutre": "⚪"}
-CATEGORY_EMOJI = {
-    "Innovation / Tech":          "🚀",
-    "Politique / Regulation":     "⚖️",
-    "Business / Industrie":       "💼",
-    "Societe / Ethique":          "🤝",
-    "Recherche Academique":       "🎓",
-    "Drama / Controverses":       "💥",
-    "Energie / Environnement":    "⚡",
-    "Semiconducteurs / Hardware": "🔬",
-    "Geopolitique":           "🌍",
+
+# Digest title + emoji per domain (used as the Telegram message header).
+DOMAIN_META: dict[str, dict[str, str]] = {
+    "ia":                   {"label": "Radar IA",                              "emoji": "🤖"},
+    "politique_evenements": {"label": "Radar Politique / Evenements Majeurs",   "emoji": "🌍"},
+    "matieres_premieres":   {"label": "Radar Matieres Premieres",              "emoji": "🛢️"},
+    "finance":              {"label": "Radar Finance / Marches",               "emoji": "📈"},
+    "services":             {"label": "Radar Services / Economie",             "emoji": "💼"},
+}
+
+# Category emoji lookup, scoped per domain (categories are only unique within a domain).
+DOMAIN_CATEGORY_EMOJI: dict[str, dict[str, str]] = {
+    "ia": {
+        "Innovation / Tech":          "🚀",
+        "Politique / Regulation":     "⚖️",
+        "Business / Industrie":       "💼",
+        "Societe / Ethique":          "🤝",
+        "Recherche Academique":       "🎓",
+        "Drama / Controverses":       "💥",
+        "Energie / Environnement":    "⚡",
+        "Semiconducteurs / Hardware": "🔬",
+    },
+    "politique_evenements": {
+        "Conflits / Guerres":                    "⚔️",
+        "Soulevements / Manifestations":          "✊",
+        "Catastrophes naturelles":                "🌪️",
+        "Changements de regime / Coups d'Etat":   "🏛️",
+        "Diplomatie / Sommets internationaux":    "🤝",
+        "Sanctions / Guerre economique":          "💣",
+    },
+    "matieres_premieres": {
+        "Petrole / Gaz":                             "🛢️",
+        "Metaux / Mines":                             "⛏️",
+        "Agriculture / Denrees":                      "🌾",
+        "Energie / Renouvelable":                     "⚡",
+        "Terres rares / Chaine d'approvisionnement":  "💎",
+    },
+    "finance": {
+        "Marches actions":            "📈",
+        "Taux / Banques centrales":   "🏦",
+        "Crypto-actifs":              "₿",
+        "Fusions-acquisitions / IPO": "🤝",
+        "Dette / Obligations":        "📉",
+        "Nouveaux actifs IA":         "🧮",
+    },
+    "services": {
+        "Emploi / Marche du travail":                 "👷",
+        "Consommation / Retail":                      "🛒",
+        "Indicateurs macro":                          "📊",
+        "Immobilier":                                 "🏠",
+        "Adoption IA (particuliers et entreprises)":  "🤖",
+    },
 }
 
 
@@ -707,26 +902,22 @@ def _post_telegram(token: str, chat_id: str, text: str) -> None:
         logging.error(f"Telegram error: {resp.status_code} {resp.text}")
 
 
-def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
-    """Send recap + dashboard link + hot articles only to Telegram."""
+def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Article], dashboard_url: str) -> None:
+    """Send one recap + hot-articles digest for a single domain's articles."""
     import time
-    token = os.environ["TELEGRAM_BOT_TOKEN"]
-    chat_id = os.environ["TELEGRAM_CHAT_ID"]
     today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
-
-    if not articles:
-        _post_telegram(token, chat_id, "🤖 Radar IA : 0 nouveaux articles aujourd'hui.")
-        return
+    meta = DOMAIN_META.get(domain, DOMAIN_META["ia"])
+    cat_emoji_map = DOMAIN_CATEGORY_EMOJI.get(domain, {})
 
     # ── Header recap ──────────────────────────────────────────────────────────
     stats = compute_stats(articles)
     hot_articles = [a for a in articles if a.hot_topic]
     header_lines = [
-        f"🤖 <b>Radar IA — {today}</b>",
+        f"{meta['emoji']} <b>{meta['label']} — {today}</b>",
         f"📰 {len(articles)} articles collectés · 🔥 {len(hot_articles)} hot topics",
         "",
     ]
-    for cat, emoji in CATEGORY_EMOJI.items():
+    for cat, emoji in cat_emoji_map.items():
         count = stats.get(cat, 0)
         if count:
             header_lines.append(f"{emoji} {cat} : {count}")
@@ -745,7 +936,7 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
 
     for article in hot_articles:
         sent_emoji = SENTIMENT_EMOJI.get(article.sentiment, "⚪")
-        cat_emoji  = CATEGORY_EMOJI.get(article.category, "📌")
+        cat_emoji  = cat_emoji_map.get(article.category, "📌")
         if article.supa_hot:
             badge = f"🌋 <b>SUPA HOT · {article.mention_count} sources</b>\n"
         else:
@@ -776,7 +967,24 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
     if batch:
         _post_telegram(token, chat_id, "\n\n".join(batch))
 
-    logging.info(f"Telegram: sent recap + {len(hot_articles)} hot articles")
+    logging.info(f"Telegram [{domain}]: sent recap + {len(hot_articles)} hot articles")
+
+
+def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
+    """Group articles by domain and send one digest message per domain."""
+    token = os.environ["TELEGRAM_BOT_TOKEN"]
+    chat_id = os.environ["TELEGRAM_CHAT_ID"]
+
+    if not articles:
+        _post_telegram(token, chat_id, "🤖 Radar IA : 0 nouveaux articles aujourd'hui.")
+        return
+
+    by_domain: dict[str, list[Article]] = {}
+    for a in articles:
+        by_domain.setdefault(a.domain, []).append(a)
+
+    for domain, domain_articles in by_domain.items():
+        _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url)
 
 # ---------------------------------------------------------------------------
 # Main pipeline
@@ -806,24 +1014,31 @@ async def main():
         send_telegram([])
         return
 
-    # 2b. Extract topic clusters and mark hot articles
-    # Try strict threshold first (≥3 articles, ≥2 sources); fall back to relaxed (≥2 articles)
-    clusters = extract_topic_clusters(articles, min_articles=3)
-    if not clusters:
-        logging.info("No clusters at min=3 — retrying with min=2")
-        clusters = extract_topic_clusters(articles, min_articles=2)
+    # 2b. Extract topic clusters and mark hot articles — scoped per domain so a
+    # cluster never mixes articles from two different domains.
+    by_domain: dict[str, list[Article]] = {}
+    for a in articles:
+        by_domain.setdefault(a.domain, []).append(a)
 
-    if clusters:
-        groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-        model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
-        clusters = await name_topic_clusters(clusters, groq_client_for_topics, model_full)
+    groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
+    model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
 
     # Build url → cluster map and apply to articles
     url_to_cluster: dict[str, dict] = {}
-    for c in clusters:
-        for art in c["articles"]:
-            if art.url not in url_to_cluster or c["score"] > url_to_cluster[art.url]["score"]:
-                url_to_cluster[art.url] = c
+    for domain, domain_articles in by_domain.items():
+        # Try strict threshold first (≥3 articles, ≥2 sources); fall back to relaxed (≥2 articles)
+        clusters = extract_topic_clusters(domain_articles, min_articles=3, domain=domain)
+        if not clusters:
+            logging.info(f"[{domain}] No clusters at min=3 — retrying with min=2")
+            clusters = extract_topic_clusters(domain_articles, min_articles=2, domain=domain)
+
+        if clusters:
+            clusters = await name_topic_clusters(clusters, groq_client_for_topics, model_full, domain=domain)
+
+        for c in clusters:
+            for art in c["articles"]:
+                if art.url not in url_to_cluster or c["score"] > url_to_cluster[art.url]["score"]:
+                    url_to_cluster[art.url] = c
 
     hot_count = 0
     for art in articles:

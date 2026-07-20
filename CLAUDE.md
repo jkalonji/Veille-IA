@@ -78,6 +78,26 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS hot_reason TEXT DEFAULT '';
 ```
 Le code est backward-compatible (fallback automatique si colonnes absentes).
 
+> ⚠️ **Note (2026-07-20) : la section ci-dessus (sources de keywords, 4 signaux, onglets `debat/tech/societe/tendance`) décrit un système qui a depuis été remplacé** par un clustering dynamique par n-grammes (`extract_topic_clusters`/`name_topic_clusters` dans `main.py`, commit `5bd5f54`) — voir `SPECS_MULTIDOMAINE.md` §6 pour la description à jour. `hot_reason` est désormais un label de cluster libre, pas une catégorie fixe. `dashboard.py` traite les anciennes valeurs (`debat`/`tech`/`societe`/`tendance`) comme obsolètes via `_OLD_HOT_REASONS`.
+
+**Migration SQL — extension multi-domaines (Phase 0, voir `SPECS_MULTIDOMAINE.md`) :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'ia';
+
+CREATE TABLE IF NOT EXISTS market_data (
+    id BIGSERIAL PRIMARY KEY,
+    domain TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    label TEXT NOT NULL,
+    value NUMERIC NOT NULL,
+    unit TEXT,
+    variation_pct NUMERIC,
+    source TEXT,
+    collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+Le code est backward-compatible pour `domain` (fallback automatique dans `save_to_supabase` si la colonne est absente). `market_data` n'est pas encore utilisée par le pipeline (arrivera en Phase 2).
+
 ### Seuil Supa Hot Topic
 Un article `hot_topic` est promu `supa_hot` si :
 - `mention_count > 5` (≥ 5 autres articles du jour partagent ≥ 2 mots-clés du titre)

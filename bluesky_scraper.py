@@ -99,6 +99,7 @@ async def _fetch_one_topic(client: AsyncClient, source: dict, since: str) -> lis
             "country":     country,
             "published":   _parse_bsky_date(post.record.created_at),
             "description": text[:200],
+            "domain":      source.get("domain", "ia"),
         })
         if len(articles) >= limit:
             break
