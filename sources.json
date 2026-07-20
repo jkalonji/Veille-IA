@@ -612,6 +612,95 @@
       "enabled": true,
       "min_score": 15,
       "count": 15
+    },
+    {
+      "comment": "=== DOMAINE POLITIQUE / EVENEMENTS MAJEURS (Phase 1) ===",
+      "name": "BBC World",
+      "type": "rss",
+      "url": "http://feeds.bbci.co.uk/news/world/rss.xml",
+      "country": "🇬🇧",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "Al Jazeera",
+      "type": "rss",
+      "url": "https://www.aljazeera.com/xml/rss/all.xml",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "The Guardian World",
+      "type": "rss",
+      "url": "https://www.theguardian.com/world/rss",
+      "country": "🇬🇧",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "France24 (EN)",
+      "type": "rss",
+      "url": "https://www.france24.com/en/rss",
+      "country": "🇫🇷",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "NPR World News",
+      "type": "rss",
+      "url": "https://feeds.npr.org/1004/rss.xml",
+      "country": "🇺🇸",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "GDELT Conflits",
+      "type": "gdelt",
+      "query": "(\"armed conflict\" OR \"military offensive\" OR airstrike OR ceasefire OR \"civil war\")",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "GDELT Manifestations",
+      "type": "gdelt",
+      "query": "(\"mass protest\" OR uprising OR demonstrators OR \"general strike\")",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "GDELT Coups d'Etat",
+      "type": "gdelt",
+      "query": "(\"military coup\" OR \"coup attempt\" OR \"regime change\" OR \"president ousted\")",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "GDELT Diplomatie",
+      "type": "gdelt",
+      "query": "(\"diplomatic summit\" OR \"peace talks\" OR \"bilateral meeting\" OR \"UN Security Council\")",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "GDELT Sanctions",
+      "type": "gdelt",
+      "query": "(\"economic sanctions\" OR \"trade embargo\" OR \"asset freeze\" OR \"trade war\")",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
+    },
+    {
+      "name": "USGS Significant Earthquakes",
+      "type": "usgs",
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_day.geojson",
+      "country": "🌍",
+      "domain": "politique_evenements",
+      "enabled": true
     }
   ]
 }

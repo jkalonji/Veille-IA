@@ -42,26 +42,86 @@ except ImportError:
 # Constants
 # ---------------------------------------------------------------------------
 
-CATEGORY_COLORS = {
-    "Innovation / Tech":        "#00b4d8",
-    "Politique / Regulation":   "#f4a261",
-    "Business / Industrie":     "#2a9d8f",
-    "Societe / Ethique":        "#e9c46a",
-    "Recherche Academique":     "#a8dadc",
-    "Drama / Controverses":     "#e63946",
-    "Energie / Environnement":  "#6db33f",
-    "Semiconducteurs / Hardware": "#9b5de5",
+# Domain metadata (label + emoji + tagline) — label/emoji mirror DOMAIN_META in main.py.
+DOMAIN_META: dict[str, dict[str, str]] = {
+    "ia": {
+        "label": "AI Radar", "emoji": "🤖",
+        "tagline": "L'actualité IA mondiale : tendances, innovations et influences.",
+    },
+    "politique_evenements": {
+        "label": "Radar Politique / Evenements Majeurs", "emoji": "🌍",
+        "tagline": "Conflits, diplomatie et catastrophes majeures dans le monde.",
+    },
 }
-CATEGORY_EMOJI = {
-    "Innovation / Tech":        "🚀",
-    "Politique / Regulation":   "⚖️",
-    "Business / Industrie":     "💼",
-    "Societe / Ethique":        "🤝",
-    "Recherche Academique":     "🎓",
-    "Drama / Controverses":     "💥",
-    "Energie / Environnement":  "⚡",
-    "Semiconducteurs / Hardware": "🔬",
+
+# Category colors/emoji/order, keyed by domain — mirrors DOMAIN_TAXONOMY / DOMAIN_CATEGORY_EMOJI
+# in main.py. Adding a domain here (Phase 2/3/4) is enough to make the dashboard
+# selector, radar chart and hot-topic cards pick it up automatically.
+DOMAIN_CATEGORY_COLORS: dict[str, dict[str, str]] = {
+    "ia": {
+        "Innovation / Tech":        "#00b4d8",
+        "Politique / Regulation":   "#f4a261",
+        "Business / Industrie":     "#2a9d8f",
+        "Societe / Ethique":        "#e9c46a",
+        "Recherche Academique":     "#a8dadc",
+        "Drama / Controverses":     "#e63946",
+        "Energie / Environnement":  "#6db33f",
+        "Semiconducteurs / Hardware": "#9b5de5",
+    },
+    "politique_evenements": {
+        "Conflits / Guerres":                   "#e63946",
+        "Soulevements / Manifestations":         "#f4a261",
+        "Catastrophes naturelles":               "#e9c46a",
+        "Changements de regime / Coups d'Etat":  "#9b5de5",
+        "Diplomatie / Sommets internationaux":   "#2a9d8f",
+        "Sanctions / Guerre economique":         "#00b4d8",
+    },
 }
+DOMAIN_CATEGORY_EMOJI: dict[str, dict[str, str]] = {
+    "ia": {
+        "Innovation / Tech":        "🚀",
+        "Politique / Regulation":   "⚖️",
+        "Business / Industrie":     "💼",
+        "Societe / Ethique":        "🤝",
+        "Recherche Academique":     "🎓",
+        "Drama / Controverses":     "💥",
+        "Energie / Environnement":  "⚡",
+        "Semiconducteurs / Hardware": "🔬",
+    },
+    "politique_evenements": {
+        "Conflits / Guerres":                   "⚔️",
+        "Soulevements / Manifestations":         "✊",
+        "Catastrophes naturelles":               "🌪️",
+        "Changements de regime / Coups d'Etat":  "🏛️",
+        "Diplomatie / Sommets internationaux":   "🤝",
+        "Sanctions / Guerre economique":         "💣",
+    },
+}
+DOMAIN_CATEGORY_ORDER: dict[str, list[str]] = {
+    "ia": [
+        "Innovation / Tech",
+        "Politique / Regulation",
+        "Business / Industrie",
+        "Societe / Ethique",
+        "Recherche Academique",
+        "Drama / Controverses",
+        "Energie / Environnement",
+        "Semiconducteurs / Hardware",
+    ],
+    "politique_evenements": [
+        "Conflits / Guerres",
+        "Soulevements / Manifestations",
+        "Catastrophes naturelles",
+        "Changements de regime / Coups d'Etat",
+        "Diplomatie / Sommets internationaux",
+        "Sanctions / Guerre economique",
+    ],
+}
+
+# Legacy flat aliases — every call site that hasn't been made domain-aware
+# (static HTML export, weekly digest) keeps using these and stays IA-only.
+CATEGORY_COLORS = DOMAIN_CATEGORY_COLORS["ia"]
+CATEGORY_EMOJI = DOMAIN_CATEGORY_EMOJI["ia"]
 
 # Legacy category mapping (for articles already stored in Supabase)
 _CATEGORY_ALIAS: dict[str, str] = {
@@ -613,12 +673,13 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
     return results
 
 
-def load_articles(days: int) -> list[dict]:
+def load_articles(days: int, domain: str = "ia") -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
     resp = (
         client.table("articles")
-        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason, summary, description, mention_count, supa_hot")
+        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason, summary, description, mention_count, supa_hot, domain")
+        .eq("domain", domain)
         .gte("published", cutoff)
         .order("hot_topic", desc=True)
         .order("published", desc=True)
@@ -819,18 +880,9 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     return fig
 
 
-def fig_category_radar(articles: list[dict]) -> go.Figure:
+def fig_category_radar(articles: list[dict], category_order: list[str] | None = None) -> go.Figure:
     """Radar chart: article count per category, normalized so the dominant category = 100."""
-    CATEGORY_ORDER = [
-        "Innovation / Tech",
-        "Politique / Regulation",
-        "Business / Industrie",
-        "Societe / Ethique",
-        "Recherche Académique",
-        "Drama / Controverses",
-        "Energie / Environnement",
-        "Semiconducteurs / Hardware",
-    ]
+    CATEGORY_ORDER = category_order or DOMAIN_CATEGORY_ORDER["ia"]
 
     counts = {cat: 0 for cat in CATEGORY_ORDER}
     for a in articles:
@@ -897,7 +949,7 @@ def fig_category_radar(articles: list[dict]) -> go.Figure:
     return fig
 
 
-def _render_hot_articles(articles: list[dict], container) -> None:
+def _render_hot_articles(articles: list[dict], container, category_emoji: dict[str, str] | None = None) -> None:
     """Render hot articles as dynamic topic tabs in Streamlit."""
     import streamlit as st
     topics = _extract_hot_topics(articles)
@@ -912,7 +964,9 @@ def _render_hot_articles(articles: list[dict], container) -> None:
     ]
     tabs = container.tabs(tab_labels)
     for tab, topic in zip(tabs, topics):
-        cards_html = "".join(_render_hot_card_html(a, topic["color"]) for a in topic["articles"])
+        cards_html = "".join(
+            _render_hot_card_html(a, topic["color"], category_emoji=category_emoji) for a in topic["articles"]
+        )
         tab.markdown(cards_html, unsafe_allow_html=True)
 
 
@@ -939,8 +993,26 @@ def run_streamlit() -> None:
     )
 
     @st.cache_data(ttl=300)
-    def _cached_load(days: int) -> list[dict]:
-        return load_articles(days)
+    def _cached_load(days: int, domain: str) -> list[dict]:
+        return load_articles(days, domain)
+
+    # ── Domaine — sélecteur en haut de page, avant tout le reste ─────────────
+    if "domain" not in st.session_state:
+        st.session_state["domain"] = "ia"
+
+    domain_options = list(DOMAIN_META)
+    st.selectbox(
+        "Domaine",
+        domain_options,
+        key="domain",
+        format_func=lambda d: f"{DOMAIN_META[d]['emoji']} {DOMAIN_META[d]['label']}",
+        label_visibility="collapsed",
+    )
+    domain = st.session_state["domain"]
+    domain_meta   = DOMAIN_META.get(domain, DOMAIN_META["ia"])
+    cat_emoji_map = DOMAIN_CATEGORY_EMOJI.get(domain, {})
+    cat_order     = DOMAIN_CATEGORY_ORDER.get(domain, DOMAIN_CATEGORY_ORDER["ia"])
+    st.markdown(f"### {domain_meta['emoji']} {domain_meta['label']}")
 
     # ── Période d'analyse — en haut de page, avant chargement ────────────────
     if "days" not in st.session_state:
@@ -961,14 +1033,14 @@ def run_streamlit() -> None:
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
-        st.title("🤖 Cobalt.xyz · AI Radar")
-        st.caption("L'actualité IA mondiale : tendances, innovations et influences.")
+        st.title(f"{domain_meta['emoji']} Cobalt.xyz · {domain_meta['label']}")
+        st.caption(domain_meta["tagline"])
         st.markdown("---")
 
     # ── Load data ─────────────────────────────────────────────────────────────
     with st.spinner("Chargement des données..."):
         try:
-            all_articles = _cached_load(days * 2)
+            all_articles = _cached_load(days * 2, domain)
         except RuntimeError as e:
             st.error(str(e))
             return
@@ -993,7 +1065,7 @@ def run_streamlit() -> None:
 
         sel_cats = st.multiselect(
             "Catégories", all_cats, default=all_cats,
-            format_func=lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}",
+            format_func=lambda c: f"{cat_emoji_map.get(c, '📌')} {c}",
         )
         sel_sents = st.multiselect(
             "Sentiment", all_sents, default=all_sents,
@@ -1048,7 +1120,7 @@ def run_streamlit() -> None:
     k2.metric("Sentiment positif",   f"{pos_pct} %", delta=f"{pos_pct - prev_pos_pct} pts")
     k3.metric("Sentiment négatif",   f"{neg_pct} %", delta=f"{neg_pct - prev_neg_pct} pts", delta_color="inverse")
     k4.metric("Sources actives",     nb_src,         delta=nb_src - prev_nb_src)
-    k5.metric("Catégorie dominante", f"{CATEGORY_EMOJI.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
+    k5.metric("Catégorie dominante", f"{cat_emoji_map.get(top_cat, '📌')} {top_cat.split('/')[0].strip()}")
 
     # ── Résumé hebdo (on demand) ──────────────────────────────────────────────
     if st.session_state.get("show_weekly"):
@@ -1072,7 +1144,7 @@ def run_streamlit() -> None:
 
     col_globe, col_ranking = st.columns([3, 2])
     with col_ranking:
-        st.plotly_chart(fig_category_radar(filtered), use_container_width=True)
+        st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True)
         st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
     with col_globe:
         # Build iso_counts for the Globe.gl component
@@ -1115,7 +1187,7 @@ def run_streamlit() -> None:
     else:
         display_articles = filtered
 
-    _render_hot_articles(display_articles, st)
+    _render_hot_articles(display_articles, st, category_emoji=cat_emoji_map)
 
     # ── Table — local filters ─────────────────────────────────────────────────
     display_articles = _deduplicate_articles(display_articles)
@@ -1171,7 +1243,7 @@ def run_streamlit() -> None:
         st.info("Aucun article ne correspond aux filtres du tableau.")
     else:
         df = pd.DataFrame(table_rows)
-        df["category"]  = df["category"].apply(lambda c: f"{CATEGORY_EMOJI.get(c, '📌')} {c}")
+        df["category"]  = df["category"].apply(lambda c: f"{cat_emoji_map.get(c, '📌')} {c}")
         df["lien"]      = df["url"].apply(lambda u: f"[↗]({u})")
         df["hot_topic"] = df.get("hot_topic", False).fillna(False)
         df["age"] = df.apply(
@@ -1233,9 +1305,9 @@ def _articles_to_html_table(articles: list[dict]) -> str:
     return "\n".join(rows)
 
 
-def _render_hot_card_html(a: dict, meta: dict) -> str:
+def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | None = None) -> str:
     """Build one hot article card HTML for a given source group."""
-    cat_emoji  = CATEGORY_EMOJI.get(a.get("category", ""), "📌")
+    cat_emoji  = (category_emoji or CATEGORY_EMOJI).get(a.get("category", ""), "📌")
     sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
     title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
     mentions   = a.get("mention_count", 0)

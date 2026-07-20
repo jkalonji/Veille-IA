@@ -471,8 +471,119 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
     return articles
 
 
+GDELT_DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
+
+
+async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[dict]) -> list[Article]:
+    """Query the GDELT DOC 2.0 API for each configured theme, sequentially.
+
+    GDELT's documented limit is ~1 request/5s, but in practice it intermittently
+    returns an empty body well under that rate too — so sources of this type are
+    fetched one after another (with a delay), and each gets one retry on failure,
+    rather than being dispatched as parallel tasks like the other source types.
+    """
+    articles = []
+
+    for i, source in enumerate(gdelt_sources):
+        if i > 0:
+            await asyncio.sleep(10)
+
+        params = {
+            "query": f"{source['query']} sourcelang:english",
+            "mode": "artlist",
+            "maxrecords": 15,
+            "timespan": "24h",
+            "format": "json",
+            "sort": "DateDesc",
+        }
+        data = None
+        for attempt in range(2):
+            if attempt > 0:
+                await asyncio.sleep(15)
+            try:
+                async with session.get(
+                    GDELT_DOC_API_URL, params=params,
+                    headers={"User-Agent": "AI-Radar/1.0 (news aggregator bot)"},
+                    timeout=aiohttp.ClientTimeout(total=20),
+                ) as resp:
+                    data = await resp.json(content_type=None)
+                break
+            except Exception as e:
+                logging.warning(f"[{source['name']}] GDELT API error (attempt {attempt + 1}/2): {e}")
+                data = None
+
+        if data is None:
+            logging.error(f"[{source['name']}] GDELT fetch failed, skipping")
+            continue
+
+        for hit in data.get("articles", []):
+            title = (hit.get("title") or "").strip()
+            url = (hit.get("url") or "").strip()
+            if not title or not url:
+                continue
+
+            try:
+                pub_date = datetime.strptime(hit["seendate"], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+            except (KeyError, ValueError):
+                pub_date = datetime.now(timezone.utc)
+
+            articles.append(Article(
+                title=title,
+                url=url,
+                source=source["name"],
+                country=source.get("country", "🌍"),
+                published=pub_date.isoformat(),
+                domain=source.get("domain", "ia"),
+            ))
+
+        logging.info(f"[{source['name']}] {len(data.get('articles', []))} articles")
+
+    return articles
+
+
+async def fetch_usgs(session: aiohttp.ClientSession, source: dict) -> list[Article]:
+    """Fetch the USGS 'significant earthquakes, past day' GeoJSON feed."""
+    try:
+        async with session.get(source["url"], timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            data = await resp.json(content_type=None)
+    except Exception as e:
+        logging.error(f"[{source['name']}] HTTP error: {e}")
+        return []
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    articles = []
+
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        title = (props.get("title") or "").strip()
+        url = (props.get("url") or "").strip()
+        if not title or not url:
+            continue
+
+        time_ms = props.get("time")
+        pub_date = datetime.fromtimestamp(time_ms / 1000, tz=timezone.utc) if time_ms else datetime.now(timezone.utc)
+        if pub_date < cutoff:
+            continue
+
+        mag = props.get("mag")
+        articles.append(Article(
+            title=title,
+            url=url,
+            source=source["name"],
+            country=source.get("country", "🌍"),
+            published=pub_date.isoformat(),
+            description=f"Magnitude {mag}" if mag is not None else "",
+            domain=source.get("domain", "ia"),
+        ))
+
+    logging.info(f"[{source['name']}] {len(articles)} articles")
+    return articles
+
+
 async def fetch_all(sources: list[dict]) -> list[Article]:
     """Fetch all sources in parallel, deduplicate by URL."""
+    gdelt_sources = [src for src in sources if src["type"] == "gdelt"]
+
     async with aiohttp.ClientSession() as session:
         tasks = []
         for src in sources:
@@ -482,6 +593,11 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
                 tasks.append(fetch_reddit(session, src))
             elif src["type"] == "hn_api":
                 tasks.append(fetch_hackernews(session, src))
+            elif src["type"] == "usgs":
+                tasks.append(fetch_usgs(session, src))
+
+        if gdelt_sources:
+            tasks.append(fetch_gdelt_all(session, gdelt_sources))
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
