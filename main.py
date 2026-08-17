@@ -473,6 +473,47 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
 
 GDELT_DOC_API_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
 
+# Relevance filter for GDELT-sourced articles. GDELT's DOC API matches query
+# keywords against the full article body, not just the title, so a query like
+# "trade war" can surface an article whose actual topic is unrelated (e.g. a
+# business piece that mentions tariffs in passing). Re-checking the title
+# against a curated keyword list — same "1 strong OR 2+ total" logic as the
+# AI_STRONG/WEAK_KEYWORDS filter in fetch_all() — catches these before Groq.
+GDELT_STRONG_KEYWORDS = {
+    # Conflits / Guerres
+    "war", "conflict", "offensive", "airstrike", "air strike", "ceasefire",
+    "cease-fire", "invasion", "troops", "missile", "civil war", "insurgent",
+    "rebel", "militant", "combat", "shelling", "bombing", "gunmen",
+    # Soulevements / Manifestations
+    "protest", "uprising", "demonstrators", "general strike", "riot",
+    "unrest", "crackdown",
+    # Catastrophes naturelles
+    "earthquake", "flood", "wildfire", "hurricane", "drought", "tsunami",
+    "volcano", "cyclone", "typhoon", "landslide", "quake",
+    # Coups d'Etat
+    "coup", "ousted", "regime change", "junta", "overthrown", "toppled",
+    # Diplomatie
+    "diplomatic summit", "peace talks", "bilateral meeting",
+    "un security council", "peace deal", "ceasefire agreement", "envoy",
+    "treaty", "summit",
+    # Sanctions / Guerre economique
+    "sanctions", "embargo", "asset freeze", "trade war", "tariffs",
+    "export ban", "export controls",
+}
+# Weak: generic terms that need a companion keyword to count as a match
+GDELT_WEAK_KEYWORDS = {
+    "government", "president", "minister", "election", "crisis",
+    "border", "opposition", "army", "forces", "military", "police",
+}
+
+
+def _is_relevant_gdelt_article(title: str) -> bool:
+    """Check a GDELT hit's title against curated political-event keywords."""
+    text = title.lower()
+    strong_hits = sum(1 for kw in GDELT_STRONG_KEYWORDS if kw in text)
+    weak_hits = sum(1 for kw in GDELT_WEAK_KEYWORDS if kw in text)
+    return strong_hits >= 1 or (strong_hits + weak_hits) >= 2
+
 
 async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[dict]) -> list[Article]:
     """Query the GDELT DOC 2.0 API for each configured theme, sequentially.
@@ -516,10 +557,15 @@ async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[di
             logging.error(f"[{source['name']}] GDELT fetch failed, skipping")
             continue
 
-        for hit in data.get("articles", []):
+        hits = data.get("articles", [])
+        kept = 0
+        for hit in hits:
             title = (hit.get("title") or "").strip()
             url = (hit.get("url") or "").strip()
             if not title or not url:
+                continue
+
+            if not _is_relevant_gdelt_article(title):
                 continue
 
             try:
@@ -535,8 +581,9 @@ async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[di
                 published=pub_date.isoformat(),
                 domain=source.get("domain", "ia"),
             ))
+            kept += 1
 
-        logging.info(f"[{source['name']}] {len(data.get('articles', []))} articles")
+        logging.info(f"[{source['name']}] {kept}/{len(hits)} articles kept after relevance filter")
 
     return articles
 
