@@ -657,7 +657,7 @@
     {
       "name": "GDELT Conflits",
       "type": "gdelt",
-      "query": "(\"armed conflict\" OR \"military offensive\" OR airstrike OR ceasefire OR \"civil war\")",
+      "query": "(\"armed conflict\" OR \"military offensive\" OR airstrike OR ceasefire OR \"civil war\") -\"price war\" -\"bidding war\" -\"talent war\"",
       "country": "🌍",
       "domain": "politique_evenements",
       "enabled": true
@@ -681,7 +681,7 @@
     {
       "name": "GDELT Diplomatie",
       "type": "gdelt",
-      "query": "(\"diplomatic summit\" OR \"peace talks\" OR \"bilateral meeting\" OR \"UN Security Council\")",
+      "query": "(\"diplomatic summit\" OR \"peace talks\" OR \"bilateral meeting\" OR \"UN Security Council\") -\"tech summit\" -\"business summit\" -\"investor summit\"",
       "country": "🌍",
       "domain": "politique_evenements",
       "enabled": true
@@ -689,7 +689,7 @@
     {
       "name": "GDELT Sanctions",
       "type": "gdelt",
-      "query": "(\"economic sanctions\" OR \"trade embargo\" OR \"asset freeze\" OR \"trade war\")",
+      "query": "(\"economic sanctions\" OR \"trade embargo\" OR \"asset freeze\" OR \"trade war\") -earnings -\"quarterly results\" -\"stock price\" -shares -IPO",
       "country": "🌍",
       "domain": "politique_evenements",
       "enabled": true

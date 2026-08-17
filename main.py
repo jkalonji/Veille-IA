@@ -779,13 +779,23 @@ DOMAIN_TAXONOMY: dict[str, dict] = {
             "Sanctions / Guerre economique",
         ],
         "notes": (
+            '  - "Conflits / Guerres" : conflits armes, guerres, offensives militaires, frappes '
+            "aeriennes, cessez-le-feu, guerre civile - evenements militaires actifs uniquement, pas "
+            "les tensions ou negociations sans action militaire (preferer Diplomatie / Sommets "
+            "internationaux dans ce cas).\n"
+            '  - "Soulevements / Manifestations" : manifestations, greves generales, emeutes, '
+            "mouvements de contestation populaire - hors coups d'Etat organises par l'armee ou le "
+            "pouvoir en place (preferer Changements de regime / Coups d'Etat dans ce cas).\n"
             '  - "Catastrophes naturelles" : seismes, inondations, incendies, ouragans, secheresses '
             "- evenements climatiques/geologiques uniquement, pas leurs consequences economiques "
             "(preferer Sanctions / Guerre economique si l'angle est economique).\n"
-            '  - "Sanctions / Guerre economique" : sanctions internationales, embargos, guerre '
-            "commerciale, gel d'actifs.\n"
             '  - "Changements de regime / Coups d\'Etat" : coups d\'Etat, chutes de gouvernement, '
-            "transitions de pouvoir non electorales."
+            "transitions de pouvoir non electorales.\n"
+            '  - "Diplomatie / Sommets internationaux" : sommets, negociations, rencontres '
+            "bilaterales, resolutions ONU, traites - tensions et discussions diplomatiques sans "
+            "action militaire ni sanction economique.\n"
+            '  - "Sanctions / Guerre economique" : sanctions internationales, embargos, guerre '
+            "commerciale, gel d'actifs."
         ),
         "default_category": "Diplomatie / Sommets internationaux",
     },
