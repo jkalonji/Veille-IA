@@ -107,3 +107,33 @@ Visuellement : fond dégradé rouge-orange, badge `🌋 SUPA HOT · N mentions`,
 
 ### Règle d'évolution des keywords
 Si un sujet majeur n'est pas capté par les sources dynamiques, l'ajouter manuellement dans `HOT_KEYWORDS_FALLBACK` dans `main.py`. Cette liste est le filet de sécurité.
+
+## Suivi d'histoires sur plusieurs jours (story tracking)
+
+Les clusters hot (`extract_topic_clusters`/`name_topic_clusters`) sont recalculés **chaque jour, à partir des seuls articles du jour** — sans lien avec les clusters de la veille. Le "suivi d'histoires" ajoute une identité persistante (`stories`) qui traverse les runs quotidiens, pour qu'une actu qui dure plusieurs jours (annonce → réactions → conséquences) reste une seule histoire au lieu de N clusters isolés au fil des jours.
+
+### Fonctionnement (dans `main.py`, après le clustering quotidien)
+1. Pour chaque domaine, après `name_topic_clusters`, on récupère les stories `open` de ce domaine (`_fetch_open_stories`).
+2. `match_clusters_to_stories` demande à Groq (un seul appel groupé, même pattern que le nommage des clusters) si chaque cluster du jour continue une story ouverte ou en démarre une nouvelle. En cas d'échec Groq, repli automatique sur `_match_clusters_ngram` (recouvrement de bigrammes/trigrammes avec les titres récents de la story — même logique que le clustering intra-jour).
+3. `_apply_story_matches` met à jour (`last_seen`, `article_count`, `recent_titles`) ou crée la story en Supabase, et renvoie le `story_id` à appliquer à chaque article matché.
+4. `_close_stale_stories` referme (`status = 'closed'`) les stories sans nouvel article depuis `STORY_IDLE_DAYS` (4 jours par défaut).
+
+### Dashboard
+- `_build_story_timelines` (dashboard.py) regroupe les articles déjà chargés par `story_id` et ne garde que les stories actives sur **≥ 2 jours distincts** — une story mono-jour est déjà visible dans les onglets Hot Articles, la dupliquer ici n'apporterait rien.
+- Rendu dans un nouveau panneau "📖 Suivi d'histoires" : liste des stories (actives aujourd'hui en premier, puis par activité récente), chacune dépliable en timeline jour par jour. Présent à la fois côté Streamlit (`_render_stories`, `st.expander`) et export statique GitHub Pages (`_stories_html`, `<details>` natif, zéro JS).
+
+### Migration SQL à exécuter une fois en Supabase
+```sql
+CREATE TABLE IF NOT EXISTS stories (
+    id BIGSERIAL PRIMARY KEY,
+    domain TEXT NOT NULL DEFAULT 'ia',
+    label TEXT NOT NULL,
+    first_seen DATE NOT NULL,
+    last_seen DATE NOT NULL,
+    article_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'open',
+    recent_titles TEXT DEFAULT ''
+);
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
+```
+Le code est backward-compatible : tant que la migration n'est pas appliquée, `save_to_supabase` retire automatiquement `story_id` des lignes envoyées (même mécanisme que pour `hot_source`/`mention_count`), et le panneau "Suivi d'histoires" reste vide sans erreur.

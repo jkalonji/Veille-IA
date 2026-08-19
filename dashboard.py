@@ -538,6 +538,62 @@ def _extract_hot_topics(articles: list[dict]) -> list[dict]:
     return topics
 
 
+def _build_story_timelines(articles: list[dict]) -> list[dict]:
+    """Group hot articles sharing a `story_id` into cross-day timelines.
+
+    `story_id` is assigned by main.py's cross-day story matching (a hot cluster
+    gets matched against open stories from previous runs — see CLAUDE.md). Only
+    stories with activity on ≥ 2 distinct days are returned: a single-day story
+    is just today's hot topic and already shown in the Hot Articles tabs, so
+    surfacing it here too would be pure duplication.
+
+    Returns a list of dicts: {story_id, label, days, article_count, span_days,
+    has_supra, is_ongoing}, `days` being [{date, articles}] sorted chronologically.
+    Sorted with active-today stories first, then by most recently active.
+    """
+    groups: dict[int, list[dict]] = defaultdict(list)
+    for a in articles:
+        sid = a.get("story_id")
+        if sid:
+            groups[sid].append(a)
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    stories = []
+    for sid, arts in groups.items():
+        by_day: dict[str, list[dict]] = defaultdict(list)
+        for a in arts:
+            by_day[a.get("published", "")].append(a)
+        dates = sorted(by_day)
+        if len(dates) < 2:
+            continue
+        # Dedup within each day only — _deduplicate_articles has no date restriction,
+        # so running it across the whole (multi-day) list first would merge same-story
+        # articles from different days into one card and silently drop a day from
+        # the timeline, which is exactly what this view exists to avoid.
+        for d in dates:
+            by_day[d] = sorted(_deduplicate_articles(by_day[d]), key=_hot_sort_key)
+        # Longest hot_reason seen for this story tends to be its most descriptive label
+        label = max((a.get("hot_reason") or "" for a in arts), key=len, default="Sans titre")
+        stories.append({
+            "story_id": sid,
+            "label": label,
+            "days": [{"date": d, "articles": by_day[d]} for d in dates],
+            "article_count": sum(len(by_day[d]) for d in dates),
+            "span_days": len(dates),
+            "has_supra": any(a.get("supa_hot") for a in arts),
+            "is_ongoing": dates[-1] == today,
+        })
+
+    # Stable sort: most recently active first, then active-today stories bubbled to the top
+    stories.sort(key=lambda s: s["days"][-1]["date"], reverse=True)
+    stories.sort(key=lambda s: s["is_ongoing"], reverse=True)
+
+    for i, s in enumerate(stories):
+        s["color"] = _TOPIC_PALETTE[i % len(_TOPIC_PALETTE)]
+
+    return stories
+
+
 # ---------------------------------------------------------------------------
 # Weekly summary text (feature 6)
 # ---------------------------------------------------------------------------
@@ -674,20 +730,42 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
     return results
 
 
+_ARTICLE_COLS = (
+    "title, source, country, published, category, sentiment, url, hot_topic, "
+    "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, story_id"
+)
+
+
 def load_articles(days: int, domain: str = "ia") -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
-    resp = (
-        client.table("articles")
-        .select("title, source, country, published, category, sentiment, url, hot_topic, hot_source, hot_reason, summary, description, mention_count, supa_hot, domain")
-        .eq("domain", domain)
-        .gte("published", cutoff)
-        .order("hot_topic", desc=True)
-        .order("published", desc=True)
-        .execute()
-    )
+
+    def _query(cols: str):
+        return (
+            client.table("articles")
+            .select(cols)
+            .eq("domain", domain)
+            .gte("published", cutoff)
+            .order("hot_topic", desc=True)
+            .order("published", desc=True)
+            .execute()
+        )
+
+    try:
+        resp = _query(_ARTICLE_COLS)
+    except Exception as e:
+        # story_id / stories table migration not applied yet — degrade gracefully
+        # instead of crashing the whole dashboard (same spirit as save_to_supabase's
+        # optional-columns retry). See CLAUDE.md "Suivi d'histoires".
+        if "story_id" in str(e):
+            print("Colonne story_id absente (migration non appliquée) — suivi d'histoires désactivé.", file=sys.stderr)
+            resp = _query(_ARTICLE_COLS.replace(", story_id", ""))
+        else:
+            raise
+
     articles = resp.data or []
     for a in articles:
+        a.setdefault("story_id", None)
         if a.get("published"):
             a["published_raw"] = a["published"]
             a["published"] = _normalize_date(a["published"])
@@ -971,6 +1049,27 @@ def _render_hot_articles(articles: list[dict], container, category_emoji: dict[s
         tab.markdown(cards_html, unsafe_allow_html=True)
 
 
+def _render_stories(articles: list[dict], container, category_emoji: dict[str, str] | None = None) -> None:
+    """Render the cross-day 'Suivi d'histoires' panel in Streamlit."""
+    import streamlit as st
+    stories = _build_story_timelines(articles)
+    container.markdown("#### 📖 Suivi d'histoires")
+    if not stories:
+        container.info("Aucune histoire suivie sur plusieurs jours pour le moment.")
+        return
+    for s in stories:
+        icon = "🌋" if s["has_supra"] else "📖"
+        status = "🟢 actu aujourd'hui" if s["is_ongoing"] else "⚪ pas d'actu aujourd'hui"
+        span_lbl = f"{s['days'][0]['date']} → {s['days'][-1]['date']} · {s['span_days']} jours · {s['article_count']} articles"
+        with container.expander(f"{icon} {s['label']} — {status} · {span_lbl}"):
+            for day in s["days"]:
+                n = len(day["articles"])
+                st.markdown(f"**{day['date']}** · {n} article{'s' if n > 1 else ''}")
+                cards_html = "".join(
+                    _render_hot_card_html(a, s["color"], category_emoji=category_emoji) for a in day["articles"]
+                )
+                st.markdown(cards_html, unsafe_allow_html=True)
+
 
 # ---------------------------------------------------------------------------
 # Streamlit UI
@@ -1189,6 +1288,7 @@ def run_streamlit() -> None:
         display_articles = filtered
 
     _render_hot_articles(display_articles, st, category_emoji=cat_emoji_map)
+    _render_stories(display_articles, st, category_emoji=cat_emoji_map)
 
     # ── Table — local filters ─────────────────────────────────────────────────
     display_articles = _deduplicate_articles(display_articles)
@@ -1432,6 +1532,63 @@ def _hot_articles_html(articles: list[dict], category_emoji: dict[str, str] | No
 </script>"""
 
 
+def _stories_html(articles: list[dict], domain: str = "ia") -> str:
+    """Build the cross-day 'Suivi d'histoires' panel for the CI HTML export.
+
+    Uses native <details>/<summary> for the per-story timeline toggle — no
+    JS needed, matches the zero-dependency spirit of the rest of the export.
+    """
+    stories = _build_story_timelines(articles)
+    if not stories:
+        return "<p style='color:#888;'>Aucune histoire suivie sur plusieurs jours pour le moment.</p>"
+
+    cards = ""
+    for s in stories:
+        icon = "🌋" if s["has_supra"] else "📖"
+        status = (
+            '<span class="story-status story-status--live">🟢 actu aujourd\'hui</span>'
+            if s["is_ongoing"] else
+            '<span class="story-status">⚪ pas d\'actu aujourd\'hui</span>'
+        )
+        span_lbl = f"{s['days'][0]['date']} → {s['days'][-1]['date']} · {s['span_days']} jours · {s['article_count']} articles"
+
+        timeline = ""
+        for day in s["days"]:
+            n = len(day["articles"])
+            day_cards = "".join(_render_hot_card_html(a, s["color"]) for a in day["articles"])
+            timeline += f"""
+        <div class="story-day">
+          <div class="story-day__date">{day['date']} <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span></div>
+          {day_cards}
+        </div>"""
+
+        cards += f"""
+    <details class="story-card" style="border-left:4px solid {s['color']['border']};">
+      <summary>
+        <span class="story-title">{icon} {s['label']}</span>
+        {status}
+        <span class="story-meta">{span_lbl}</span>
+      </summary>
+      <div class="story-timeline">{timeline}</div>
+    </details>"""
+
+    return f"""
+<style>
+  .story-card {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; margin-bottom:10px; padding:0 16px; }}
+  .story-card summary {{ cursor:pointer; padding:14px 0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; list-style:none; }}
+  .story-card summary::-webkit-details-marker {{ display:none; }}
+  .story-title {{ font-weight:700; font-size:15px; color:#fafafa; }}
+  .story-status {{ font-size:11px; color:#888; border:1px solid #2a2d3a; border-radius:10px; padding:2px 8px; white-space:nowrap; }}
+  .story-status--live {{ color:#3fb950; border-color:#3fb950; }}
+  .story-meta {{ font-size:12px; color:#888; margin-left:auto; white-space:nowrap; }}
+  .story-timeline {{ border-top:1px solid #2a2d3a; padding:14px 0; }}
+  .story-day {{ margin-bottom:14px; }}
+  .story-day__date {{ font-size:12px; font-weight:700; color:#adb5bd; margin-bottom:6px; }}
+  .story-day__count {{ font-weight:400; color:#666; margin-left:6px; }}
+</style>
+<div class="stories-wrap" id="stories-{domain}">{cards}</div>"""
+
+
 def _render_domain_export_section(domain: str, articles: list[dict], active: bool, now: str) -> str:
     """Build one domain's full self-contained section for the static export —
     charts, hot topics, filter toolbar and table — with every element id/class
@@ -1468,9 +1625,10 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
         config={"responsive": True},
     )
 
-    deduped    = _deduplicate_articles(articles)
-    hot_cards  = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain)
-    table_rows = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
+    deduped     = _deduplicate_articles(articles)
+    hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain)
+    stories_html = _stories_html(articles, domain=domain)
+    table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
 
     def _options(values: list[str]) -> str:
         return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
@@ -1499,6 +1657,9 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
 
     <h2>🔥 Hot Articles</h2>
     {hot_cards}
+
+    <h2>📖 Suivi d'histoires</h2>
+    {stories_html}
 
     <h2>📋 Derniers articles</h2>
     <div class="toolbar">

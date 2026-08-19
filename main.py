@@ -42,6 +42,7 @@ class Article:
     hot_source: str = ""    # pipe-separated detection signals: "trends|hn|github|db"
     hot_reason: str = ""    # groq content classification: "debat"|"tech"|"societe"|"tendance"
     summary: str = ""       # groq-generated 1-sentence summary in French
+    story_id: int | None = None  # cross-day story this article was matched to, if any
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -336,6 +337,177 @@ async def name_topic_clusters(clusters: list[dict], client, model: str, domain: 
         c["label"] = c["phrase"].title()
 
     return clusters
+
+
+# ---------------------------------------------------------------------------
+# 0c. Story tracking (cross-day continuation of hot topic clusters)
+# ---------------------------------------------------------------------------
+# A "story" is a persistent identity a hot cluster gets matched to across
+# multiple daily runs (e.g. an announcement -> its reactions -> the fallout,
+# spread over several days, stays one story instead of N unrelated clusters).
+# Stored in the `stories` table; `articles.story_id` points into it.
+
+STORY_IDLE_DAYS = 4         # a story auto-closes after this many days with no new article
+STORY_CANDIDATE_LIMIT = 20  # max open stories sent to Groq for matching context
+
+
+def _fetch_open_stories(client, domain: str) -> list[dict]:
+    """Fetch this domain's open stories, most recently active first."""
+    if client is None:
+        return []
+    try:
+        resp = (
+            client.table("stories")
+            .select("id, label, first_seen, last_seen, article_count, recent_titles")
+            .eq("domain", domain)
+            .eq("status", "open")
+            .order("last_seen", desc=True)
+            .limit(STORY_CANDIDATE_LIMIT)
+            .execute()
+        )
+        return resp.data or []
+    except Exception as e:
+        logging.warning(f"Stories fetch failed ({domain}): {e} — story tracking disabled for this run")
+        return []
+
+
+def _match_clusters_ngram(clusters: list[dict], open_stories: list[dict], domain: str) -> list[dict | None]:
+    """Fallback matcher: overlap of title n-grams between today's clusters and
+    each open story's recent titles. Used when Groq matching is unavailable."""
+    story_ngrams = []
+    for s in open_stories:
+        ngrams: set[str] = set()
+        for t in (s.get("recent_titles") or "").split("|"):
+            ngrams |= _extract_title_ngrams(t, domain)
+        story_ngrams.append((s, ngrams))
+
+    matches: list[dict | None] = []
+    for c in clusters:
+        cluster_ngrams: set[str] = set()
+        for a in c["articles"][:3]:
+            cluster_ngrams |= _extract_title_ngrams(a.title, domain)
+        best, best_overlap = None, 0
+        for s, ngrams in story_ngrams:
+            overlap = len(cluster_ngrams & ngrams)
+            if overlap > best_overlap:
+                best, best_overlap = s, overlap
+        matches.append(best if best_overlap >= 2 else None)
+    return matches
+
+
+async def match_clusters_to_stories(
+    clusters: list[dict], open_stories: list[dict], client, model: str, domain: str
+) -> list[dict | None]:
+    """Match today's topic clusters to existing open stories (cross-day tracking).
+
+    Returns a list parallel to `clusters`: the matched story dict, or None if the
+    cluster starts a new story. Falls back to n-gram overlap if Groq is unavailable
+    or errors — same resilience pattern as `name_topic_clusters`.
+    """
+    if not clusters:
+        return []
+    if not open_stories:
+        return [None] * len(clusters)
+
+    story_items = [
+        {"id": s["id"], "label": s["label"], "recent_titles": (s.get("recent_titles") or "").split("|")[:3]}
+        for s in open_stories
+    ]
+    cluster_items = [
+        {"index": i, "label": c["label"], "titles": [a.title for a in c["articles"][:3]]}
+        for i, c in enumerate(clusters)
+    ]
+    try:
+        resp = await client.chat.completions.create(
+            model=model,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "You track ongoing news stories across multiple days for a news dashboard.\n"
+                    "Below are OPEN_STORIES (already being tracked) and TODAY_CLUSTERS (today's new "
+                    "topic clusters). For each cluster, decide if it is a continuation of one of the "
+                    "open stories — same underlying event/story, even if the angle shifted (e.g. "
+                    "announcement -> reactions -> consequences) — or if it is genuinely a new story.\n\n"
+                    "Return JSON: {\"matches\": [{\"index\": <cluster index>, \"story_id\": <id or null>}]}\n\n"
+                    f"OPEN_STORIES = {json.dumps(story_items, ensure_ascii=False)}\n\n"
+                    f"TODAY_CLUSTERS = {json.dumps(cluster_items, ensure_ascii=False)}"
+                ),
+            }],
+            temperature=0.1,
+            max_tokens=600,
+            response_format={"type": "json_object"},
+        )
+        data = json.loads(resp.choices[0].message.content)
+        id_to_story = {s["id"]: s for s in open_stories}
+        result: list[dict | None] = [None] * len(clusters)
+        for m in data.get("matches", []):
+            idx, story_id = m.get("index"), m.get("story_id")
+            if isinstance(idx, int) and 0 <= idx < len(clusters) and story_id in id_to_story:
+                result[idx] = id_to_story[story_id]
+        logging.info(
+            f"Story matching [{domain}]: {sum(1 for r in result if r)}/{len(clusters)} "
+            f"clusters matched to open stories"
+        )
+        return result
+    except Exception as e:
+        logging.warning(f"Story matching via Groq failed ({domain}): {e} — falling back to n-gram matching")
+        return _match_clusters_ngram(clusters, open_stories, domain)
+
+
+def _apply_story_matches(
+    client, domain: str, clusters: list[dict], matches: list[dict | None], today: str
+) -> dict[str, int]:
+    """Create/update story rows in Supabase for today's clusters. Returns a
+    url -> story_id map used to stamp `story_id` onto matched articles."""
+    if client is None:
+        return {}
+    url_to_story: dict[str, int] = {}
+    for cluster, matched in zip(clusters, matches):
+        titles = [a.title for a in cluster["articles"][:5]]
+        try:
+            if matched:
+                story_id = matched["id"]
+                recent = "|".join((titles + (matched.get("recent_titles") or "").split("|"))[:6])
+                client.table("stories").update({
+                    "last_seen": today,
+                    "article_count": matched.get("article_count", 0) + cluster["article_count"],
+                    "recent_titles": recent,
+                }).eq("id", story_id).execute()
+            else:
+                resp = client.table("stories").insert({
+                    "domain": domain,
+                    "label": cluster["label"],
+                    "first_seen": today,
+                    "last_seen": today,
+                    "article_count": cluster["article_count"],
+                    "status": "open",
+                    "recent_titles": "|".join(titles),
+                }).execute()
+                story_id = resp.data[0]["id"]
+        except Exception as e:
+            logging.warning(f"Story upsert failed for cluster '{cluster['label']}' ({domain}): {e}")
+            continue
+        for a in cluster["articles"]:
+            url_to_story[a.url] = story_id
+    return url_to_story
+
+
+def _close_stale_stories(client, domain: str, today: str, idle_days: int = STORY_IDLE_DAYS) -> None:
+    """Auto-close open stories that haven't seen a new article in `idle_days` days."""
+    if client is None:
+        return
+    cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=idle_days)).strftime("%Y-%m-%d")
+    try:
+        (
+            client.table("stories")
+            .update({"status": "closed"})
+            .eq("domain", domain)
+            .eq("status", "open")
+            .lt("last_seen", cutoff)
+            .execute()
+        )
+    except Exception as e:
+        logging.warning(f"Closing stale stories failed ({domain}): {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -947,15 +1119,23 @@ async def classify_articles(articles: list[Article], batch_size: int = 15, batch
 # 4. Supabase
 # ---------------------------------------------------------------------------
 
-def save_to_supabase(articles: list[Article]) -> None:
-    """Upsert articles into Supabase, ignoring duplicates by URL."""
+def _get_supabase_client():
+    """Create a Supabase client from env vars, or None if not configured."""
     url = os.environ.get("SUPABASE_URL")
     key = os.environ.get("SUPABASE_KEY")
     if not url or not key:
+        return None
+    return create_client(url, key)
+
+
+def save_to_supabase(articles: list[Article], client=None) -> None:
+    """Upsert articles into Supabase, ignoring duplicates by URL."""
+    if client is None:
+        client = _get_supabase_client()
+    if client is None:
         logging.warning("SUPABASE_URL or SUPABASE_KEY not set — skipping Supabase save")
         return
 
-    client = create_client(url, key)
     rows = [
         {
             "title": a.title,
@@ -973,6 +1153,7 @@ def save_to_supabase(articles: list[Article]) -> None:
             "summary": a.summary,
             "mention_count": a.mention_count,
             "supa_hot": a.supa_hot,
+            "story_id": a.story_id,
         }
         for a in articles
     ]
@@ -983,7 +1164,9 @@ def save_to_supabase(articles: list[Article]) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS supa_hot BOOLEAN DEFAULT FALSE;
     # Migration required for domain (multi-domain radars):
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'ia';
-    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain")
+    # Migration required for cross-day story tracking (see CLAUDE.md):
+    #   CREATE TABLE IF NOT EXISTS stories (...); ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
+    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain", "story_id")
 
     try:
         client.table("articles").upsert(rows, on_conflict="url").execute()
@@ -1195,9 +1378,12 @@ async def main():
 
     groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+    supabase_client = _get_supabase_client()
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # Build url → cluster map and apply to articles
     url_to_cluster: dict[str, dict] = {}
+    url_to_story: dict[str, int] = {}
     for domain, domain_articles in by_domain.items():
         # Try strict threshold first (≥3 articles, ≥2 sources); fall back to relaxed (≥2 articles)
         clusters = extract_topic_clusters(domain_articles, min_articles=3, domain=domain)
@@ -1207,6 +1393,15 @@ async def main():
 
         if clusters:
             clusters = await name_topic_clusters(clusters, groq_client_for_topics, model_full, domain=domain)
+
+            # Cross-day story tracking: match today's clusters against open stories
+            open_stories = _fetch_open_stories(supabase_client, domain)
+            matches = await match_clusters_to_stories(
+                clusters, open_stories, groq_client_for_topics, model_full, domain=domain
+            )
+            url_to_story.update(_apply_story_matches(supabase_client, domain, clusters, matches, today_str))
+
+        _close_stale_stories(supabase_client, domain, today_str)
 
         for c in clusters:
             for art in c["articles"]:
@@ -1221,12 +1416,14 @@ async def main():
             art.hot_reason = cluster["label"]
             art.mention_count = cluster["article_count"]
             art.supa_hot = cluster["article_count"] >= 5
+            art.story_id = url_to_story.get(art.url)
             hot_count += 1
         else:
             art.hot_topic = False
             art.hot_reason = ""
             art.mention_count = 0
             art.supa_hot = False
+            art.story_id = None
     logging.info(f"{hot_count} articles tagged hot via topic clustering")
 
     # 3. Classify with Groq
@@ -1234,7 +1431,7 @@ async def main():
     classified = await classify_articles(articles)
 
     # 4. Save to Supabase
-    save_to_supabase(classified)
+    save_to_supabase(classified, client=supabase_client)
 
     # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
