@@ -57,7 +57,7 @@ HOT_REASON_LABEL = {
     "tendance": "🔮 Tendance",
 }
 
-GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
 
 # ---------------------------------------------------------------------------
 # Supabase helpers

@@ -1099,8 +1099,8 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
     client     = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model_full = os.environ.get("GROQ_MODEL",      "llama-3.3-70b-versatile").strip("'\"").strip()
-    model_fast = os.environ.get("GROQ_MODEL_FAST", "llama-3.1-8b-instant").strip("'\"").strip()
+    model_full = (os.environ.get("GROQ_MODEL")      or "openai/gpt-oss-120b").strip("'\"").strip()
+    model_fast = (os.environ.get("GROQ_MODEL_FAST") or "openai/gpt-oss-20b").strip("'\"").strip()
 
     hot_count  = sum(1 for a in articles if a.hot_topic)
     logging.info(f"Groq: {len(articles)} articles — {hot_count} hot ({model_full}) + {len(articles)-hot_count} non-hot ({model_fast})")
@@ -1377,7 +1377,7 @@ async def main():
         by_domain.setdefault(a.domain, []).append(a)
 
     groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model_full = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+    model_full = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
     supabase_client = _get_supabase_client()
     today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 

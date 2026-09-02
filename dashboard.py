@@ -651,7 +651,7 @@ def _generate_weekly_text(articles: list[dict]) -> str:
     if groq_key and top_hot:
         try:
             from groq import Groq as _Groq
-            groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+            groq_model = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
             client = _Groq(api_key=groq_key)
             articles_text = "\n".join(
                 f"- {a['title']}"
@@ -687,7 +687,7 @@ def _expand_query_groq(query: str) -> list[str]:
         return [t.lower() for t in query.split() if len(t) > 2]
     try:
         from groq import Groq as _Groq
-        groq_model = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile").strip("'\"").strip()
+        groq_model = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
         client = _Groq(api_key=groq_key)
         resp = client.chat.completions.create(
             model=groq_model,
