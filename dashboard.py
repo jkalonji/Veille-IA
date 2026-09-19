@@ -361,11 +361,14 @@ def _normalize_date(s: str) -> str:
     return s[:10] if s else s
 
 
-def _fmt_pub_date(published_str: str) -> str:
+def _fmt_pub_date(published_str: str, estimated: bool = False) -> str:
     """Format a publication datetime as a short human-readable date.
-    Same day → 'HH:MM', yesterday → 'Hier HH:MM', otherwise → 'DD/MM HH:MM' or 'DD/MM/YY'."""
+    Same day → 'HH:MM', yesterday → 'Hier HH:MM', otherwise → 'DD/MM HH:MM' or 'DD/MM/YY'.
+    `estimated` marks a collection-time fallback (source gave no real publish date) with
+    a leading '~' — an estimated timestamp should never look as precise as a real one."""
     if not published_str:
         return "—"
+    prefix = "~" if estimated else ""
     try:
         s = published_str.replace("Z", "+00:00")
         try:
@@ -378,20 +381,23 @@ def _fmt_pub_date(published_str: str) -> str:
         has_time = len(published_str) > 10
         time_part = pub.strftime("%H:%M") if has_time else ""
         if pub.date() == now.date():
-            return time_part if time_part else "Aujourd'hui"
+            return prefix + (time_part if time_part else "Aujourd'hui")
         if (now.date() - pub.date()).days == 1:
-            return f"Hier {time_part}".strip()
+            return f"{prefix}Hier {time_part}".strip()
         if has_time:
-            return pub.strftime("%d/%m %H:%M")
-        return pub.strftime("%d/%m/%y")
+            return prefix + pub.strftime("%d/%m %H:%M")
+        return prefix + pub.strftime("%d/%m/%y")
     except Exception:
-        return published_str[:10]
+        return prefix + published_str[:10]
 
 
-def _time_ago(published_str: str) -> str:
-    """Convert a published datetime string to a human-readable elapsed time."""
+def _time_ago(published_str: str, estimated: bool = False) -> str:
+    """Convert a published datetime string to a human-readable elapsed time.
+    `estimated` marks a collection-time fallback (source gave no real publish date) with
+    a leading '~' — an estimated timestamp should never look as precise as a real one."""
     if not published_str:
         return "—"
+    prefix = "~" if estimated else ""
     try:
         s = published_str.replace("Z", "+00:00")
         try:
@@ -406,15 +412,15 @@ def _time_ago(published_str: str) -> str:
             return "—"
         if secs < 3600:
             m = max(1, secs // 60)
-            return f"{m}min"
+            return f"{prefix}{m}min"
         if secs < 86400:
-            return f"{secs // 3600}h"
+            return f"{prefix}{secs // 3600}h"
         d = secs // 86400
         if d == 1:
-            return "hier"
-        return f"{d}j"
+            return f"{prefix}hier"
+        return f"{prefix}{d}j"
     except Exception:
-        return published_str[:10]
+        return prefix + published_str[:10]
 
 
 _STOPWORDS = {
@@ -816,8 +822,13 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
 
 _ARTICLE_COLS = (
     "title, source, country, published, category, sentiment, url, hot_topic, "
-    "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, story_id"
+    "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, "
+    "story_id, published_is_estimated"
 )
+# Columns that may be absent if a migration hasn't been applied yet — dropped one at a
+# time (in case several are missing on a totally fresh DB) instead of crashing the
+# dashboard. Same spirit as save_to_supabase's optional-columns retry in main.py.
+_OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated")
 
 
 def load_articles(days: int, domain: str = "ia") -> list[dict]:
@@ -835,21 +846,23 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
             .execute()
         )
 
-    try:
-        resp = _query(_ARTICLE_COLS)
-    except Exception as e:
-        # story_id / stories table migration not applied yet — degrade gracefully
-        # instead of crashing the whole dashboard (same spirit as save_to_supabase's
-        # optional-columns retry). See CLAUDE.md "Suivi d'histoires".
-        if "story_id" in str(e):
-            print("Colonne story_id absente (migration non appliquée) — suivi d'histoires désactivé.", file=sys.stderr)
-            resp = _query(_ARTICLE_COLS.replace(", story_id", ""))
-        else:
-            raise
+    cols = _ARTICLE_COLS
+    resp = None
+    while resp is None:
+        try:
+            resp = _query(cols)
+        except Exception as e:
+            missing = [c for c in _OPTIONAL_ARTICLE_COLS if f", {c}" in cols and c in str(e)]
+            if not missing:
+                raise
+            print(f"Colonnes absentes ({missing}) — migration non appliquée.", file=sys.stderr)
+            for c in missing:
+                cols = cols.replace(f", {c}", "")
 
     articles = resp.data or []
     for a in articles:
         a.setdefault("story_id", None)
+        a.setdefault("published_is_estimated", False)
         if a.get("published"):
             a["published_raw"] = a["published"]
             a["published"] = _normalize_date(a["published"])
@@ -1428,7 +1441,11 @@ def run_streamlit() -> None:
         df["lien"]      = df["url"].apply(lambda u: f"[↗]({u})")
         df["hot_topic"] = df.get("hot_topic", False).fillna(False)
         df["age"] = df.apply(
-            lambda r: _fmt_pub_date(r.get("published_raw") or r.get("published", "")), axis=1
+            lambda r: _fmt_pub_date(
+                r.get("published_raw") or r.get("published", ""),
+                estimated=bool(r.get("published_is_estimated", False)),
+            ),
+            axis=1,
         )
         # Hot topic articles are already first (ordered by Supabase); add 🔥 badge in title
         df["title"] = df.apply(
@@ -1439,7 +1456,10 @@ def run_streamlit() -> None:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "age":       st.column_config.TextColumn("Publié"),
+                "age":       st.column_config.TextColumn(
+                    "Publié",
+                    help="Un préfixe '~' signale une heure de collecte : la source ne fournissait pas de date de publication réelle.",
+                ),
                 "sentiment": st.column_config.TextColumn("Sent."),
                 "title":     st.column_config.TextColumn("Titre", width="large"),
                 "source":    st.column_config.TextColumn("Source"),
@@ -1469,14 +1489,16 @@ def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str]
         hot      = a.get("hot_topic", False)
         hot_badge = "🔥 " if hot else ""
         hot_class = ' class="hot"' if hot else ""
-        age    = _time_ago(a.get("published_raw") or a.get("published", ""))
+        estimated = a.get("published_is_estimated", False)
+        age    = _time_ago(a.get("published_raw") or a.get("published", ""), estimated=estimated)
+        age_attr = ' title="Heure de collecte — date de publication non fournie par la source"' if estimated else ""
         n_src  = a.get("source_count", 1)
         src_display = src if n_src == 1 else f"{src} <small style='color:#888'>+{n_src-1}</small>"
         iso = _country_to_iso3(a.get("country", "")) or ""
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
             f'data-category="{cat}" data-source="{src}" data-iso="{iso}"{hot_class}>'
-            f"<td>{age}</td>"
+            f"<td{age_attr}>{age}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
             f'<td class="col-source">{src_display}</td>'
@@ -1511,6 +1533,9 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
         title_color = "#fafafa"
         badge_html  = ""
     iso = _country_to_iso3(a.get("country", "")) or ""
+    estimated = a.get("published_is_estimated", False)
+    age = _time_ago(a.get("published_raw") or a.get("published", ""), estimated=estimated)
+    age_attr = ' title="Heure de collecte — date de publication non fournie par la source"' if estimated else ""
     return f"""
     <div data-iso="{iso}" style="border-radius:8px;padding:12px 14px;margin-bottom:8px;{card_style}">
       <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
@@ -1518,7 +1543,7 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
            style="color:{title_color};text-decoration:none;">{title}</a>
       </div>
       <div style="font-size:12px;color:#888;line-height:1.6;">
-        {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; {_time_ago(a.get('published_raw') or a.get('published',''))}
+        {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; <span{age_attr}>{age}</span>
         &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
         &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
       </div>

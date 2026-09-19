@@ -43,6 +43,7 @@ class Article:
     hot_reason: str = ""    # groq content classification: "debat"|"tech"|"societe"|"tendance"
     summary: str = ""       # groq-generated 1-sentence summary in French
     story_id: int | None = None  # cross-day story this article was matched to, if any
+    published_is_estimated: bool = False  # True if `published` is collection time, not a real source date
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -555,6 +556,7 @@ async def fetch_rss(session: aiohttp.ClientSession, source: dict) -> list[Articl
             source=source["name"],
             country=source["country"],
             published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
+            published_is_estimated=pub_date is None,
             description=clean_html(entry.get("summary", ""))[:200],
             domain=source.get("domain", "ia"),
         ))
@@ -589,6 +591,7 @@ async def fetch_reddit(session: aiohttp.ClientSession, source: dict) -> list[Art
             source=source["name"],
             country=source["country"],
             published=pub_date.isoformat() if pub_date else datetime.now(timezone.utc).isoformat(),
+            published_is_estimated=pub_date is None,
             description=clean_html(entry.get("summary", ""))[:200],
             domain=source.get("domain", "ia"),
         ))
@@ -629,12 +632,18 @@ async def fetch_hackernews(session: aiohttp.ClientSession, source: dict) -> list
             if not title:
                 continue
 
+            created_at_i = hit.get("created_at_i")
+            pub_date = (
+                datetime.fromtimestamp(created_at_i, tz=timezone.utc)
+                if created_at_i is not None else datetime.now(timezone.utc)
+            )
             articles.append(Article(
                 title=title,
                 url=url,
                 source=source["name"],
                 country=source["country"],
-                published=datetime.fromtimestamp(hit.get("created_at_i", 0), tz=timezone.utc).isoformat(),
+                published=pub_date.isoformat(),
+                published_is_estimated=created_at_i is None,
                 description=(hit.get("story_text") or "")[:200],
                 domain=source.get("domain", "ia"),
             ))
@@ -742,8 +751,10 @@ async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[di
 
             try:
                 pub_date = datetime.strptime(hit["seendate"], "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+                estimated = False
             except (KeyError, ValueError):
                 pub_date = datetime.now(timezone.utc)
+                estimated = True
 
             articles.append(Article(
                 title=title,
@@ -751,6 +762,7 @@ async def fetch_gdelt_all(session: aiohttp.ClientSession, gdelt_sources: list[di
                 source=source["name"],
                 country=source.get("country", "🌍"),
                 published=pub_date.isoformat(),
+                published_is_estimated=estimated,
                 domain=source.get("domain", "ia"),
             ))
             kept += 1
@@ -791,6 +803,7 @@ async def fetch_usgs(session: aiohttp.ClientSession, source: dict) -> list[Artic
             source=source["name"],
             country=source.get("country", "🌍"),
             published=pub_date.isoformat(),
+            published_is_estimated=time_ms is None,
             description=f"Magnitude {mag}" if mag is not None else "",
             domain=source.get("domain", "ia"),
         ))
@@ -836,6 +849,7 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             source=d["source"],
             country=d["country"],
             published=d["published"],
+            published_is_estimated=d.get("published_is_estimated", False),
             description=d.get("description", ""),
             domain=d.get("domain", "ia"),
         ))
@@ -1175,6 +1189,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "mention_count": a.mention_count,
             "supa_hot": a.supa_hot,
             "story_id": a.story_id,
+            "published_is_estimated": a.published_is_estimated,
         }
         for a in articles
     ]
@@ -1187,7 +1202,12 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'ia';
     # Migration required for cross-day story tracking (see CLAUDE.md):
     #   CREATE TABLE IF NOT EXISTS stories (...); ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
-    _OPTIONAL_COLS = ("hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain", "story_id")
+    # Migration required for the "Publié" column fallback flag (see CLAUDE.md):
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
+    _OPTIONAL_COLS = (
+        "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
+        "story_id", "published_is_estimated",
+    )
 
     try:
         client.table("articles").upsert(rows, on_conflict="url").execute()

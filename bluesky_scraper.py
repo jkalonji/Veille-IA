@@ -41,12 +41,12 @@ def _engagement_score(post) -> int:
     )
 
 
-def _parse_bsky_date(date_str: str) -> str:
-    """Return ISO 8601 datetime string; fall back to now on parse error."""
+def _parse_bsky_date(date_str: str) -> tuple[str, bool]:
+    """Return (ISO 8601 datetime string, is_estimated) — falls back to now on parse error."""
     try:
-        return datetime.fromisoformat(date_str.replace("Z", "+00:00")).isoformat()
+        return datetime.fromisoformat(date_str.replace("Z", "+00:00")).isoformat(), False
     except Exception:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(timezone.utc).isoformat(), True
 
 
 # ---------------------------------------------------------------------------
@@ -92,12 +92,14 @@ async def _fetch_one_topic(client: AsyncClient, source: dict, since: str) -> lis
 
         handle   = post.author.handle
         post_url = _post_url(handle, post.uri)
+        published, published_is_estimated = _parse_bsky_date(post.record.created_at)
         articles.append({
             "title":       title,
             "url":         post_url,
             "source":      f"Bluesky / @{handle}",
             "country":     country,
-            "published":   _parse_bsky_date(post.record.created_at),
+            "published":   published,
+            "published_is_estimated": published_is_estimated,
             "description": text[:200],
             "domain":      source.get("domain", "ia"),
         })

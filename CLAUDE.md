@@ -137,3 +137,15 @@ CREATE TABLE IF NOT EXISTS stories (
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
 ```
 Le code est backward-compatible : tant que la migration n'est pas appliquée, `save_to_supabase` retire automatiquement `story_id` des lignes envoyées (même mécanisme que pour `hot_source`/`mention_count`), et le panneau "Suivi d'histoires" reste vide sans erreur.
+
+## Colonne "Publié" — date de collecte vs date de publication réelle
+
+`Article.published` est censé être la vraie date/heure de publication de la source (récupérée depuis le flux RSS/l'API), pas l'heure du run GitHub Actions. Mais certaines sources ne fournissent parfois aucune date exploitable (flux RSS incomplet, `seendate` GDELT manquant, etc.) — dans ce cas le code de collecte (`fetch_rss`/`fetch_reddit`/`fetch_hackernews`/`fetch_gdelt_all`/`fetch_usgs`/`bluesky_scraper.py`) bascule sur l'heure de collecte (`datetime.now(timezone.utc)`) et pose `published_is_estimated = True` sur l'`Article`.
+
+Le dashboard affiche cette estimation avec un préfixe `~` (ex: `~20h`, `~Hier 09:00`) au lieu de prétendre à une précision qu'il n'a pas — voir `_time_ago`/`_fmt_pub_date` dans `dashboard.py`, appliqué au tableau "Derniers articles", aux cartes Hot Articles et donc aussi au panneau "Suivi d'histoires" (qui réutilise `_render_hot_card_html`).
+
+**Migration SQL à exécuter une fois en Supabase :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
+```
+Le code est backward-compatible (fallback automatique dans `save_to_supabase` et `load_articles` si la colonne est absente — la marque `~` reste simplement désactivée jusqu'à la migration).
