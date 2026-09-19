@@ -1046,11 +1046,12 @@ def _build_groq_prompt(domain: str, with_summary: bool) -> str:
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
 
-async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> None:
+async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> bool:
     """Classify a single article in-place, using its domain's taxonomy/prompt.
     Hot articles use model_full (70b): category + sentiment + country + summary.
     Non-hot articles use model_fast (8b): category + sentiment + country only.
-    This cuts ~65% of 70b token usage on a typical day."""
+    This cuts ~65% of 70b token usage on a typical day.
+    Returns False if the Groq call failed and the article fell back to defaults."""
     taxo = DOMAIN_TAXONOMY.get(article.domain, DOMAIN_TAXONOMY["ia"])
     valid_categories = set(taxo["categories"])
     default_category = taxo["default_category"]
@@ -1090,11 +1091,13 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
             article.summary = (result.get("summary") or "").strip()
+        return True
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
         article.category  = default_category
         article.sentiment = "Neutre"
         article.country   = "Global"
+        return False
 
 
 async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
@@ -1105,13 +1108,29 @@ async def classify_articles(articles: list[Article], batch_size: int = 15, batch
     hot_count  = sum(1 for a in articles if a.hot_topic)
     logging.info(f"Groq: {len(articles)} articles — {hot_count} hot ({model_full}) + {len(articles)-hot_count} non-hot ({model_fast})")
 
-    batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
+    failures = 0
+    batches  = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
     for batch_idx, batch in enumerate(batches):
         logging.info(f"Groq: classifying batch {batch_idx + 1}/{len(batches)} ({len(batch)} articles)")
-        await asyncio.gather(*[_classify_one(client, model_fast, model_full, a) for a in batch])
+        results = await asyncio.gather(*[_classify_one(client, model_fast, model_full, a) for a in batch])
+        failures += sum(1 for ok in results if not ok)
         if batch_idx < len(batches) - 1:
             logging.info(f"Groq: sleeping {batch_pause}s before next batch")
             await asyncio.sleep(batch_pause)
+
+    # A silent 100%-fallback run (e.g. a stale/decommissioned GROQ_MODEL env var shadowing
+    # the code default) previously went unnoticed for weeks — every article quietly got
+    # category=default/sentiment=Neutre/country=Global, emptying the dashboard's globe and
+    # category radar. Surface a hard-to-miss signal instead of one warning per article.
+    if articles and failures / len(articles) > 0.2:
+        msg = (
+            f"Groq classification failed for {failures}/{len(articles)} articles "
+            f"({failures / len(articles):.0%}) — check GROQ_API_KEY and the GROQ_MODEL/"
+            f"GROQ_MODEL_FAST values (repo Actions variables override the code default "
+            f"even when set to a decommissioned model)."
+        )
+        logging.error(msg)
+        print(f"::error::{msg}")
 
     return articles
 
