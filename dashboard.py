@@ -1553,11 +1553,15 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
         span_lbl = f"{s['days'][0]['date']} → {s['days'][-1]['date']} · {s['span_days']} jours · {s['article_count']} articles"
 
         timeline = ""
-        for day in s["days"]:
+        last_idx = len(s["days"]) - 1
+        for i, day in enumerate(s["days"]):
             n = len(day["articles"])
+            is_today = s["is_ongoing"] and i == last_idx
+            day_cls  = " story-day--today" if is_today else ""
             day_cards = "".join(_render_hot_card_html(a, s["color"]) for a in day["articles"])
             timeline += f"""
-        <div class="story-day">
+        <div class="story-day{day_cls}">
+          <span class="story-day__dot"></span>
           <div class="story-day__date">{day['date']} <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span></div>
           {day_cards}
         </div>"""
@@ -1581,8 +1585,19 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
   .story-status {{ font-size:11px; color:#888; border:1px solid #2a2d3a; border-radius:10px; padding:2px 8px; white-space:nowrap; }}
   .story-status--live {{ color:#3fb950; border-color:#3fb950; }}
   .story-meta {{ font-size:12px; color:#888; margin-left:auto; white-space:nowrap; }}
-  .story-timeline {{ border-top:1px solid #2a2d3a; padding:14px 0; }}
-  .story-day {{ margin-bottom:14px; }}
+  .story-timeline {{ border-top:1px solid #2a2d3a; padding:16px 0 4px 26px; position:relative; }}
+  .story-timeline::before {{
+    content:''; position:absolute; left:9px; top:4px; bottom:18px; width:2px; background:#2a2d3a;
+  }}
+  .story-day {{ position:relative; margin-bottom:18px; }}
+  .story-day:last-child {{ margin-bottom:4px; }}
+  .story-day__dot {{
+    position:absolute; left:-21px; top:3px; width:10px; height:10px; border-radius:50%;
+    background:#2a2d3a; border:2px solid #1a1d27; box-sizing:content-box;
+  }}
+  .story-day--today .story-day__dot {{
+    background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,0.25);
+  }}
   .story-day__date {{ font-size:12px; font-weight:700; color:#adb5bd; margin-bottom:6px; }}
   .story-day__count {{ font-weight:400; color:#666; margin-left:6px; }}
 </style>
