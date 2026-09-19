@@ -594,6 +594,79 @@ def _build_story_timelines(articles: list[dict]) -> list[dict]:
     return stories
 
 
+# Shared CSS for the per-day vertical timeline inside a story — used by both the
+# Streamlit panel and the static export. Day-level toggle is a native <details>
+# rather than a Streamlit expander because Streamlit forbids nesting expanders,
+# and the story itself is already one.
+_STORY_TIMELINE_CSS = """
+<style>
+  .story-timeline { border-top:1px solid #2a2d3a; padding:16px 0 4px 26px; position:relative; }
+  .story-timeline::before {
+    content:''; position:absolute; left:9px; top:4px; bottom:18px; width:2px; background:#2a2d3a;
+  }
+  .story-day { position:relative; margin-bottom:18px; }
+  .story-day:last-child { margin-bottom:4px; }
+  .story-day__dot {
+    position:absolute; left:-21px; top:3px; width:10px; height:10px; border-radius:50%;
+    background:#2a2d3a; border:2px solid #1a1d27; box-sizing:content-box;
+  }
+  .story-day--today .story-day__dot {
+    background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,0.25);
+  }
+  .story-day__details { width:100%; }
+  .story-day__summary {
+    cursor:pointer; list-style:none; display:flex; align-items:baseline; gap:8px;
+    padding:2px 0; flex-wrap:nowrap; min-width:0;
+  }
+  .story-day__summary::-webkit-details-marker { display:none; }
+  .story-day__summary::before {
+    content:'▸'; color:#666; font-size:10px; flex:0 0 auto; transition:transform 0.15s ease;
+  }
+  .story-day__details[open] > .story-day__summary::before { transform:rotate(90deg); }
+  .story-day__date { font-size:12px; font-weight:700; color:#adb5bd; flex:0 0 auto; }
+  .story-day__count { font-size:11px; font-weight:400; color:#666; flex:0 0 auto; }
+  .story-day__headline {
+    font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; min-width:0;
+  }
+  .story-day__cards { margin-top:8px; }
+</style>
+"""
+
+
+def _build_story_timeline_html(story: dict, category_emoji: dict[str, str] | None = None) -> str:
+    """Build the per-day vertical timeline (line + dot + collapsible day summary)
+    for one story returned by `_build_story_timelines`. Pair with `_STORY_TIMELINE_CSS`."""
+    timeline = ""
+    last_idx = len(story["days"]) - 1
+    for i, day in enumerate(story["days"]):
+        n = len(day["articles"])
+        is_today   = story["is_ongoing"] and i == last_idx
+        day_cls    = " story-day--today" if is_today else ""
+        day_cards  = "".join(
+            _render_hot_card_html(a, story["color"], category_emoji=category_emoji) for a in day["articles"]
+        )
+        # Day list is already sorted by _hot_sort_key (supa_hot / mentions first),
+        # so the headline is simply the most notable article of that day.
+        headline_a = day["articles"][0]
+        headline   = headline_a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        day_supra  = "🌋 " if any(a.get("supa_hot") for a in day["articles"]) else ""
+        open_attr  = " open" if is_today else ""
+        timeline += f"""
+        <div class="story-day{day_cls}">
+          <span class="story-day__dot"></span>
+          <details class="story-day__details"{open_attr}>
+            <summary class="story-day__summary">
+              <span class="story-day__date">{day['date']}</span>
+              <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span>
+              <span class="story-day__headline">{day_supra}{headline}</span>
+            </summary>
+            <div class="story-day__cards">{day_cards}</div>
+          </details>
+        </div>"""
+    return f'<div class="story-timeline">{timeline}</div>'
+
+
 # ---------------------------------------------------------------------------
 # Weekly summary text (feature 6)
 # ---------------------------------------------------------------------------
@@ -1057,18 +1130,14 @@ def _render_stories(articles: list[dict], container, category_emoji: dict[str, s
     if not stories:
         container.info("Aucune histoire suivie sur plusieurs jours pour le moment.")
         return
+    container.markdown(_STORY_TIMELINE_CSS, unsafe_allow_html=True)
     for s in stories:
         icon = "🌋" if s["has_supra"] else "📖"
         status = "🟢 actu aujourd'hui" if s["is_ongoing"] else "⚪ pas d'actu aujourd'hui"
         span_lbl = f"{s['days'][0]['date']} → {s['days'][-1]['date']} · {s['span_days']} jours · {s['article_count']} articles"
         with container.expander(f"{icon} {s['label']} — {status} · {span_lbl}"):
-            for day in s["days"]:
-                n = len(day["articles"])
-                st.markdown(f"**{day['date']}** · {n} article{'s' if n > 1 else ''}")
-                cards_html = "".join(
-                    _render_hot_card_html(a, s["color"], category_emoji=category_emoji) for a in day["articles"]
-                )
-                st.markdown(cards_html, unsafe_allow_html=True)
+            timeline_html = _build_story_timeline_html(s, category_emoji=category_emoji)
+            st.markdown(timeline_html, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1551,32 +1620,7 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
             '<span class="story-status">⚪ pas d\'actu aujourd\'hui</span>'
         )
         span_lbl = f"{s['days'][0]['date']} → {s['days'][-1]['date']} · {s['span_days']} jours · {s['article_count']} articles"
-
-        timeline = ""
-        last_idx = len(s["days"]) - 1
-        for i, day in enumerate(s["days"]):
-            n = len(day["articles"])
-            is_today   = s["is_ongoing"] and i == last_idx
-            day_cls    = " story-day--today" if is_today else ""
-            day_cards  = "".join(_render_hot_card_html(a, s["color"]) for a in day["articles"])
-            # Day list is already sorted by _hot_sort_key (supa_hot / mentions first),
-            # so the headline is simply the most notable article of that day.
-            headline_a = day["articles"][0]
-            headline   = headline_a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-            day_supra  = "🌋 " if any(a.get("supa_hot") for a in day["articles"]) else ""
-            open_attr  = " open" if is_today else ""
-            timeline += f"""
-        <div class="story-day{day_cls}">
-          <span class="story-day__dot"></span>
-          <details class="story-day__details"{open_attr}>
-            <summary class="story-day__summary">
-              <span class="story-day__date">{day['date']}</span>
-              <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span>
-              <span class="story-day__headline">{day_supra}{headline}</span>
-            </summary>
-            <div class="story-day__cards">{day_cards}</div>
-          </details>
-        </div>"""
+        timeline_html = _build_story_timeline_html(s)
 
         cards += f"""
     <details class="story-card" style="border-left:4px solid {s['color']['border']};">
@@ -1585,7 +1629,7 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
         {status}
         <span class="story-meta">{span_lbl}</span>
       </summary>
-      <div class="story-timeline">{timeline}</div>
+      {timeline_html}
     </details>"""
 
     return f"""
@@ -1597,37 +1641,8 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
   .story-status {{ font-size:11px; color:#888; border:1px solid #2a2d3a; border-radius:10px; padding:2px 8px; white-space:nowrap; }}
   .story-status--live {{ color:#3fb950; border-color:#3fb950; }}
   .story-meta {{ font-size:12px; color:#888; margin-left:auto; white-space:nowrap; }}
-  .story-timeline {{ border-top:1px solid #2a2d3a; padding:16px 0 4px 26px; position:relative; }}
-  .story-timeline::before {{
-    content:''; position:absolute; left:9px; top:4px; bottom:18px; width:2px; background:#2a2d3a;
-  }}
-  .story-day {{ position:relative; margin-bottom:18px; }}
-  .story-day:last-child {{ margin-bottom:4px; }}
-  .story-day__dot {{
-    position:absolute; left:-21px; top:3px; width:10px; height:10px; border-radius:50%;
-    background:#2a2d3a; border:2px solid #1a1d27; box-sizing:content-box;
-  }}
-  .story-day--today .story-day__dot {{
-    background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,0.25);
-  }}
-  .story-day__details {{ width:100%; }}
-  .story-day__summary {{
-    cursor:pointer; list-style:none; display:flex; align-items:baseline; gap:8px;
-    padding:2px 0; flex-wrap:nowrap; min-width:0;
-  }}
-  .story-day__summary::-webkit-details-marker {{ display:none; }}
-  .story-day__summary::before {{
-    content:'▸'; color:#666; font-size:10px; flex:0 0 auto; transition:transform 0.15s ease;
-  }}
-  .story-day__details[open] > .story-day__summary::before {{ transform:rotate(90deg); }}
-  .story-day__date {{ font-size:12px; font-weight:700; color:#adb5bd; flex:0 0 auto; }}
-  .story-day__count {{ font-size:11px; font-weight:400; color:#666; flex:0 0 auto; }}
-  .story-day__headline {{
-    font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis;
-    white-space:nowrap; min-width:0;
-  }}
-  .story-day__cards {{ margin-top:8px; }}
 </style>
+{_STORY_TIMELINE_CSS}
 <div class="stories-wrap" id="stories-{domain}">{cards}</div>"""
 
 
