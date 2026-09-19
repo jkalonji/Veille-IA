@@ -1063,11 +1063,11 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
     if article.hot_topic:
         model         = model_full
         system_prompt = _build_groq_prompt(article.domain, with_summary=True)
-        max_tokens    = 180   # category + sentiment + country + summary
+        max_tokens    = 500   # reasoning budget + category + sentiment + country + summary
     else:
         model         = model_fast
         system_prompt = _build_groq_prompt(article.domain, with_summary=False)
-        max_tokens    = 80    # category + sentiment + country only
+        max_tokens    = 300   # reasoning budget + category + sentiment + country
 
     try:
         response = await client.chat.completions.create(
@@ -1078,6 +1078,8 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
             ],
             temperature=0.1,
             max_tokens=max_tokens,
+            reasoning_effort="low",  # gpt-oss models spend tokens "thinking" before the JSON;
+                                     # low effort + prior tight budgets caused empty completions
             response_format={"type": "json_object"},
         )
         result = json.loads(response.choices[0].message.content)
