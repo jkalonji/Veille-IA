@@ -1556,14 +1556,26 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
         last_idx = len(s["days"]) - 1
         for i, day in enumerate(s["days"]):
             n = len(day["articles"])
-            is_today = s["is_ongoing"] and i == last_idx
-            day_cls  = " story-day--today" if is_today else ""
-            day_cards = "".join(_render_hot_card_html(a, s["color"]) for a in day["articles"])
+            is_today   = s["is_ongoing"] and i == last_idx
+            day_cls    = " story-day--today" if is_today else ""
+            day_cards  = "".join(_render_hot_card_html(a, s["color"]) for a in day["articles"])
+            # Day list is already sorted by _hot_sort_key (supa_hot / mentions first),
+            # so the headline is simply the most notable article of that day.
+            headline_a = day["articles"][0]
+            headline   = headline_a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+            day_supra  = "🌋 " if any(a.get("supa_hot") for a in day["articles"]) else ""
+            open_attr  = " open" if is_today else ""
             timeline += f"""
         <div class="story-day{day_cls}">
           <span class="story-day__dot"></span>
-          <div class="story-day__date">{day['date']} <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span></div>
-          {day_cards}
+          <details class="story-day__details"{open_attr}>
+            <summary class="story-day__summary">
+              <span class="story-day__date">{day['date']}</span>
+              <span class="story-day__count">{n} article{'s' if n > 1 else ''}</span>
+              <span class="story-day__headline">{day_supra}{headline}</span>
+            </summary>
+            <div class="story-day__cards">{day_cards}</div>
+          </details>
         </div>"""
 
         cards += f"""
@@ -1598,8 +1610,23 @@ def _stories_html(articles: list[dict], domain: str = "ia") -> str:
   .story-day--today .story-day__dot {{
     background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,0.25);
   }}
-  .story-day__date {{ font-size:12px; font-weight:700; color:#adb5bd; margin-bottom:6px; }}
-  .story-day__count {{ font-weight:400; color:#666; margin-left:6px; }}
+  .story-day__details {{ width:100%; }}
+  .story-day__summary {{
+    cursor:pointer; list-style:none; display:flex; align-items:baseline; gap:8px;
+    padding:2px 0; flex-wrap:nowrap; min-width:0;
+  }}
+  .story-day__summary::-webkit-details-marker {{ display:none; }}
+  .story-day__summary::before {{
+    content:'▸'; color:#666; font-size:10px; flex:0 0 auto; transition:transform 0.15s ease;
+  }}
+  .story-day__details[open] > .story-day__summary::before {{ transform:rotate(90deg); }}
+  .story-day__date {{ font-size:12px; font-weight:700; color:#adb5bd; flex:0 0 auto; }}
+  .story-day__count {{ font-size:11px; font-weight:400; color:#666; flex:0 0 auto; }}
+  .story-day__headline {{
+    font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; min-width:0;
+  }}
+  .story-day__cards {{ margin-top:8px; }}
 </style>
 <div class="stories-wrap" id="stories-{domain}">{cards}</div>"""
 
