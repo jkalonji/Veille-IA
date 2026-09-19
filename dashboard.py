@@ -616,7 +616,7 @@ _STORY_TIMELINE_CSS = """
   .story-day__details { width:100%; }
   .story-day__summary {
     cursor:pointer; list-style:none; display:flex; align-items:baseline; gap:8px;
-    padding:2px 0; flex-wrap:nowrap; min-width:0;
+    padding:8px 4px; margin:-8px -4px; flex-wrap:nowrap; min-width:0;
   }
   .story-day__summary::-webkit-details-marker { display:none; }
   .story-day__summary::before {
@@ -630,6 +630,17 @@ _STORY_TIMELINE_CSS = """
     white-space:nowrap; min-width:0;
   }
   .story-day__cards { margin-top:8px; }
+
+  /* ── Mobile (< 640px): reclaim width from the indent, and let a long
+     headline wrap onto its own line instead of ellipsis-truncating it,
+     since screen width is the scarce resource there, not vertical space. ── */
+  @media (max-width: 639px) {
+    .story-timeline { padding-left:20px; }
+    .story-timeline::before { left:7px; }
+    .story-day__dot { left:-17px; }
+    .story-day__summary { flex-wrap:wrap; row-gap:2px; }
+    .story-day__headline { flex:1 1 100%; white-space:normal; }
+  }
 </style>
 """
 
