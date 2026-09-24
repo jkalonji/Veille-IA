@@ -138,6 +138,23 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories
 ```
 Le code est backward-compatible : tant que la migration n'est pas appliquée, `save_to_supabase` retire automatiquement `story_id` des lignes envoyées (même mécanisme que pour `hot_source`/`mention_count`), et le panneau "Suivi d'histoires" reste vide sans erreur.
 
+### Titre d'une histoire — label figé + résumé évolutif
+
+Le titre affiché dans le panneau "Suivi d'histoires" est composé de deux parties distinctes, concaténées à l'affichage (`dashboard.py`, `_build_story_timelines`) sous la forme **`"{label} — {summary}"`** :
+
+- `stories.label` — le titre initial, posé une seule fois à la création de la story (label du premier cluster qui l'a démarrée) et **jamais modifié ensuite**. Sert d'ancrage stable.
+- `stories.summary` — un résumé très condensé (3 à 6 mots, Title Case) du dernier développement de l'histoire, **régénéré à chaque fois qu'un nouveau cluster est rattaché à la story**. Ex : label `"GPT-5 Launch"` + résumé courant `"Backlash Over Pricing"`.
+
+`summary` est produit par Groq dans le même appel groupé que `match_clusters_to_stories` (`main.py`) — pas d'appel API dédié : quand le matching identifie qu'un cluster du jour continue une story ouverte, Groq écrit dans la foulée un résumé de ce que raconte ce nouveau cluster, avec le label et le résumé précédent de la story comme contexte. En cas de repli sur le matching par n-grammes (Groq indisponible), le résumé retombe sur le label du cluster du jour — moins fin, mais toujours court et à jour.
+
+Côté dashboard, `_fetch_stories_lookup(domain)` lit `id, label, summary` dans la table `stories` (mise en cache `ttl=300` côté Streamlit) et alimente `_build_story_timelines`. Si la story n'a pas encore de `summary` (migration non appliquée, ou lookup en échec), repli automatique sur l'ancienne heuristique (le `hot_reason` le plus long parmi les articles de la story).
+
+**Migration SQL à exécuter une fois en Supabase :**
+```sql
+ALTER TABLE stories ADD COLUMN IF NOT EXISTS summary TEXT DEFAULT '';
+```
+Le code est backward-compatible (fallback automatique dans `_fetch_open_stories`/`_apply_story_matches` côté collecte, et `_fetch_stories_lookup` côté dashboard, si la colonne est absente).
+
 ## Colonne "Publié" — date de collecte vs date de publication réelle
 
 `Article.published` est censé être la vraie date/heure de publication de la source (récupérée depuis le flux RSS/l'API), pas l'heure du run GitHub Actions. Mais certaines sources ne fournissent parfois aucune date exploitable (flux RSS incomplet, `seendate` GDELT manquant, etc.) — dans ce cas le code de collecte (`fetch_rss`/`fetch_reddit`/`fetch_hackernews`/`fetch_gdelt_all`/`fetch_usgs`/`bluesky_scraper.py`) bascule sur l'heure de collecte (`datetime.now(timezone.utc)`) et pose `published_is_estimated = True` sur l'`Article`.

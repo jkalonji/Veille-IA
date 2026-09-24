@@ -544,7 +544,42 @@ def _extract_hot_topics(articles: list[dict]) -> list[dict]:
     return topics
 
 
-def _build_story_timelines(articles: list[dict]) -> list[dict]:
+_STORIES_COLS = "id, label, summary"
+
+
+def _fetch_stories_lookup(domain: str) -> dict[int, dict]:
+    """Fetch id -> {label, summary} for this domain's stories (open or closed —
+    a closed story can still be part of a multi-day timeline already loaded).
+
+    `label` is the story's title, fixed at creation. `summary` is a short
+    (3-6 word) phrase Groq refreshes each time a new cluster is matched into
+    the story (see `match_clusters_to_stories` in main.py) — the part meant to
+    evolve day to day. The dashboard title is "{label} — {summary}".
+
+    Degrades gracefully (empty dict) if the `stories` table or its `summary`
+    column don't exist yet — same optional-columns spirit as `load_articles`."""
+    try:
+        client = _supabase_client()
+    except RuntimeError:
+        return {}
+    cols = _STORIES_COLS
+    for _ in range(2):
+        try:
+            resp = client.table("stories").select(cols).eq("domain", domain).execute()
+            return {
+                row["id"]: {"label": row.get("label") or "", "summary": row.get("summary") or ""}
+                for row in (resp.data or [])
+            }
+        except Exception as e:
+            if "summary" in str(e) and ", summary" in cols:
+                cols = cols.replace(", summary", "")
+                continue
+            print(f"Stories lookup failed ({domain}): {e}", file=sys.stderr)
+            return {}
+    return {}
+
+
+def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict] | None = None) -> list[dict]:
     """Group hot articles sharing a `story_id` into cross-day timelines.
 
     `story_id` is assigned by main.py's cross-day story matching (a hot cluster
@@ -552,6 +587,11 @@ def _build_story_timelines(articles: list[dict]) -> list[dict]:
     stories with activity on ≥ 2 distinct days are returned: a single-day story
     is just today's hot topic and already shown in the Hot Articles tabs, so
     surfacing it here too would be pure duplication.
+
+    `stories_lookup` (from `_fetch_stories_lookup`) supplies each story's
+    "{label} — {summary}" title. When it's missing a story (migration not
+    applied yet, or a fetch error), falls back to the longest `hot_reason`
+    seen among the story's own articles — cruder, but keeps the panel usable.
 
     Returns a list of dicts: {story_id, label, days, article_count, span_days,
     has_supra, is_ongoing}, `days` being [{date, articles}] sorted chronologically.
@@ -578,8 +618,16 @@ def _build_story_timelines(articles: list[dict]) -> list[dict]:
         # the timeline, which is exactly what this view exists to avoid.
         for d in dates:
             by_day[d] = sorted(_deduplicate_articles(by_day[d]), key=_hot_sort_key)
-        # Longest hot_reason seen for this story tends to be its most descriptive label
-        label = max((a.get("hot_reason") or "" for a in arts), key=len, default="Sans titre")
+        meta = (stories_lookup or {}).get(sid, {})
+        story_label, story_summary = meta.get("label", ""), meta.get("summary", "")
+        if story_label and story_summary:
+            label = f"{story_label} — {story_summary}"
+        elif story_label:
+            label = story_label
+        else:
+            # Pre-migration / lookup-miss fallback: longest hot_reason seen for
+            # this story tends to be its most descriptive single-day label.
+            label = max((a.get("hot_reason") or "" for a in arts), key=len, default="Sans titre")
         stories.append({
             "story_id": sid,
             "label": label,
@@ -1146,10 +1194,15 @@ def _render_hot_articles(articles: list[dict], container, category_emoji: dict[s
         tab.markdown(cards_html, unsafe_allow_html=True)
 
 
-def _render_stories(articles: list[dict], container, category_emoji: dict[str, str] | None = None) -> None:
+def _render_stories(
+    articles: list[dict],
+    container,
+    stories_lookup: dict[int, dict] | None = None,
+    category_emoji: dict[str, str] | None = None,
+) -> None:
     """Render the cross-day 'Suivi d'histoires' panel in Streamlit."""
     import streamlit as st
-    stories = _build_story_timelines(articles)
+    stories = _build_story_timelines(articles, stories_lookup)
     container.markdown("#### 📖 Suivi d'histoires")
     if not stories:
         container.info("Aucune histoire suivie sur plusieurs jours pour le moment.")
@@ -1188,6 +1241,10 @@ def run_streamlit() -> None:
     @st.cache_data(ttl=300)
     def _cached_load(days: int, domain: str) -> list[dict]:
         return load_articles(days, domain)
+
+    @st.cache_data(ttl=300)
+    def _cached_stories_lookup(domain: str) -> dict[int, dict]:
+        return _fetch_stories_lookup(domain)
 
     # ── Domaine — sélecteur en haut de page, avant tout le reste ─────────────
     if "domain" not in st.session_state:
@@ -1381,7 +1438,7 @@ def run_streamlit() -> None:
         display_articles = filtered
 
     _render_hot_articles(display_articles, st, category_emoji=cat_emoji_map)
-    _render_stories(display_articles, st, category_emoji=cat_emoji_map)
+    _render_stories(display_articles, st, _cached_stories_lookup(domain), category_emoji=cat_emoji_map)
 
     # ── Table — local filters ─────────────────────────────────────────────────
     display_articles = _deduplicate_articles(display_articles)
@@ -1637,13 +1694,13 @@ def _hot_articles_html(articles: list[dict], category_emoji: dict[str, str] | No
 </script>"""
 
 
-def _stories_html(articles: list[dict], domain: str = "ia") -> str:
+def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None = None, domain: str = "ia") -> str:
     """Build the cross-day 'Suivi d'histoires' panel for the CI HTML export.
 
     Uses native <details>/<summary> for the per-story timeline toggle — no
     JS needed, matches the zero-dependency spirit of the rest of the export.
     """
-    stories = _build_story_timelines(articles)
+    stories = _build_story_timelines(articles, stories_lookup)
     if not stories:
         return "<p style='color:#888;'>Aucune histoire suivie sur plusieurs jours pour le moment.</p>"
 
@@ -1720,7 +1777,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
 
     deduped     = _deduplicate_articles(articles)
     hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain)
-    stories_html = _stories_html(articles, domain=domain)
+    stories_html = _stories_html(articles, _fetch_stories_lookup(domain), domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
 
     def _options(values: list[str]) -> str:

@@ -353,28 +353,43 @@ STORY_CANDIDATE_LIMIT = 20  # max open stories sent to Groq for matching context
 
 
 def _fetch_open_stories(client, domain: str) -> list[dict]:
-    """Fetch this domain's open stories, most recently active first."""
+    """Fetch this domain's open stories, most recently active first.
+
+    `summary` is optional (see `STORY_SUMMARY_MIGRATION` below) — dropped and
+    retried once if the column isn't there yet, same pattern as save_to_supabase's
+    optional-columns retry."""
     if client is None:
         return []
-    try:
-        resp = (
-            client.table("stories")
-            .select("id, label, first_seen, last_seen, article_count, recent_titles")
-            .eq("domain", domain)
-            .eq("status", "open")
-            .order("last_seen", desc=True)
-            .limit(STORY_CANDIDATE_LIMIT)
-            .execute()
-        )
-        return resp.data or []
-    except Exception as e:
-        logging.warning(f"Stories fetch failed ({domain}): {e} — story tracking disabled for this run")
-        return []
+    cols = "id, label, summary, first_seen, last_seen, article_count, recent_titles"
+    for _ in range(2):
+        try:
+            resp = (
+                client.table("stories")
+                .select(cols)
+                .eq("domain", domain)
+                .eq("status", "open")
+                .order("last_seen", desc=True)
+                .limit(STORY_CANDIDATE_LIMIT)
+                .execute()
+            )
+            return resp.data or []
+        except Exception as e:
+            if "summary" in str(e) and ", summary" in cols:
+                cols = cols.replace(", summary", "")
+                continue
+            logging.warning(f"Stories fetch failed ({domain}): {e} — story tracking disabled for this run")
+            return []
+    return []
 
 
 def _match_clusters_ngram(clusters: list[dict], open_stories: list[dict], domain: str) -> list[dict | None]:
     """Fallback matcher: overlap of title n-grams between today's clusters and
-    each open story's recent titles. Used when Groq matching is unavailable."""
+    each open story's recent titles. Used when Groq matching is unavailable.
+
+    No LLM is available in this path to synthesize a fresh `summary`, so the
+    matched story falls back to the day's own cluster label as its summary —
+    cruder than Groq's synthesis, but still short and dated, unlike leaving
+    the story's stale summary in place."""
     story_ngrams = []
     for s in open_stories:
         ngrams: set[str] = set()
@@ -392,7 +407,12 @@ def _match_clusters_ngram(clusters: list[dict], open_stories: list[dict], domain
             overlap = len(cluster_ngrams & ngrams)
             if overlap > best_overlap:
                 best, best_overlap = s, overlap
-        matches.append(best if best_overlap >= 2 else None)
+        if best is not None and best_overlap >= 2:
+            matched = dict(best)
+            matched["summary"] = c["label"]
+            matches.append(matched)
+        else:
+            matches.append(None)
     return matches
 
 
@@ -401,9 +421,17 @@ async def match_clusters_to_stories(
 ) -> list[dict | None]:
     """Match today's topic clusters to existing open stories (cross-day tracking).
 
-    Returns a list parallel to `clusters`: the matched story dict, or None if the
-    cluster starts a new story. Falls back to n-gram overlap if Groq is unavailable
-    or errors — same resilience pattern as `name_topic_clusters`.
+    Returns a list parallel to `clusters`: on a match, the matched story dict
+    merged with a freshly-written `summary` — a short 3-6 word phrase (Title
+    Case) capturing what's happening NOW in that story, given today's cluster
+    (e.g. story label "GPT-5 Launch" + a cluster about pricing complaints ->
+    summary "Backlash Over Pricing"). None if the cluster starts a new story.
+    The dashboard displays "{label} — {summary}" as the story's title, so the
+    summary is the part that's meant to evolve day to day while the label
+    (set once, at story creation — see `_apply_story_matches`) stays fixed as
+    an anchor. Piggybacks on this same Groq call rather than a separate one.
+    Falls back to n-gram overlap if Groq is unavailable or errors — same
+    resilience pattern as `name_topic_clusters`.
     """
     if not clusters:
         return []
@@ -411,7 +439,12 @@ async def match_clusters_to_stories(
         return [None] * len(clusters)
 
     story_items = [
-        {"id": s["id"], "label": s["label"], "recent_titles": (s.get("recent_titles") or "").split("|")[:3]}
+        {
+            "id": s["id"],
+            "label": s["label"],
+            "current_summary": s.get("summary") or "",
+            "recent_titles": (s.get("recent_titles") or "").split("|")[:3],
+        }
         for s in open_stories
     ]
     cluster_items = [
@@ -429,13 +462,20 @@ async def match_clusters_to_stories(
                     "topic clusters). For each cluster, decide if it is a continuation of one of the "
                     "open stories — same underlying event/story, even if the angle shifted (e.g. "
                     "announcement -> reactions -> consequences) — or if it is genuinely a new story.\n\n"
-                    "Return JSON: {\"matches\": [{\"index\": <cluster index>, \"story_id\": <id or null>}]}\n\n"
+                    "When a cluster continues a story, also write a fresh `summary`: a SHORT 3-6 word "
+                    "phrase (Title Case) capturing what is happening NOW in that story, given this "
+                    "new cluster. It is shown next to the story's original label as \"<label> — "
+                    "<summary>\", so it must NOT just repeat the label — it should name the latest "
+                    "development. Example: label \"GPT-5 Launch\", new cluster about pricing "
+                    "complaints -> summary \"Backlash Over Pricing\".\n\n"
+                    "Return JSON: {\"matches\": [{\"index\": <cluster index>, \"story_id\": <id or "
+                    "null>, \"summary\": \"<short phrase, omit or empty if story_id is null>\"}]}\n\n"
                     f"OPEN_STORIES = {json.dumps(story_items, ensure_ascii=False)}\n\n"
                     f"TODAY_CLUSTERS = {json.dumps(cluster_items, ensure_ascii=False)}"
                 ),
             }],
-            temperature=0.1,
-            max_tokens=600,
+            temperature=0.2,
+            max_tokens=800,
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content)
@@ -444,7 +484,13 @@ async def match_clusters_to_stories(
         for m in data.get("matches", []):
             idx, story_id = m.get("index"), m.get("story_id")
             if isinstance(idx, int) and 0 <= idx < len(clusters) and story_id in id_to_story:
-                result[idx] = id_to_story[story_id]
+                story = dict(id_to_story[story_id])
+                summary = (m.get("summary") or "").strip()
+                # Groq occasionally omits summary on a matched story — fall back to
+                # keeping the previous one rather than the cluster's raw label, so a
+                # transient miss doesn't regress a good summary already in place.
+                story["summary"] = summary or story.get("summary") or clusters[idx]["label"]
+                result[idx] = story
         logging.info(
             f"Story matching [{domain}]: {sum(1 for r in result if r)}/{len(clusters)} "
             f"clusters matched to open stories"
@@ -469,21 +515,40 @@ def _apply_story_matches(
             if matched:
                 story_id = matched["id"]
                 recent = "|".join((titles + (matched.get("recent_titles") or "").split("|"))[:6])
-                client.table("stories").update({
+                payload = {
                     "last_seen": today,
                     "article_count": matched.get("article_count", 0) + cluster["article_count"],
                     "recent_titles": recent,
-                }).eq("id", story_id).execute()
+                    "summary": matched.get("summary") or "",
+                }
+                try:
+                    client.table("stories").update(payload).eq("id", story_id).execute()
+                except Exception as e:
+                    if "summary" not in str(e):
+                        raise
+                    payload.pop("summary", None)
+                    client.table("stories").update(payload).eq("id", story_id).execute()
             else:
-                resp = client.table("stories").insert({
+                # `summary` starts empty: it's a single-day story so far (the
+                # dashboard only surfaces stories active on >= 2 days), and gets
+                # written once a future cluster matches into it, above.
+                insert_payload = {
                     "domain": domain,
                     "label": cluster["label"],
+                    "summary": "",
                     "first_seen": today,
                     "last_seen": today,
                     "article_count": cluster["article_count"],
                     "status": "open",
                     "recent_titles": "|".join(titles),
-                }).execute()
+                }
+                try:
+                    resp = client.table("stories").insert(insert_payload).execute()
+                except Exception as e:
+                    if "summary" not in str(e):
+                        raise
+                    insert_payload.pop("summary", None)
+                    resp = client.table("stories").insert(insert_payload).execute()
                 story_id = resp.data[0]["id"]
         except Exception as e:
             logging.warning(f"Story upsert failed for cluster '{cluster['label']}' ({domain}): {e}")
