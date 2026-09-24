@@ -877,28 +877,41 @@ _ARTICLE_COLS = (
 # time (in case several are missing on a totally fresh DB) instead of crashing the
 # dashboard. Same spirit as save_to_supabase's optional-columns retry in main.py.
 _OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated")
+_PAGE_SIZE = 1000  # Supabase's default API max-rows per response
 
 
 def load_articles(days: int, domain: str = "ia") -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
-    def _query(cols: str):
-        return (
-            client.table("articles")
-            .select(cols)
-            .eq("domain", domain)
-            .gte("published", cutoff)
-            .order("hot_topic", desc=True)
-            .order("published", desc=True)
-            .execute()
-        )
+    def _query(cols: str) -> list[dict]:
+        # Supabase silently caps each response at max-rows (1000 by default), so
+        # page through with .range() until an empty page — not a short one, which
+        # would stop early if max-rows is ever set below _PAGE_SIZE. `url` (the
+        # upsert key, unique) is the tiebreaker that keeps pages stable.
+        rows: list[dict] = []
+        while True:
+            resp = (
+                client.table("articles")
+                .select(cols)
+                .eq("domain", domain)
+                .gte("published", cutoff)
+                .order("hot_topic", desc=True)
+                .order("published", desc=True)
+                .order("url")
+                .range(len(rows), len(rows) + _PAGE_SIZE - 1)
+                .execute()
+            )
+            page = resp.data or []
+            if not page:
+                return rows
+            rows.extend(page)
 
     cols = _ARTICLE_COLS
-    resp = None
-    while resp is None:
+    articles = None
+    while articles is None:
         try:
-            resp = _query(cols)
+            articles = _query(cols)
         except Exception as e:
             missing = [c for c in _OPTIONAL_ARTICLE_COLS if f", {c}" in cols and c in str(e)]
             if not missing:
@@ -907,7 +920,6 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
             for c in missing:
                 cols = cols.replace(f", {c}", "")
 
-    articles = resp.data or []
     for a in articles:
         a.setdefault("story_id", None)
         a.setdefault("published_is_estimated", False)
