@@ -346,13 +346,18 @@ def propose(dry_run: bool) -> None:
         logging.warning("No hot topic candidates this week — no issue opened.")
         return
     today = datetime.now(timezone.utc)
-    monday = today + timedelta(days=(0 - today.weekday()) % 7)
+    # Next Monday's build — on a Monday the scheduled build already ran (or is about to)
+    monday = today + timedelta(days=(0 - today.weekday()) % 7 or 7)
     title = f"📰 Newsletter du {monday:%d/%m} — choisis tes sujets"
     body = render_issue_body(candidates)
     if dry_run:
         print(f"{title}\n\n{body}")
         return
     previous = _open_issues()
+    try:
+        _github("POST", "/labels", json={"name": ISSUE_LABEL, "color": "f4a261"})
+    except Exception:
+        pass  # 422 = label already exists
     issue = _github("POST", "/issues", json={"title": title, "body": body, "labels": [ISSUE_LABEL]})
     logging.info(f"Opened issue #{issue['number']}: {issue['html_url']}")
     for old in previous:

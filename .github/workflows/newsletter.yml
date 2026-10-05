@@ -1,0 +1,78 @@
+name: AI Radar - Weekly Newsletter
+
+on:
+  schedule:
+    # Sunday 16:00 UTC (18:00 CEST / 17:00 CET): open the topic-picker issue
+    - cron: '0 16 * * 0'
+    # Monday 08:00 UTC (10:00 CEST / 09:00 CET): build the edition from the checked topics.
+    # One hour after the daily collection (07:00 UTC) so Monday's articles are in.
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+    inputs:
+      step:
+        description: "Étape à lancer"
+        required: true
+        default: propose
+        type: choice
+        options: [propose, build]
+
+permissions:
+  contents: write  # commit the edition archive in output/
+  issues: write    # open / comment / close the topic-picker issue
+
+concurrency:
+  group: newsletter
+  cancel-in-progress: false
+
+jobs:
+  newsletter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Pick step
+        id: step
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.step }}" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "0 16 * * 0" ]; then
+            echo "name=propose" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=build" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run newsletter ${{ steps.step.outputs.name }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DASHBOARD_URL: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+        run: python weekly_digest/newsletter.py ${{ steps.step.outputs.name }}
+
+      - name: Archive edition
+        if: steps.step.outputs.name == 'build'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add output/
+          if git diff --cached --quiet; then
+            echo "No edition to archive."
+            exit 0
+          fi
+          git commit -m "chore(newsletter): archive edition $(date -u +%F)"
+          git pull --rebase
+          git push
