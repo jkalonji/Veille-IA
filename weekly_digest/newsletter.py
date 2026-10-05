@@ -15,7 +15,7 @@ Usage:
     python weekly_digest/newsletter.py propose [--dry-run]   # Sunday: open the topic-picker issue
     python weekly_digest/newsletter.py build                 # Monday: build from the checked topics
 
-Env vars: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY (GROQ_MODEL optional),
+Env vars: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY (GROQ_MODEL optional), BUTTONDOWN_API_KEY (build),
 GITHUB_TOKEN + GITHUB_REPOSITORY for propose/build (set automatically in Actions).
 """
 
@@ -392,10 +392,53 @@ def build() -> str | None:
     warning = f"\n\n⚠️ Sujets introuvables, ignorés : {', '.join(missing)}" if missing else ""
     _close_issue(
         issue["number"],
-        f"✅ Édition générée avec {len(picked)} sujet(s).{warning}\n\n"
+        f"✅ Édition générée avec {len(picked)} sujet(s).{warning}\n\n{publish_draft(markdown)}\n\n"
         f"<details><summary>Aperçu</summary>\n\n{markdown}\n</details>",
     )
     return path
+
+
+# ---------------------------------------------------------------------------
+# Buttondown
+# ---------------------------------------------------------------------------
+
+def publish_draft(markdown: str) -> str:
+    """Create the edition as a Buttondown *draft*; return a status line for the issue.
+
+    `status: "draft"` is mandatory: the API default is `about_to_send`, which
+    would email every subscriber immediately.
+    """
+    key = os.environ.get("BUTTONDOWN_API_KEY")
+    if not key:
+        return "ℹ️ BUTTONDOWN_API_KEY absent — pas de brouillon Buttondown, l'édition est seulement archivée."
+
+    import requests
+
+    # The H1 becomes the subject; Buttondown shows the subject as the email title
+    title, _, body = markdown.partition("\n")
+    subject = title.lstrip("# ").strip()
+    try:
+        resp = requests.post(
+            "https://api.buttondown.com/v1/emails",
+            headers={"Authorization": f"Token {key}"},
+            json={
+                "subject": subject,
+                "body": "<!-- buttondown-editor-mode: plaintext -->\n" + body.strip(),
+                "status": "draft",
+            },
+            timeout=20,
+        )
+        resp.raise_for_status()
+        email = resp.json()
+    except Exception as e:
+        logging.error(f"Buttondown draft failed: {e}")
+        return f"❌ Échec de la création du brouillon Buttondown : `{e}`"
+
+    if email.get("status") != "draft":
+        logging.error(f"Buttondown email {email.get('id')} has status {email.get('status')!r}, not draft!")
+        return f"⚠️ Buttondown a créé l'email avec le statut `{email.get('status')}` au lieu de `draft` — vérifie-le."
+    logging.info(f"Buttondown draft created: {email.get('id')}")
+    return "📝 Brouillon créé dans Buttondown — relis-le et envoie-le depuis https://buttondown.com/emails"
 
 
 # ---------------------------------------------------------------------------

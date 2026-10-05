@@ -1855,6 +1855,20 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
   </section>"""
 
 
+def _subscribe_form_html(buttondown_username: str) -> str:
+    """Newsletter signup form posting straight to Buttondown (email only, double
+    opt-in and unsubscribe handled there). Empty until BUTTONDOWN_USERNAME is set."""
+    if not buttondown_username:
+        return ""
+    return f"""
+  <form class="subscribe" method="post" target="_blank"
+        action="https://buttondown.com/api/emails/embed-subscribe/{buttondown_username}">
+    <label for="bd-email">📬 Recevez chaque lundi l'essentiel de l'actu IA, sélectionné à la main.</label>
+    <input type="email" name="email" id="bd-email" placeholder="votre@email.com" required>
+    <button type="submit">S'abonner</button>
+  </form>"""
+
+
 def run_export(days: int, output: str = "dashboard.html") -> None:
     print(f"Chargement des articles ({days} derniers jours)...")
     domains = list(DOMAIN_META)
@@ -1872,6 +1886,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
     default_domain = "ia" if articles_by_domain.get("ia") else domains[0]
+    subscribe_html = _subscribe_form_html(os.environ.get("BUTTONDOWN_USERNAME", ""))
 
     toggle_buttons = "".join(
         f'<button class="domain-toggle-btn{" active" if d == default_domain else ""}" data-domain="{d}">'
@@ -1916,6 +1931,20 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     .domain-toggle-btn:hover {{ background: #252836; color: #fafafa; }}
     .domain-toggle-btn.active {{ background: #00b4d8; color: #0e1117; border-color: #00b4d8; }}
     .domain-headline {{ color: #adb5bd; font-size: 0.9rem; margin-bottom: 12px; }}
+    .subscribe {{
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px;
+      padding: 10px 12px; margin-bottom: 14px;
+    }}
+    .subscribe label {{ color: #adb5bd; font-size: 0.9rem; flex: 1 1 100%; }}
+    .subscribe input[type=email] {{
+      flex: 1 1 180px; min-width: 0; background: #0e1117; color: #fafafa;
+      border: 1px solid #2a2d3a; border-radius: 6px; padding: 8px 10px; font-size: 14px;
+    }}
+    .subscribe button {{
+      background: #00b4d8; color: #0e1117; border: none; border-radius: 6px;
+      padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+    }}
 
     /* ── Charts grid (globe + radar) ────────────────────── */
     .charts-row {{
@@ -2003,6 +2032,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 </head>
 <body>
   <h1>Cobalt.xyz</h1>
+  {subscribe_html}
   <script>{get_plotlyjs()}</script>
 
   <div class="domain-toggle">{toggle_buttons}</div>
