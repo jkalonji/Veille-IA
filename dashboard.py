@@ -903,6 +903,10 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
                 .execute()
             )
             page = resp.data or []
+            if not isinstance(page, list):
+                # e.g. SUPABASE_URL pointing at the web dashboard: an HTML string would
+                # otherwise be extended char by char and never yield an empty page
+                raise RuntimeError("Réponse Supabase inattendue — SUPABASE_URL doit être https://<projet>.supabase.co")
             if not page:
                 return rows
             rows.extend(page)

@@ -12,8 +12,11 @@ Usage:
     python weekly_digest/newsletter.py candidates            # list this week's candidates
     python weekly_digest/newsletter.py preview               # build an edition from the top 5
     python weekly_digest/newsletter.py preview --pick story-12,topic-gpt-5-launch
+    python weekly_digest/newsletter.py propose [--dry-run]   # Sunday: open the topic-picker issue
+    python weekly_digest/newsletter.py build                 # Monday: build from the checked topics
 
-Env vars: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY (GROQ_MODEL optional).
+Env vars: SUPABASE_URL, SUPABASE_KEY, GROQ_API_KEY (GROQ_MODEL optional),
+GITHUB_TOKEN + GITHUB_REPOSITORY for propose/build (set automatically in Actions).
 """
 
 import argparse
@@ -71,7 +74,7 @@ def _truncate(text: str, n: int) -> str:
 # Candidates
 # ---------------------------------------------------------------------------
 
-def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], limit: int = 15) -> list[dict]:
+def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], limit: int | None = 15) -> list[dict]:
     """Group this week's hot articles into topic candidates, best first.
 
     A candidate is a cross-day story when the articles carry a `story_id`,
@@ -81,7 +84,6 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
     """
     groups: dict[str, list[dict]] = defaultdict(list)
     titles: dict[str, str] = {}
-    blurbs: dict[str, str] = {}
     for a in articles:
         reason = (a.get("hot_reason") or "").strip()
         if not a.get("hot_topic") or not reason or reason.lower() in _OLD_HOT_REASONS:
@@ -92,9 +94,8 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
             meta = stories_lookup.get(sid, {})
             if meta.get("label"):
                 titles[key] = meta["label"]
-                if meta.get("summary"):
+                if meta.get("summary") and meta["summary"].lower() != meta["label"].lower():
                     titles[key] += f" — {meta['summary']}"
-                    blurbs[key] = meta["summary"]
         else:
             key = f"topic-{_slug(reason)}"
         titles.setdefault(key, reason)
@@ -117,7 +118,7 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
             "id": key,
             "title": titles[key],
             "blurb": _truncate(
-                blurbs.get(key) or lead.get("summary") or lead.get("description") or lead.get("title", ""), 160
+                lead.get("summary") or lead.get("description") or lead.get("title", ""), 160
             ),
             "days": days,
             "article_count": article_count,
@@ -262,6 +263,137 @@ def render_markdown(picked: list[dict], prose: dict, stats: dict, week_start: st
 
 
 # ---------------------------------------------------------------------------
+# GitHub issue — the editor's topic picker
+# ---------------------------------------------------------------------------
+
+ISSUE_LABEL = "newsletter"
+# "- [x] **3.** 🚀 **Title** · 2 jours · 9 articles <!-- id:story-12 -->"
+_ITEM_RE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s*\*\*(\d+)\.\*\*.*?<!--\s*id:(\S+)\s*-->", re.M)
+# "3: insister sur l'angle prix" (one note per line, in an issue comment)
+_NOTE_RE = re.compile(r"^\s*#?(\d{1,2})\s*[:.)\-–—]\s*(.+?)\s*$", re.M)
+# Only people with write access may steer the prose — on a public repo anyone
+# can comment, and a note goes straight into the Groq prompt.
+_TRUSTED_AUTHORS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+
+def _github(method: str, path: str, **kwargs):
+    import requests
+
+    token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
+    if not token or not repo:
+        sys.exit("GITHUB_TOKEN and GITHUB_REPOSITORY (owner/repo) must be set.")
+    resp = requests.request(
+        method,
+        f"https://api.github.com/repos/{repo}{path}",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
+        timeout=15,
+        **kwargs,
+    )
+    resp.raise_for_status()
+    return resp.json() if resp.content else None
+
+
+def _open_issues() -> list[dict]:
+    return _github("GET", "/issues", params={"labels": ISSUE_LABEL, "state": "open"})
+
+
+def _close_issue(number: int, comment: str) -> None:
+    _github("POST", f"/issues/{number}/comments", json={"body": comment})
+    _github("PATCH", f"/issues/{number}", json={"state": "closed"})
+
+
+def render_issue_body(candidates: list[dict]) -> str:
+    lines = [
+        "Coche les sujets à traiter dans la newsletter de lundi — ils paraîtront dans l'ordre de la liste.",
+        "",
+        "💬 Pour orienter la rédaction d'un sujet, ajoute un commentaire avec une note par ligne, "
+        "précédée du numéro du sujet : `3: insister sur l'angle prix`.",
+        "",
+        "Si rien n'est coché lundi matin, pas de newsletter cette semaine.",
+        "",
+    ]
+    for i, c in enumerate(candidates, 1):
+        badge = " 🌋" if c["has_supra"] else ""
+        span = f"{c['span_days']} jours · " if c["span_days"] > 1 else ""
+        lead = c["days"][-1]["articles"][0]
+        lines += [
+            f"- [ ] **{i}.** {c['emoji']} **{c['title']}**{badge} · {span}{c['article_count']} articles"
+            f" <!-- id:{c['id']} -->",
+            f"  {c['blurb']} — [article principal]({lead.get('url', '')})",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def parse_selection(body: str, comments: list[dict]) -> tuple[list[str], dict[str, str]]:
+    """Return (checked ids in list order, {id: editor note})."""
+    items = _ITEM_RE.findall(body or "")
+    by_number = {int(n): cid for _, n, cid in items}
+    picked = [cid for mark, _, cid in items if mark.lower() == "x"]
+    notes: dict[str, list[str]] = defaultdict(list)
+    for comment in comments:
+        if comment.get("author_association") not in _TRUSTED_AUTHORS:
+            continue
+        for n, note in _NOTE_RE.findall(comment.get("body") or ""):
+            if int(n) in by_number:
+                notes[by_number[int(n)]].append(note)
+    return picked, {cid: " ".join(v) for cid, v in notes.items()}
+
+
+def propose(dry_run: bool) -> None:
+    """Open this week's topic-picker issue and retire any older open one."""
+    _, candidates = load_week()
+    if not candidates:
+        logging.warning("No hot topic candidates this week — no issue opened.")
+        return
+    today = datetime.now(timezone.utc)
+    monday = today + timedelta(days=(0 - today.weekday()) % 7)
+    title = f"📰 Newsletter du {monday:%d/%m} — choisis tes sujets"
+    body = render_issue_body(candidates)
+    if dry_run:
+        print(f"{title}\n\n{body}")
+        return
+    previous = _open_issues()
+    issue = _github("POST", "/issues", json={"title": title, "body": body, "labels": [ISSUE_LABEL]})
+    logging.info(f"Opened issue #{issue['number']}: {issue['html_url']}")
+    for old in previous:
+        _close_issue(old["number"], f"Remplacée par #{issue['number']}.")
+
+
+def build() -> str | None:
+    """Build the edition from the latest open picker issue; return the output path."""
+    issues = _open_issues()
+    if not issues:
+        logging.warning("No open newsletter issue — nothing to build.")
+        return None
+    issue = max(issues, key=lambda i: i["created_at"])
+    comments = _github("GET", f"/issues/{issue['number']}/comments", params={"per_page": 100})
+    picked_ids, notes = parse_selection(issue.get("body") or "", comments)
+    if not picked_ids:
+        _close_issue(issue["number"], "Aucun sujet coché — pas de newsletter cette semaine.")
+        logging.info("No topic picked — no edition this week.")
+        return None
+
+    articles, _ = load_week()
+    # Re-rank without the cap: Monday's collection may push a Sunday pick out of the top 15
+    by_id = {c["id"]: c for c in select_candidates(articles, _fetch_stories_lookup(DOMAIN), limit=None)}
+    picked = [by_id[cid] for cid in picked_ids if cid in by_id]
+    missing = [cid for cid in picked_ids if cid not in by_id]
+    if not picked:
+        _close_issue(issue["number"], "⚠️ Aucun des sujets cochés n'a été retrouvé en base — édition annulée.")
+        return None
+
+    markdown = build_edition(articles, picked, notes)
+    path = write_edition(markdown)
+    warning = f"\n\n⚠️ Sujets introuvables, ignorés : {', '.join(missing)}" if missing else ""
+    _close_issue(
+        issue["number"],
+        f"✅ Édition générée avec {len(picked)} sujet(s).{warning}\n\n"
+        f"<details><summary>Aperçu</summary>\n\n{markdown}\n</details>",
+    )
+    return path
+
+
+# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -279,13 +411,32 @@ def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str
     return render_markdown(picked, prose, compute_stats(articles), week_start, week_end)
 
 
+def write_edition(markdown: str) -> str:
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    path = os.path.join(OUTPUT_DIR, f"newsletter-{datetime.now(timezone.utc):%Y-%m-%d}.md")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(markdown)
+    logging.info(f"Edition written to {path}")
+    return path
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="AI Radar weekly newsletter")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("candidates", help="List this week's topic candidates")
-    p_prev = sub.add_parser("preview", help="Build an edition into output/")
+    p_prev = sub.add_parser("preview", help="Build an edition into output/ without GitHub")
     p_prev.add_argument("--pick", default="", help="Comma-separated candidate ids (default: top 5)")
+    p_prop = sub.add_parser("propose", help="Open the GitHub issue listing this week's candidates")
+    p_prop.add_argument("--dry-run", action="store_true", help="Print the issue instead of opening it")
+    sub.add_parser("build", help="Build the edition from the topics checked in the issue")
     args = parser.parse_args()
+
+    if args.cmd == "propose":
+        propose(args.dry_run)
+        return
+    if args.cmd == "build":
+        build()
+        return
 
     articles, candidates = load_week()
     if not candidates:
@@ -300,20 +451,14 @@ def main() -> None:
 
     if args.pick:
         wanted = [p.strip() for p in args.pick.split(",") if p.strip()]
-        by_id = {c["id"]: c for c in candidates}
+        by_id = {c["id"]: c for c in select_candidates(articles, _fetch_stories_lookup(DOMAIN), limit=None)}
         unknown = [w for w in wanted if w not in by_id]
         if unknown:
             sys.exit(f"Unknown candidate ids: {', '.join(unknown)}")
         picked = [by_id[w] for w in wanted]
     else:
         picked = candidates[:5]
-
-    markdown = build_edition(articles, picked, notes={})
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    path = os.path.join(OUTPUT_DIR, f"newsletter-{datetime.now(timezone.utc):%Y-%m-%d}.md")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(markdown)
-    logging.info(f"Edition written to {path}")
+    write_edition(build_edition(articles, picked, notes={}))
 
 
 if __name__ == "__main__":
