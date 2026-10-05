@@ -2175,18 +2175,21 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 # Entrypoint
 # ---------------------------------------------------------------------------
 
-if _is_streamlit():
-    run_streamlit()
-else:
-    parser = argparse.ArgumentParser(description="AI Radar Dashboard")
-    parser.add_argument("--export", action="store_true", help="Générer un fichier HTML statique")
-    parser.add_argument("--days",   type=int, default=7,  help="Fenêtre d'analyse en jours")
-    parser.add_argument("--output", type=str, default="dashboard.html", help="Fichier de sortie")
-    args = parser.parse_args()
-
-    if args.export:
-        run_export(args.days, args.output)
+# Guarded so other scripts (weekly_digest/newsletter.py) can import the loaders
+# without triggering argparse — `streamlit run` also executes the file as __main__.
+if __name__ == "__main__":
+    if _is_streamlit():
+        run_streamlit()
     else:
-        print("Usage :")
-        print("  Local     : streamlit run dashboard.py")
-        print("  Export CI : python dashboard.py --export [--days N] [--top N]")
+        parser = argparse.ArgumentParser(description="AI Radar Dashboard")
+        parser.add_argument("--export", action="store_true", help="Générer un fichier HTML statique")
+        parser.add_argument("--days",   type=int, default=7,  help="Fenêtre d'analyse en jours")
+        parser.add_argument("--output", type=str, default="dashboard.html", help="Fichier de sortie")
+        args = parser.parse_args()
+
+        if args.export:
+            run_export(args.days, args.output)
+        else:
+            print("Usage :")
+            print("  Local     : streamlit run dashboard.py")
+            print("  Export CI : python dashboard.py --export [--days N] [--top N]")
