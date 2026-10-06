@@ -78,7 +78,7 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS hot_reason TEXT DEFAULT '';
 ```
 Le code est backward-compatible (fallback automatique si colonnes absentes).
 
-> ⚠️ **Note (2026-07-20) : la section ci-dessus (sources de keywords, 4 signaux, onglets `debat/tech/societe/tendance`) décrit un système qui a depuis été remplacé** par un clustering dynamique par n-grammes (`extract_topic_clusters`/`name_topic_clusters` dans `main.py`, commit `5bd5f54`) — voir `SPECS_MULTIDOMAINE.md` §6 pour la description à jour. `hot_reason` est désormais un label de cluster libre, pas une catégorie fixe. `dashboard.py` traite les anciennes valeurs (`debat`/`tech`/`societe`/`tendance`) comme obsolètes via `_OLD_HOT_REASONS`.
+> ⚠️ **Note (2026-07-20) : la section ci-dessus (sources de keywords, 4 signaux, onglets `debat/tech/societe/tendance`) décrit un système qui a depuis été remplacé** par un clustering dynamique par n-grammes (`extract_topic_clusters`/`name_topic_clusters` dans `main.py`, commit `5bd5f54`), lui-même remplacé le 2026-10-06 par les **histoires sémantiques** — voir la section « Histoires sémantiques » plus bas. `hot_reason` est désormais un label de cluster libre, pas une catégorie fixe. `dashboard.py` traite les anciennes valeurs (`debat`/`tech`/`societe`/`tendance`) comme obsolètes via `_OLD_HOT_REASONS`.
 
 **Migration SQL — extension multi-domaines (Phase 0, voir `SPECS_MULTIDOMAINE.md`) :**
 ```sql
@@ -98,62 +98,42 @@ CREATE TABLE IF NOT EXISTS market_data (
 ```
 Le code est backward-compatible pour `domain` (fallback automatique dans `save_to_supabase` si la colonne est absente). `market_data` n'est pas encore utilisée par le pipeline (arrivera en Phase 2).
 
-### Seuil Supa Hot Topic
-Un article `hot_topic` est promu `supa_hot` si :
-- `mention_count > 5` (≥ 5 autres articles du jour partagent ≥ 2 mots-clés du titre)
-- ET `published == today`
+## Histoires sémantiques (sujets Groq, recalculées à chaque collecte)
 
-Visuellement : fond dégradé rouge-orange, badge `🌋 SUPA HOT · N mentions`, affiché en premier.
+Depuis le 2026-10-06, les clusters hot et le suivi d'histoires ne font plus qu'un : une **histoire** regroupe tous les articles des 30 derniers jours qui parlent d'un même sujet — même événement, même personne ou organisation, ou même problématique. Le regroupement se fait sur le **sens** (sujets extraits par Groq), plus sur les mots des titres. Un article peut appartenir à **plusieurs** histoires. Tout est dans `main.py`, section « 0b. Semantic stories ».
 
-### Règle d'évolution des keywords
-Si un sujet majeur n'est pas capté par les sources dynamiques, l'ajouter manuellement dans `HOT_KEYWORDS_FALLBACK` dans `main.py`. Cette liste est le filet de sécurité.
+### Fonctionnement (à chaque run, par domaine — `refresh_stories`)
+1. **Sujets** (`extract_topics`) : chaque nouvel article reçoit de Groq (modèle `GROQ_MODEL`, lots de 20 articles par appel) 1 à 4 sujets, stockés dans `articles.topics` : l'**événement** précis, l'**acteur** principal, la **problématique** (débat public, jamais un domaine de recherche). Pour que des articles de jours différents se retrouvent, Groq reçoit la liste des noms déjà utilisés (`_known_names` : les plus fréquents, puis ceux créés pendant le run, puis les plus récents) et doit les réutiliser tels quels. Les exemples et termes interdits par domaine sont dans `DOMAIN_TOPIC_HINTS`.
+2. **Regroupement** (`build_story_candidates`) sur les `STORY_WINDOW_DAYS` (30) derniers jours : un sujet devient une histoire s'il est partagé par ≥ 3 articles de ≥ 2 sources, et s'il ne dépasse pas 5 % des articles de la fenêtre (au-delà, il est trop large — ex. « OpenAI » seul). Deux sujets couvrant presque les mêmes articles (≥ 80 %) sont fusionnés.
+3. **Revue** (`review_stories`, un appel Groq) : écarte les histoires incohérentes (articles qui ne partagent qu'un thème vague) et écrit le `summary` du dernier développement.
+4. **Sauvegarde** (`_save_stories`) : upsert dans `stories` sur la clé `(domain, topic_key)` — une histoire garde donc son `id` d'un run à l'autre tant que son sujet existe (nécessaire pour la newsletter : sujets cochés le dimanche, édition construite le lundi). `stories.article_urls` liste ses articles. Toute autre histoire ouverte du domaine passe en `closed`.
+5. **Drapeaux des articles du run** (`_apply_story_flags`) : `hot_topic` si une de ses histoires a ≥ 2 articles sur les 2 derniers jours ; `hot_reason`/`story_id` = son histoire la plus active ; `supa_hot` si cette histoire a ≥ 5 articles aujourd'hui. Ces champs servent à la classification (modèle complet + résumé pour les articles hot) et à Telegram.
 
-## Suivi d'histoires sur plusieurs jours (story tracking)
+### Titre d'une histoire
+Affiché sous la forme **`"{label} — {summary}"`** :
+- `stories.label` — le nom du sujet, posé à la création de l'histoire et **jamais modifié ensuite** (ancrage stable).
+- `stories.summary` — 3 à 6 mots sur le dernier développement, réécrit à chaque run.
 
-Les clusters hot (`extract_topic_clusters`/`name_topic_clusters`) sont recalculés **chaque jour, à partir des seuls articles du jour** — sans lien avec les clusters de la veille. Le "suivi d'histoires" ajoute une identité persistante (`stories`) qui traverse les runs quotidiens, pour qu'une actu qui dure plusieurs jours (annonce → réactions → conséquences) reste une seule histoire au lieu de N clusters isolés au fil des jours.
+### Dashboard et newsletter
+- `_fetch_stories_lookup(domain)` lit `id, label, summary, status, article_urls` (histoires ouvertes + anciennes histoires sans `topic_key`) et `_story_members` en déduit les articles de chaque histoire.
+- **Hot Articles** (`_extract_hot_topics`) : les histoires avec ≥ 2 articles sur les 2 derniers jours (15 onglets max).
+- **📖 Suivi d'histoires** (`_build_story_timelines`) : les histoires actives sur ≥ 2 jours distincts (40 max), dépliables en timeline jour par jour — Streamlit (`_render_stories`) et export statique (`_stories_html`).
+- **Newsletter** (`select_candidates`) : les histoires avec ≥ 2 articles dans la semaine.
+- Tant qu'aucune histoire n'a d'`article_urls` (avant le premier run), tout retombe sur l'ancien regroupement par `story_id`/`hot_reason`.
 
-### Fonctionnement (dans `main.py`, après le clustering quotidien)
-1. Pour chaque domaine, après `name_topic_clusters`, on récupère les stories `open` de ce domaine (`_fetch_open_stories`).
-2. `match_clusters_to_stories` demande à Groq (un seul appel groupé, même pattern que le nommage des clusters) si chaque cluster du jour continue une story ouverte ou en démarre une nouvelle. En cas d'échec Groq, repli automatique sur `_match_clusters_ngram` (recouvrement de bigrammes/trigrammes avec les titres récents de la story — même logique que le clustering intra-jour).
-3. `_apply_story_matches` met à jour (`last_seen`, `article_count`, `recent_titles`) ou crée la story en Supabase, et renvoie le `story_id` à appliquer à chaque article matché.
-4. `_close_stale_stories` referme (`status = 'closed'`) les stories sans nouvel article depuis `STORY_IDLE_DAYS` (4 jours par défaut).
+### Rattrapage des sujets (`python main.py --backfill-topics`)
+Les articles collectés avant le 2026-10-06 n'ont pas de sujets. Le workflow `AI Radar - Backfill Topics` (tous les jours à 14h UTC, ou à la main) en traite au plus `BACKFILL_MAX_ARTICLES` (500) par run, des plus récents aux plus anciens, puis recalcule les histoires. Il s'arrête proprement si le quota Groq est atteint et reprend au run suivant ; une fois tout traité, un run ne fait plus rien et le workflow peut être supprimé.
 
-### Dashboard
-- `_build_story_timelines` (dashboard.py) regroupe les articles déjà chargés par `story_id` et ne garde que les stories actives sur **≥ 2 jours distincts** — une story mono-jour est déjà visible dans les onglets Hot Articles, la dupliquer ici n'apporterait rien.
-- Rendu dans un nouveau panneau "📖 Suivi d'histoires" : liste des stories (actives aujourd'hui en premier, puis par activité récente), chacune dépliable en timeline jour par jour. Présent à la fois côté Streamlit (`_render_stories`, `st.expander`) et export statique GitHub Pages (`_stories_html`, `<details>` natif, zéro JS).
+**Quota Groq :** le palier gratuit de `openai/gpt-oss-120b` est limité à 200 000 tokens/jour, partagés entre la collecte (classification + sujets + revue) et le rattrapage. `gpt-oss-20b` a été testé pour les sujets : nettement moins bon (sujets trop larges, regroupements faux).
 
-### Migration SQL à exécuter une fois en Supabase
+### Migration SQL (appliquée le 2026-10-06)
 ```sql
-CREATE TABLE IF NOT EXISTS stories (
-    id BIGSERIAL PRIMARY KEY,
-    domain TEXT NOT NULL DEFAULT 'ia',
-    label TEXT NOT NULL,
-    first_seen DATE NOT NULL,
-    last_seen DATE NOT NULL,
-    article_count INTEGER NOT NULL DEFAULT 0,
-    status TEXT NOT NULL DEFAULT 'open',
-    recent_titles TEXT DEFAULT ''
-);
-ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS topics TEXT[] DEFAULT '{}';
+ALTER TABLE stories  ADD COLUMN IF NOT EXISTS topic_key TEXT;
+ALTER TABLE stories  ADD COLUMN IF NOT EXISTS article_urls TEXT[] DEFAULT '{}';
+CREATE UNIQUE INDEX IF NOT EXISTS stories_domain_topic_key ON stories(domain, topic_key);
 ```
-Le code est backward-compatible : tant que la migration n'est pas appliquée, `save_to_supabase` retire automatiquement `story_id` des lignes envoyées (même mécanisme que pour `hot_source`/`mention_count`), et le panneau "Suivi d'histoires" reste vide sans erreur.
-
-### Titre d'une histoire — label figé + résumé évolutif
-
-Le titre affiché dans le panneau "Suivi d'histoires" est composé de deux parties distinctes, concaténées à l'affichage (`dashboard.py`, `_build_story_timelines`) sous la forme **`"{label} — {summary}"`** :
-
-- `stories.label` — le titre initial, posé une seule fois à la création de la story (label du premier cluster qui l'a démarrée) et **jamais modifié ensuite**. Sert d'ancrage stable.
-- `stories.summary` — un résumé très condensé (3 à 6 mots, Title Case) du dernier développement de l'histoire, **régénéré à chaque fois qu'un nouveau cluster est rattaché à la story**. Ex : label `"GPT-5 Launch"` + résumé courant `"Backlash Over Pricing"`.
-
-`summary` est produit par Groq dans le même appel groupé que `match_clusters_to_stories` (`main.py`) — pas d'appel API dédié : quand le matching identifie qu'un cluster du jour continue une story ouverte, Groq écrit dans la foulée un résumé de ce que raconte ce nouveau cluster, avec le label et le résumé précédent de la story comme contexte. En cas de repli sur le matching par n-grammes (Groq indisponible), le résumé retombe sur le label du cluster du jour — moins fin, mais toujours court et à jour.
-
-Côté dashboard, `_fetch_stories_lookup(domain)` lit `id, label, summary` dans la table `stories` (mise en cache `ttl=300` côté Streamlit) et alimente `_build_story_timelines`. Si la story n'a pas encore de `summary` (migration non appliquée, ou lookup en échec), repli automatique sur l'ancienne heuristique (le `hot_reason` le plus long parmi les articles de la story).
-
-**Migration SQL à exécuter une fois en Supabase :**
-```sql
-ALTER TABLE stories ADD COLUMN IF NOT EXISTS summary TEXT DEFAULT '';
-```
-Le code est backward-compatible (fallback automatique dans `_fetch_open_stories`/`_apply_story_matches` côté collecte, et `_fetch_stories_lookup` côté dashboard, si la colonne est absente).
+Pré-requis plus anciens, toujours nécessaires : la table `stories` (`id, domain, label, summary, first_seen, last_seen, article_count, status, recent_titles`) et `articles.story_id`.
 
 ## Colonne "Publié" — date de collecte vs date de publication réelle
 

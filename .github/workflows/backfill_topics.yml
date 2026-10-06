@@ -1,0 +1,39 @@
+name: AI Radar - Backfill Topics
+
+# Tags the last 30 days of articles that have no topics yet (at most 500 per
+# run, to stay within the Groq daily quota), then rebuilds the stories. Runs
+# daily, well after the 07:00 UTC collection, and resumes where it stopped;
+# once everything is tagged a run does nothing, and this workflow can go.
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Backfill topics and rebuild stories
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py --backfill-topics

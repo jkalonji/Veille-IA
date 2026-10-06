@@ -10,7 +10,7 @@ import os
 import re
 import sys
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from time import mktime
 
@@ -40,9 +40,10 @@ class Article:
     mention_count: int = 0
     supa_hot: bool = False
     hot_source: str = ""    # pipe-separated detection signals: "trends|hn|github|db"
-    hot_reason: str = ""    # groq content classification: "debat"|"tech"|"societe"|"tendance"
+    hot_reason: str = ""    # label of the article's most active story, when it's hot
     summary: str = ""       # groq-generated 1-sentence summary in French
-    story_id: int | None = None  # cross-day story this article was matched to, if any
+    story_id: int | None = None  # the article's most active story (it can belong to several)
+    topics: list[str] = field(default_factory=list)  # groq-extracted topics, the basis of stories
     published_is_estimated: bool = False  # True if `published` is collection time, not a real source date
 
 # ---------------------------------------------------------------------------
@@ -101,479 +102,495 @@ def _compute_article_mentions(articles: list[Article]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 0b. Topic clustering (replaces keyword-based hot detection)
+# 0b. Semantic stories (replaces title n-gram clustering + cross-day matching)
 # ---------------------------------------------------------------------------
+# Groq tags each article with 1-4 canonical *topics*: a person, a specific
+# event or matter, or a specific issue. Every run regroups the last
+# STORY_WINDOW_DAYS of articles by shared topic, and a topic shared by enough
+# articles is a *story*. An article can belong to several stories. Stories are
+# re-derived from scratch on each run and keyed by (domain, topic_key), so a
+# story keeps its id across runs as long as its topic is still there.
 
-_BASE_NGRAM_STOPWORDS = _MENTION_STOPWORDS | {
-    "using", "will", "make", "take", "open", "help", "work", "need",
-    "many", "them", "know", "find", "some", "here", "even", "like",
-    "time", "year", "week", "ways", "could", "would", "your", "our",
-    "first", "show", "use", "say", "get", "give", "being", "most",
-    "report", "says", "look", "now", "back", "move", "inside",
-    "before", "between", "while", "through", "against", "without",
-    "around", "next", "within", "each", "such", "does", "did",
-}
+STORY_WINDOW_DAYS = 30
+STORY_MIN_ARTICLES = 3
+STORY_MIN_SOURCES = 2
+STORY_MAX_SHARE = 0.05     # a topic in more than 5% of the window's articles is too broad...
+STORY_MAX_FLOOR = 15       # ...unless the window is small (e.g. before the topics backfill)
+STORY_MERGE_OVERLAP = 0.8  # two topics sharing this share of the smaller one's articles are one story
+STORY_NAMING_LIMIT = 50    # most active stories sent to Groq for a summary
+HOT_RECENT_DAYS = 2        # an article is hot when one of its stories has >= HOT_MIN_RECENT
+HOT_MIN_RECENT = 2         # articles published in the last HOT_RECENT_DAYS days
+SUPA_HOT_MIN_TODAY = 5
+TOPIC_BATCH_SIZE = 20
+KNOWN_TOPICS_LIMIT = 200   # existing topic names shown to Groq so it reuses them verbatim
+GROQ_RETRIES = 6           # topic/story calls are batched and big — let the SDK wait out 429s
 
-# Domain-specific stopword extensions — words too generic within a given
-# domain's news flow to define a meaningful cluster identifier.
-_IA_EXTRA_STOPWORDS = {
-    "artificial", "intelligence", "machine", "learning", "technology",
-    "digital", "software", "platform", "online", "system", "systems",
-    "tool", "tools", "model", "models", "neural", "network", "networks",
-    "generative", "language", "large", "latest", "based", "driven",
-    "powered", "enabled", "future", "global", "world", "industry",
-    "company", "companies", "startup", "startups", "researchers",
-    "research", "paper", "papers", "study", "team", "users", "space",
-    "launches", "launch", "release", "releases", "announces", "announced",
-    "introduces", "unveils", "brings", "update", "updates", "version",
-}
-
-DOMAIN_NGRAM_STOPWORDS: dict[str, set[str]] = {
-    "ia": _BASE_NGRAM_STOPWORDS | _IA_EXTRA_STOPWORDS,
-}
-
-# Ngram-level blocklist — phrases too generic to define a meaningful cluster,
-# scoped per domain (only "ia" has one populated for now).
-DOMAIN_GENERIC_NGRAMS: dict[str, set[str]] = {
+DOMAIN_TOPIC_HINTS: dict[str, dict[str, str]] = {
     "ia": {
-        "artificial intelligence", "machine learning", "deep learning",
-        "large language", "language model", "language models",
-        "generative ai", "neural network", "neural networks",
-        "open source", "new model", "latest model", "ai model", "ai models",
-        "ai tools", "ai tool", "ai system", "ai systems", "ai research",
-        "ai company", "ai startup", "ai technology", "ai applications",
-        "tech news", "tech industry", "tech company",
-        "research paper", "new paper", "new study", "new research",
-        "ai era", "ai future", "ai development", "ai capabilities",
-    },
-}
-
-
-def _extract_title_ngrams(title: str, domain: str = "ia") -> set[str]:
-    """Extract bigrams and trigrams from a title, filtering domain-scoped stopwords."""
-    stopwords = DOMAIN_NGRAM_STOPWORDS.get(domain, _BASE_NGRAM_STOPWORDS)
-    # Match word tokens including hyphenated terms (gpt-4o, ai-agent)
-    words = re.findall(r"[a-z][a-z0-9\-]*", title.lower())
-    words = [w for w in words if len(w) >= 2 and w not in stopwords]
-    ngrams: set[str] = set()
-    for i in range(len(words) - 1):
-        ngrams.add(f"{words[i]} {words[i + 1]}")
-    for i in range(len(words) - 2):
-        ngrams.add(f"{words[i]} {words[i + 1]} {words[i + 2]}")
-    return ngrams
-
-
-def extract_topic_clusters(articles: list["Article"], min_articles: int = 3, domain: str = "ia") -> list[dict]:
-    """Cluster articles by shared bigrams/trigrams in their titles.
-
-    Assumes all articles belong to the same `domain` (callers group by domain
-    before calling this, so hot-topic clusters never mix domains).
-
-    Returns a list of clusters sorted by score (article_count × source_count),
-    each with: phrase, label, articles, article_count, source_count, score.
-    Only clusters with ≥ min_articles distinct articles are returned.
-    """
-    if not articles:
-        return []
-
-    generic_ngrams = DOMAIN_GENERIC_NGRAMS.get(domain, set())
-    art_ngrams = [(a, _extract_title_ngrams(a.title, domain)) for a in articles]
-
-    # Count how many articles contain each ngram
-    ngram_to_arts: dict[str, list] = {}
-    for a, ngrams in art_ngrams:
-        for ng in ngrams:
-            ngram_to_arts.setdefault(ng, []).append(a)
-
-    # Keep ngrams with ≥ min_articles distinct articles AND ≥ 2 distinct sources
-    # AND not in the generic-phrases blocklist
-    candidate_clusters = []
-    for ng, arts in ngram_to_arts.items():
-        if ng in generic_ngrams:
-            continue
-        if len(arts) < min_articles:
-            continue
-        sources = {a.source for a in arts}
-        if len(sources) < 2:
-            continue
-        score = len(arts) * len(sources)
-        candidate_clusters.append({
-            "phrase": ng,
-            "label": ng.title(),   # placeholder, overwritten by name_topic_clusters
-            "articles": arts,
-            "article_count": len(arts),
-            "source_count": len(sources),
-            "score": score,
-        })
-
-    if not candidate_clusters:
-        return []
-
-    # Sort by score desc, then merge highly-overlapping clusters (≥70% article overlap)
-    candidate_clusters.sort(key=lambda c: (-c["score"], -len(c["phrase"])))
-    merged: list[dict] = []
-    for c in candidate_clusters:
-        urls = {a.url for a in c["articles"]}
-        is_duplicate = False
-        for existing in merged:
-            existing_urls = {a.url for a in existing["articles"]}
-            union = urls | existing_urls
-            overlap = len(urls & existing_urls) / len(union) if union else 0
-            if overlap >= 0.7:
-                # Keep longer phrase as the label candidate
-                if len(c["phrase"]) > len(existing["phrase"]):
-                    existing["phrase"] = c["phrase"]
-                is_duplicate = True
-                break
-        if not is_duplicate:
-            merged.append(c)
-
-    merged.sort(key=lambda c: -c["score"])
-    logging.info(f"Topic clusters: {len(merged)} clusters from {len(articles)} articles")
-    return merged
-
-
-# Per-domain config for the Groq cluster-naming prompt: words to forbid in
-# labels, example labels to steer style, and a lowercase blocklist used to
-# reject low-effort labels returned by Groq.
-DOMAIN_CLUSTER_NAMING: dict[str, dict] = {
-    "ia": {
-        "forbidden": "AI, Tech, Model, Artificial Intelligence, Machine Learning, Technology, Research, Innovation, Development",
-        "examples": "'OpenAI GPT-5', 'EU AI Act Vote', 'Anthropic Claude 4', 'NVIDIA Blackwell GPU', 'Sam Altman Senate Hearing'",
-        "label_blocklist": {
-            "ai", "tech", "model", "models", "artificial intelligence",
-            "machine learning", "technology", "research", "innovation",
-            "development", "news", "update", "latest", "new",
-        },
+        "event": "'California OpenAI Subpoena', 'Gemini 4 Argon Launch', 'Apple macOS Agent Restrictions'",
+        "actor": "'Sam Altman', 'Mistral AI', 'Jensen Huang', 'Huawei'",
+        "issue": "'AI Agent Security', 'OpenAI Safety Culture', 'AI Copyright Lawsuits', "
+                 "'AI Chip Export Controls', 'AI Data Center Power Demand'",
+        "bad": "'AI', 'AI Agents', 'LLMs', 'Generative AI', 'Machine Learning', 'Research', "
+               "'Funding Round', 'Startups', 'Technology', 'Robotics', and research fields or "
+               "techniques such as 'Model Compression', 'Interpretability', 'Benchmarks'",
     },
     "politique_evenements": {
-        "forbidden": "Politics, World, News, Crisis, Conflict, Government, Country, International",
-        "examples": "'Sudan Coup Attempt', 'Turkey Earthquake Response', 'EU Russia Sanctions Package', 'Venezuela Election Protests'",
-        "label_blocklist": {
-            "politics", "world", "news", "crisis", "conflict", "government",
-            "country", "international", "update", "latest", "new",
-        },
-    },
-    "matieres_premieres": {
-        "forbidden": "Commodities, Prices, Market, Energy, Oil, Resources",
-        "examples": "'OPEC Production Cut', 'Brent Crude Rally', 'Lithium Supply Shortage', 'Chile Copper Strike'",
-        "label_blocklist": {
-            "commodities", "prices", "market", "energy", "oil", "resources",
-            "update", "latest", "new",
-        },
-    },
-    "finance": {
-        "forbidden": "Finance, Markets, Stocks, Economy, Banking",
-        "examples": "'Fed Rate Decision', 'Nvidia Earnings Beat', 'Nasdaq Correction', 'ECB Rate Hold'",
-        "label_blocklist": {
-            "finance", "markets", "stocks", "economy", "banking",
-            "update", "latest", "new",
-        },
-    },
-    "services": {
-        "forbidden": "Economy, Jobs, Services, Growth, Sector",
-        "examples": "'US Jobs Report', 'Eurozone Inflation Data', 'Retail Sales Slump', 'Housing Market Cooldown'",
-        "label_blocklist": {
-            "economy", "jobs", "services", "growth", "sector",
-            "update", "latest", "new",
-        },
+        "event": "'Gaza Ceasefire Talks', 'Turkey Earthquake Response', 'EU Russia Sanctions Package'",
+        "actor": "'Donald Trump', 'Hamas', 'Wagner Group'",
+        "issue": "'Sudan Civil War', 'Sahel Security Crisis', 'European Energy Security'",
+        "bad": "'Politics', 'War', 'Elections', 'Diplomacy', 'International Relations', 'World News'",
     },
 }
 
 
-async def name_topic_clusters(clusters: list[dict], client, model: str, domain: str = "ia") -> list[dict]:
-    """Ask Groq to assign clean English labels to topic clusters (single batch call)."""
-    if not clusters:
-        return clusters
+def _topic_key(topic: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", topic.lower()).strip("-")
 
-    naming = DOMAIN_CLUSTER_NAMING.get(domain, DOMAIN_CLUSTER_NAMING["ia"])
-    top = clusters[:12]
+
+_TOPIC_KIND_SUFFIX = re.compile(r"\s+\(?(actor|event|issue)\)?$", re.I)
+
+
+def _known_names(known: Counter, fresh: list[str]) -> list[str]:
+    """Topic names to show Groq: the established ones (used by several
+    articles), then the ones coined during this run, then the window's other
+    names newest first — `known` is built from a newest-first window, and a
+    Counter keeps insertion order among equal counts. A same-day event covered
+    across several batches is what most needs its first name reused."""
+    established = [t for t, n in known.most_common(KNOWN_TOPICS_LIMIT // 2) if n >= 2]
+    names = established + fresh[::-1] + [t for t in known if known[t] < 2]
+    return list(dict.fromkeys(names))[:KNOWN_TOPICS_LIMIT]
+
+
+def _clean_topics(raw) -> list[str]:
+    """Keep 1-4 distinct, reasonably sized topic names from Groq's output."""
+    if not isinstance(raw, list):
+        return []
+    topics, seen = [], set()
+    for t in raw:
+        if not isinstance(t, str):
+            continue
+        # Groq sometimes appends the kind it was asked for ("Huawei Actor")
+        t = _TOPIC_KIND_SUFFIX.sub("", " ".join(t.split()))
+        key = _topic_key(t)
+        if 2 <= len(t) <= 60 and key and key not in seen:
+            topics.append(t)
+            seen.add(key)
+    return topics[:4]
+
+
+async def extract_topics(
+    items: list[dict], known: Counter, client, model: str, domain: str, batch_pause: float = 3.0
+) -> list[list[str]]:
+    """Tag each {title, description} item with its topics, one Groq call per batch.
+
+    `known` counts topic names already in use, built from the window newest
+    first; a selection is shown to Groq (see `_known_names`) so it reuses an
+    existing name instead of coining a variant ("Altman" vs "Sam Altman"),
+    which is what lets articles from different days meet in the same story.
+    Updated in place with the names coined here. An item whose batch failed
+    gets [] — the backfill picks it up later.
+    """
+    hints = DOMAIN_TOPIC_HINTS.get(domain, DOMAIN_TOPIC_HINTS["ia"])
+    client = client.with_options(max_retries=GROQ_RETRIES)
+    results: list[list[str]] = [[] for _ in items]
+    fresh: list[str] = []
+    for start in range(0, len(items), TOPIC_BATCH_SIZE):
+        batch = items[start:start + TOPIC_BATCH_SIZE]
+        payload = [
+            {"id": i, "title": it["title"], "description": clean_html(it.get("description") or "")[:200]}
+            for i, it in enumerate(batch)
+        ]
+        known_names = _known_names(known, fresh)
+        try:
+            resp = await client.chat.completions.create(
+                model=model,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "You tag news articles with what they are about, so that articles about the "
+                        "same subject can be grouped together across days.\n"
+                        "For each article return 1 to 4 topics, mixing these three kinds:\n"
+                        f"- EVENT: the specific event or matter it reports (who + what), e.g. {hints['event']}.\n"
+                        f"- ACTOR: the person or organisation the article is mainly about, e.g. {hints['actor']}.\n"
+                        "- ISSUE: the public debate or problem it is part of, one the press follows and "
+                        f"other articles on other days would share, e.g. {hints['issue']}. Never a research "
+                        "field or a technique.\n"
+                        "Give the EVENT, plus the ACTOR and the ISSUE when there is a clear one.\n\n"
+                        "RULES:\n"
+                        "- 2-6 words, English, Title Case, keep proper nouns. Write only the name, "
+                        "never the kind ('Huawei', not 'Huawei Actor').\n"
+                        f"- Too broad, never use: {hints['bad']}.\n"
+                        "- If an article is about the same thing as one of KNOWN_TOPICS, reuse that name "
+                        "EXACTLY instead of writing a variant.\n"
+                        "- Only tag what the article is actually about, not what it merely mentions.\n\n"
+                        "Return JSON: {\"articles\": [{\"id\": <id>, \"topics\": [\"...\"]}]}\n\n"
+                        f"KNOWN_TOPICS = {json.dumps(known_names, ensure_ascii=False)}\n\n"
+                        f"ARTICLES = {json.dumps(payload, ensure_ascii=False)}"
+                    ),
+                }],
+                temperature=0.1,
+                max_tokens=4000,
+                reasoning_effort="low",
+                response_format={"type": "json_object"},
+            )
+            data = json.loads(resp.choices[0].message.content)
+            for row in data.get("articles", []):
+                i = row.get("id")
+                if isinstance(i, int) and 0 <= i < len(batch):
+                    results[start + i] = _clean_topics(row.get("topics"))
+        except Exception as e:
+            logging.warning(f"Topic extraction failed for a batch of {len(batch)} ({domain}): {e}")
+        for topics in results[start:start + len(batch)]:
+            fresh.extend(t for t in topics if t not in known)
+            known.update(topics)
+        if start + TOPIC_BATCH_SIZE < len(items):
+            await asyncio.sleep(batch_pause)
+    tagged = sum(1 for t in results if t)
+    logging.info(f"Topics [{domain}]: tagged {tagged}/{len(items)} articles")
+    return results
+
+
+def _published_day(a: dict) -> str:
+    return (a.get("published") or "")[:10]
+
+
+def _story_activity(story: dict) -> tuple[int, int]:
+    """Sort key: articles in the last HOT_RECENT_DAYS days, then total size."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=HOT_RECENT_DAYS)).strftime("%Y-%m-%d")
+    recent = sum(1 for a in story["articles"] if _published_day(a) >= cutoff)
+    return recent, len(story["articles"])
+
+
+def _merge_into(base: dict, other: dict) -> None:
+    by_url = {a["url"]: a for a in base["articles"]}
+    for a in other["articles"]:
+        by_url.setdefault(a["url"], a)
+    base["articles"] = sorted(by_url.values(), key=_published_day, reverse=True)
+
+
+def build_story_candidates(window: list[dict], existing_keys: set[str] = frozenset()) -> list[dict]:
+    """Group window articles (dicts with url, title, source, published, topics)
+    into stories by shared topic. Returns stories most active first, each
+    {topic_key, label, summary, articles (newest first)}.
+
+    Topics that are too thin (< STORY_MIN_ARTICLES articles or a single source)
+    or too broad (> STORY_MAX_SHARE of the window) don't make a story. Two
+    topics covering nearly the same articles (variants Groq didn't unify) are
+    merged, the surviving key being one that already exists in the DB when
+    possible, so the story keeps its id.
+    """
+    tagged = [a for a in window if a.get("topics")]
+    if not tagged:
+        return []
+    max_size = max(STORY_MAX_FLOOR, int(len(tagged) * STORY_MAX_SHARE))
+
+    groups: dict[str, dict] = {}
+    for a in tagged:
+        for t in a["topics"]:
+            key = _topic_key(t)
+            if not key:
+                continue
+            g = groups.setdefault(key, {"topic_key": key, "names": Counter(), "articles": {}})
+            g["names"][t] += 1
+            g["articles"][a["url"]] = a
+
+    stories = []
+    for g in groups.values():
+        arts = list(g["articles"].values())
+        if not STORY_MIN_ARTICLES <= len(arts) <= max_size:
+            continue
+        if len({a.get("source") for a in arts}) < STORY_MIN_SOURCES:
+            continue
+        stories.append({
+            "topic_key": g["topic_key"],
+            "label": g["names"].most_common(1)[0][0],
+            "summary": "",
+            "articles": sorted(arts, key=_published_day, reverse=True),
+        })
+
+    # Biggest first, so a near-duplicate folds into the larger story
+    stories.sort(key=lambda s: len(s["articles"]), reverse=True)
+    kept: list[dict] = []
+    for s in stories:
+        urls = {a["url"] for a in s["articles"]}
+        for k in kept:
+            k_urls = {a["url"] for a in k["articles"]}
+            if len(urls & k_urls) >= STORY_MERGE_OVERLAP * min(len(urls), len(k_urls)):
+                if s["topic_key"] in existing_keys and k["topic_key"] not in existing_keys:
+                    k["topic_key"], k["label"] = s["topic_key"], s["label"]
+                _merge_into(k, s)
+                break
+        else:
+            kept.append(s)
+
+    kept.sort(key=_story_activity, reverse=True)
+    return kept
+
+
+async def review_stories(stories: list[dict], client, model: str, domain: str) -> list[dict]:
+    """One Groq call over the most active stories: drop the incoherent ones
+    (articles that only share a broad theme, e.g. "Energy Supply Disruptions"
+    gathering a fuel tax cut and a solar carport), and write each kept story a
+    short summary of its latest development, shown as "{label} — {summary}".
+    The label stays the topic name. Returns the kept stories; if Groq fails,
+    all of them, with no summary."""
+    top = stories[:STORY_NAMING_LIMIT]
+    if not top:
+        return stories
     items = [
-        {
-            "id": i,
-            "phrase": c["phrase"],
-            "titles": [a.title for a in c["articles"][:3]],
-        }
-        for i, c in enumerate(top)
+        {"id": i, "topic": s["label"], "titles": [a["title"] for a in s["articles"][:6]]}
+        for i, s in enumerate(top)
     ]
     try:
-        resp = await client.chat.completions.create(
+        resp = await client.with_options(max_retries=GROQ_RETRIES).chat.completions.create(
             model=model,
             messages=[{
                 "role": "user",
                 "content": (
-                    "You are a news editor naming topic clusters for a news dashboard.\n"
-                    "For each cluster, create a SPECIFIC label (2-5 words, Title Case) that names "
-                    "the EXACT subject — which entity, event, or place is involved.\n\n"
-                    "RULES:\n"
-                    "- Use proper nouns from the sample titles whenever possible\n"
-                    f"- FORBIDDEN words (never use): {naming['forbidden']}\n"
-                    "- The label must answer: WHAT specifically is happening? WHO is involved?\n"
-                    f"- Examples of good labels: {naming['examples']}\n\n"
-                    "Return JSON: {\"labels\": [{\"id\": <id>, \"label\": \"...\"}]}\n\n"
-                    + json.dumps(items, ensure_ascii=False)
+                    "Each story below is a news topic with the titles of its most recent articles, "
+                    "newest first.\n"
+                    "For each story:\n"
+                    "- `coherent`: true if the articles are about the same event, the same person or "
+                    "organisation, or the same specific issue; false if they only share a broad theme "
+                    "and a reader would see unrelated news.\n"
+                    "- `summary`: 3-6 words, English, Title Case, naming the LATEST development "
+                    "according to the titles. It is shown as \"<topic> — <summary>\", so it must not "
+                    "repeat the topic.\n\n"
+                    "Return JSON: {\"stories\": [{\"id\": <id>, \"coherent\": <bool>, \"summary\": \"...\"}]}\n\n"
+                    f"STORIES = {json.dumps(items, ensure_ascii=False)}"
                 ),
             }],
             temperature=0.1,
-            max_tokens=500,
+            max_tokens=4000,
+            reasoning_effort="low",
             response_format={"type": "json_object"},
         )
         data = json.loads(resp.choices[0].message.content)
-        id_to_label = {item["id"]: item["label"] for item in data.get("labels", [])}
-        _LABEL_BLOCKLIST = naming["label_blocklist"]
-        for i, c in enumerate(top):
-            raw = id_to_label.get(i, "")
-            # Reject label if it's in the blocklist or is a single generic word
-            if raw and raw.lower() not in _LABEL_BLOCKLIST and len(raw) > 3:
-                c["label"] = raw
-            else:
-                c["label"] = c["phrase"].title()
-        logging.info(f"Topic clusters named: {[c['label'] for c in top]}")
     except Exception as e:
-        logging.warning(f"Topic naming failed: {e} — using phrase-based labels")
-        for c in top:
-            c["label"] = c["phrase"].title()
-
-    for c in clusters[12:]:
-        c["label"] = c["phrase"].title()
-
-    return clusters
-
-
-# ---------------------------------------------------------------------------
-# 0c. Story tracking (cross-day continuation of hot topic clusters)
-# ---------------------------------------------------------------------------
-# A "story" is a persistent identity a hot cluster gets matched to across
-# multiple daily runs (e.g. an announcement -> its reactions -> the fallout,
-# spread over several days, stays one story instead of N unrelated clusters).
-# Stored in the `stories` table; `articles.story_id` points into it.
-
-STORY_IDLE_DAYS = 4         # a story auto-closes after this many days with no new article
-STORY_CANDIDATE_LIMIT = 20  # max open stories sent to Groq for matching context
+        logging.warning(f"Story review failed ({domain}): {e}")
+        return stories
+    incoherent: set[int] = set()
+    for row in data.get("stories", []):
+        i = row.get("id")
+        if not isinstance(i, int) or not 0 <= i < len(top):
+            continue
+        if row.get("coherent") is False:
+            incoherent.add(i)
+        summary = " ".join(str(row.get("summary") or "").split())
+        if summary and summary.lower() != top[i]["label"].lower():
+            top[i]["summary"] = summary
+    if incoherent:
+        logging.info(f"Stories [{domain}]: dropped as incoherent: {[top[i]['label'] for i in sorted(incoherent)]}")
+    return [s for i, s in enumerate(top) if i not in incoherent] + stories[STORY_NAMING_LIMIT:]
 
 
-def _fetch_open_stories(client, domain: str) -> list[dict]:
-    """Fetch this domain's open stories, most recently active first.
-
-    `summary` is optional (see `STORY_SUMMARY_MIGRATION` below) — dropped and
-    retried once if the column isn't there yet, same pattern as save_to_supabase's
-    optional-columns retry."""
+def _fetch_window_articles(client, domain: str, days: int = STORY_WINDOW_DAYS, extra_cols: str = "") -> list[dict]:
+    """The domain's articles of the last `days` days, paginated past Supabase's
+    1000-row cap. Returns [] (stories then built from this run's articles only)
+    if the `topics` column isn't there yet."""
     if client is None:
         return []
-    cols = "id, label, summary, first_seen, last_seen, article_count, recent_titles"
-    for _ in range(2):
-        try:
-            resp = (
-                client.table("stories")
-                .select(cols)
-                .eq("domain", domain)
-                .eq("status", "open")
-                .order("last_seen", desc=True)
-                .limit(STORY_CANDIDATE_LIMIT)
-                .execute()
-            )
-            return resp.data or []
-        except Exception as e:
-            if "summary" in str(e) and ", summary" in cols:
-                cols = cols.replace(", summary", "")
-                continue
-            logging.warning(f"Stories fetch failed ({domain}): {e} — story tracking disabled for this run")
-            return []
-    return []
-
-
-def _match_clusters_ngram(clusters: list[dict], open_stories: list[dict], domain: str) -> list[dict | None]:
-    """Fallback matcher: overlap of title n-grams between today's clusters and
-    each open story's recent titles. Used when Groq matching is unavailable.
-
-    No LLM is available in this path to synthesize a fresh `summary`, so the
-    matched story falls back to the day's own cluster label as its summary —
-    cruder than Groq's synthesis, but still short and dated, unlike leaving
-    the story's stale summary in place."""
-    story_ngrams = []
-    for s in open_stories:
-        ngrams: set[str] = set()
-        for t in (s.get("recent_titles") or "").split("|"):
-            ngrams |= _extract_title_ngrams(t, domain)
-        story_ngrams.append((s, ngrams))
-
-    matches: list[dict | None] = []
-    for c in clusters:
-        cluster_ngrams: set[str] = set()
-        for a in c["articles"][:3]:
-            cluster_ngrams |= _extract_title_ngrams(a.title, domain)
-        best, best_overlap = None, 0
-        for s, ngrams in story_ngrams:
-            overlap = len(cluster_ngrams & ngrams)
-            if overlap > best_overlap:
-                best, best_overlap = s, overlap
-        if best is not None and best_overlap >= 2:
-            matched = dict(best)
-            matched["summary"] = c["label"]
-            matches.append(matched)
-        else:
-            matches.append(None)
-    return matches
-
-
-async def match_clusters_to_stories(
-    clusters: list[dict], open_stories: list[dict], client, model: str, domain: str
-) -> list[dict | None]:
-    """Match today's topic clusters to existing open stories (cross-day tracking).
-
-    Returns a list parallel to `clusters`: on a match, the matched story dict
-    merged with a freshly-written `summary` — a short 3-6 word phrase (Title
-    Case) capturing what's happening NOW in that story, given today's cluster
-    (e.g. story label "GPT-5 Launch" + a cluster about pricing complaints ->
-    summary "Backlash Over Pricing"). None if the cluster starts a new story.
-    The dashboard displays "{label} — {summary}" as the story's title, so the
-    summary is the part that's meant to evolve day to day while the label
-    (set once, at story creation — see `_apply_story_matches`) stays fixed as
-    an anchor. Piggybacks on this same Groq call rather than a separate one.
-    Falls back to n-gram overlap if Groq is unavailable or errors — same
-    resilience pattern as `name_topic_clusters`.
-    """
-    if not clusters:
-        return []
-    if not open_stories:
-        return [None] * len(clusters)
-
-    story_items = [
-        {
-            "id": s["id"],
-            "label": s["label"],
-            "current_summary": s.get("summary") or "",
-            "recent_titles": (s.get("recent_titles") or "").split("|")[:3],
-        }
-        for s in open_stories
-    ]
-    cluster_items = [
-        {"index": i, "label": c["label"], "titles": [a.title for a in c["articles"][:3]]}
-        for i, c in enumerate(clusters)
-    ]
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    rows: list[dict] = []
     try:
-        resp = await client.chat.completions.create(
-            model=model,
-            messages=[{
-                "role": "user",
-                "content": (
-                    "You track ongoing news stories across multiple days for a news dashboard.\n"
-                    "Below are OPEN_STORIES (already being tracked) and TODAY_CLUSTERS (today's new "
-                    "topic clusters). For each cluster, decide if it is a continuation of one of the "
-                    "open stories — same underlying event/story, even if the angle shifted (e.g. "
-                    "announcement -> reactions -> consequences) — or if it is genuinely a new story.\n\n"
-                    "When a cluster continues a story, also write a fresh `summary`: a SHORT 3-6 word "
-                    "phrase (Title Case) capturing what is happening NOW in that story, given this "
-                    "new cluster. It is shown next to the story's original label as \"<label> — "
-                    "<summary>\", so it must NOT just repeat the label — it should name the latest "
-                    "development. Example: label \"GPT-5 Launch\", new cluster about pricing "
-                    "complaints -> summary \"Backlash Over Pricing\".\n\n"
-                    "Return JSON: {\"matches\": [{\"index\": <cluster index>, \"story_id\": <id or "
-                    "null>, \"summary\": \"<short phrase, omit or empty if story_id is null>\"}]}\n\n"
-                    f"OPEN_STORIES = {json.dumps(story_items, ensure_ascii=False)}\n\n"
-                    f"TODAY_CLUSTERS = {json.dumps(cluster_items, ensure_ascii=False)}"
-                ),
-            }],
-            temperature=0.2,
-            max_tokens=800,
-            response_format={"type": "json_object"},
-        )
-        data = json.loads(resp.choices[0].message.content)
-        id_to_story = {s["id"]: s for s in open_stories}
-        result: list[dict | None] = [None] * len(clusters)
-        for m in data.get("matches", []):
-            idx, story_id = m.get("index"), m.get("story_id")
-            if isinstance(idx, int) and 0 <= idx < len(clusters) and story_id in id_to_story:
-                story = dict(id_to_story[story_id])
-                summary = (m.get("summary") or "").strip()
-                # Groq occasionally omits summary on a matched story — fall back to
-                # keeping the previous one rather than the cluster's raw label, so a
-                # transient miss doesn't regress a good summary already in place.
-                story["summary"] = summary or story.get("summary") or clusters[idx]["label"]
-                result[idx] = story
-        logging.info(
-            f"Story matching [{domain}]: {sum(1 for r in result if r)}/{len(clusters)} "
-            f"clusters matched to open stories"
-        )
-        return result
+        while True:
+            page = (
+                client.table("articles")
+                .select("url, title, source, published, topics" + extra_cols)
+                .eq("domain", domain)
+                .gte("published", cutoff)
+                .order("url")
+                .range(len(rows), len(rows) + 999)
+                .execute()
+            ).data or []
+            if not page:
+                return rows
+            rows.extend(page)
     except Exception as e:
-        logging.warning(f"Story matching via Groq failed ({domain}): {e} — falling back to n-gram matching")
-        return _match_clusters_ngram(clusters, open_stories, domain)
+        logging.warning(f"Window fetch failed ({domain}): {e} — stories built from this run only")
+        return []
 
 
-def _apply_story_matches(
-    client, domain: str, clusters: list[dict], matches: list[dict | None], today: str
-) -> dict[str, int]:
-    """Create/update story rows in Supabase for today's clusters. Returns a
-    url -> story_id map used to stamp `story_id` onto matched articles."""
+def _fetch_existing_stories(client, domain: str) -> dict[str, dict]:
+    """topic_key -> {id, label, summary, status} for this domain's topic-keyed stories."""
     if client is None:
         return {}
-    url_to_story: dict[str, int] = {}
-    for cluster, matched in zip(clusters, matches):
-        titles = [a.title for a in cluster["articles"][:5]]
-        try:
-            if matched:
-                story_id = matched["id"]
-                recent = "|".join((titles + (matched.get("recent_titles") or "").split("|"))[:6])
-                payload = {
-                    "last_seen": today,
-                    "article_count": matched.get("article_count", 0) + cluster["article_count"],
-                    "recent_titles": recent,
-                    "summary": matched.get("summary") or "",
-                }
-                try:
-                    client.table("stories").update(payload).eq("id", story_id).execute()
-                except Exception as e:
-                    if "summary" not in str(e):
-                        raise
-                    payload.pop("summary", None)
-                    client.table("stories").update(payload).eq("id", story_id).execute()
-            else:
-                # `summary` starts empty: it's a single-day story so far (the
-                # dashboard only surfaces stories active on >= 2 days), and gets
-                # written once a future cluster matches into it, above.
-                insert_payload = {
-                    "domain": domain,
-                    "label": cluster["label"],
-                    "summary": "",
-                    "first_seen": today,
-                    "last_seen": today,
-                    "article_count": cluster["article_count"],
-                    "status": "open",
-                    "recent_titles": "|".join(titles),
-                }
-                try:
-                    resp = client.table("stories").insert(insert_payload).execute()
-                except Exception as e:
-                    if "summary" not in str(e):
-                        raise
-                    insert_payload.pop("summary", None)
-                    resp = client.table("stories").insert(insert_payload).execute()
-                story_id = resp.data[0]["id"]
-        except Exception as e:
-            logging.warning(f"Story upsert failed for cluster '{cluster['label']}' ({domain}): {e}")
-            continue
-        for a in cluster["articles"]:
-            url_to_story[a.url] = story_id
-    return url_to_story
-
-
-def _close_stale_stories(client, domain: str, today: str, idle_days: int = STORY_IDLE_DAYS) -> None:
-    """Auto-close open stories that haven't seen a new article in `idle_days` days."""
-    if client is None:
-        return
-    cutoff = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=idle_days)).strftime("%Y-%m-%d")
     try:
-        (
+        rows = (
             client.table("stories")
-            .update({"status": "closed"})
+            .select("id, topic_key, label, summary, status")
             .eq("domain", domain)
-            .eq("status", "open")
-            .lt("last_seen", cutoff)
+            .not_.is_("topic_key", "null")
             .execute()
-        )
+        ).data or []
+        return {r["topic_key"]: r for r in rows}
+    except Exception as e:
+        logging.warning(f"Existing stories fetch failed ({domain}): {e}")
+        return {}
+
+
+def _save_stories(client, domain: str, stories: list[dict], existing: dict[str, dict]) -> dict[str, int]:
+    """Upsert this run's stories, close every other open story of the domain
+    (including pre-topics stories), and return topic_key -> story id.
+
+    A story's label is fixed once written (stable anchor in the dashboard and
+    the newsletter picker); only its summary follows the latest development."""
+    if client is None or not stories:
+        return {}
+    rows = []
+    for s in stories:
+        prev = existing.get(s["topic_key"], {})
+        s["label"] = prev.get("label") or s["label"]
+        s["summary"] = s["summary"] or prev.get("summary") or ""
+        days = [_published_day(a) for a in s["articles"]]
+        rows.append({
+            "domain": domain,
+            "topic_key": s["topic_key"],
+            "label": s["label"],
+            "summary": s["summary"],
+            "first_seen": min(days),
+            "last_seen": max(days),
+            "article_count": len(s["articles"]),
+            "status": "open",
+            "recent_titles": "|".join(a["title"] for a in s["articles"][:5]),
+            "article_urls": [a["url"] for a in s["articles"]],
+        })
+    try:
+        saved = client.table("stories").upsert(rows, on_conflict="domain,topic_key").execute().data or []
+    except Exception as e:
+        logging.error(f"Stories upsert failed ({domain}): {e}")
+        return {}
+    ids = {r["topic_key"]: r["id"] for r in saved}
+
+    try:
+        open_rows = (
+            client.table("stories").select("id").eq("domain", domain).eq("status", "open").execute()
+        ).data or []
+        stale = [r["id"] for r in open_rows if r["id"] not in set(ids.values())]
+        for i in range(0, len(stale), 100):
+            client.table("stories").update({"status": "closed"}).in_("id", stale[i:i + 100]).execute()
     except Exception as e:
         logging.warning(f"Closing stale stories failed ({domain}): {e}")
+    logging.info(f"Stories [{domain}]: {len(ids)} saved")
+    return ids
+
+
+def _apply_story_flags(articles: list["Article"], stories: list[dict], ids: dict[str, int]) -> None:
+    """Set the hot_* fields and story_id of this run's articles from the stories.
+
+    hot_topic: one of the article's stories is active right now (>= HOT_MIN_RECENT
+    articles in the last HOT_RECENT_DAYS days). hot_reason / story_id point at
+    the article's most active story; mention_count is that story's recent
+    article count. These per-article fields feed the classifier and Telegram;
+    the dashboard reads full story membership from `stories.article_urls`."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    best: dict[str, tuple[tuple[int, int], dict]] = {}
+    for s in stories:
+        activity = _story_activity(s)
+        for a in s["articles"]:
+            if a["url"] not in best or activity > best[a["url"]][0]:
+                best[a["url"]] = (activity, s)
+    for art in articles:
+        hit = best.get(art.url)
+        if hit is None:
+            art.hot_topic, art.hot_reason, art.mention_count, art.supa_hot, art.story_id = False, "", 0, False, None
+            continue
+        (recent, _), s = hit
+        art.story_id = ids.get(s["topic_key"])
+        art.hot_topic = recent >= HOT_MIN_RECENT
+        art.hot_reason = s["label"] if art.hot_topic else ""
+        art.mention_count = recent if art.hot_topic else 0
+        today_count = sum(1 for a in s["articles"] if _published_day(a) == today)
+        art.supa_hot = art.hot_topic and today_count >= SUPA_HOT_MIN_TODAY
+
+
+def _save_topics(client, rows: list[dict]) -> None:
+    if client is None:
+        return
+    for r in rows:
+        try:
+            client.table("articles").update({"topics": r["topics"]}).eq("url", r["url"]).execute()
+        except Exception as e:
+            logging.warning(f"Topics update failed for {r['url']}: {e}")
+
+
+async def refresh_stories(domain: str, new_articles: list["Article"], client, groq_client, model: str) -> None:
+    """Tag this run's articles with topics, rebuild the domain's stories over the
+    window, save them, and flag the run's articles hot from them."""
+    rows = sorted(_fetch_window_articles(client, domain), key=_published_day, reverse=True)
+    window = {r["url"]: r for r in rows}
+    known = Counter(t for r in window.values() for t in (r.get("topics") or []))
+
+    # An article fetched again keeps the topics an earlier run gave it
+    todo = []
+    for a in new_articles:
+        prev = (window.get(a.url) or {}).get("topics")
+        if prev:
+            a.topics = prev
+        else:
+            todo.append(a)
+    if todo:
+        extracted = await extract_topics(
+            [{"title": a.title, "description": a.description} for a in todo], known, groq_client, model, domain
+        )
+        for a, topics in zip(todo, extracted):
+            a.topics = topics
+    for a in new_articles:
+        window[a.url] = {"url": a.url, "title": a.title, "source": a.source, "published": a.published, "topics": a.topics}
+
+
+    existing = _fetch_existing_stories(client, domain)
+    stories = build_story_candidates(list(window.values()), set(existing))
+    stories = await review_stories(stories, groq_client, model, domain)
+    ids = _save_stories(client, domain, stories, existing)
+    _apply_story_flags(new_articles, stories, ids)
+
+
+BACKFILL_MAX_ARTICLES = 500  # per run, ~80k Groq tokens: leaves the daily collection its share of the 200k/day quota
+
+
+async def backfill_topics(model: str | None = None) -> None:
+    """Resumable: tag up to BACKFILL_MAX_ARTICLES window articles that have no
+    topics yet, newest first, then rebuild the stories of the domains touched.
+    Stops early when a whole chunk comes back untagged (Groq quota reached).
+    Each run resumes where the previous one stopped; once everything is
+    tagged, a run does nothing."""
+    client = _get_supabase_client()
+    if client is None:
+        sys.exit("SUPABASE_URL and SUPABASE_KEY must be set.")
+    groq_client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
+    model = model or (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+
+    budget = BACKFILL_MAX_ARTICLES
+    for domain in DOMAIN_META:
+        if budget <= 0:
+            break
+        window = sorted(
+            _fetch_window_articles(client, domain, extra_cols=", description"), key=_published_day, reverse=True
+        )
+        todo = [r for r in window if not r.get("topics")]
+        logging.info(f"Backfill [{domain}]: {len(todo)}/{len(window)} articles without topics")
+        if not todo:
+            continue
+        known = Counter(t for r in window for t in (r.get("topics") or []))
+        todo = todo[:budget]
+        budget -= len(todo)
+        chunk = TOPIC_BATCH_SIZE * 5
+        quota_hit = False
+        for start in range(0, len(todo), chunk):
+            rows = todo[start:start + chunk]
+            extracted = await extract_topics(rows, known, groq_client, model, domain)
+            for row, topics in zip(rows, extracted):
+                row["topics"] = topics
+            _save_topics(client, [r for r in rows if r["topics"]])
+            if not any(extracted):
+                logging.error(f"Backfill [{domain}]: a whole chunk failed — stopping (Groq quota?). Re-run later.")
+                quota_hit = True
+                break
+        await refresh_stories(domain, [], client, groq_client, model)
+        if quota_hit:
+            break
 
 
 # ---------------------------------------------------------------------------
@@ -1255,6 +1272,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "supa_hot": a.supa_hot,
             "story_id": a.story_id,
             "published_is_estimated": a.published_is_estimated,
+            "topics": a.topics,
         }
         for a in articles
     ]
@@ -1267,11 +1285,13 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS domain TEXT DEFAULT 'ia';
     # Migration required for cross-day story tracking (see CLAUDE.md):
     #   CREATE TABLE IF NOT EXISTS stories (...); ALTER TABLE articles ADD COLUMN IF NOT EXISTS story_id BIGINT REFERENCES stories(id);
+    # Migration required for semantic stories (see CLAUDE.md):
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS topics TEXT[] DEFAULT '{}';
     # Migration required for the "Publié" column fallback flag (see CLAUDE.md):
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
     _OPTIONAL_COLS = (
         "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
-        "story_id", "published_is_estimated",
+        "story_id", "published_is_estimated", "topics",
     )
 
     try:
@@ -1476,8 +1496,8 @@ async def main():
         send_telegram([])
         return
 
-    # 2b. Extract topic clusters and mark hot articles — scoped per domain so a
-    # cluster never mixes articles from two different domains.
+    # 2b. Tag topics, rebuild each domain's stories over the window, and flag
+    # hot articles from them — per domain, so a story never mixes two domains.
     by_domain: dict[str, list[Article]] = {}
     for a in articles:
         by_domain.setdefault(a.domain, []).append(a)
@@ -1485,52 +1505,9 @@ async def main():
     groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     model_full = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
     supabase_client = _get_supabase_client()
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-    # Build url → cluster map and apply to articles
-    url_to_cluster: dict[str, dict] = {}
-    url_to_story: dict[str, int] = {}
     for domain, domain_articles in by_domain.items():
-        # Try strict threshold first (≥3 articles, ≥2 sources); fall back to relaxed (≥2 articles)
-        clusters = extract_topic_clusters(domain_articles, min_articles=3, domain=domain)
-        if not clusters:
-            logging.info(f"[{domain}] No clusters at min=3 — retrying with min=2")
-            clusters = extract_topic_clusters(domain_articles, min_articles=2, domain=domain)
-
-        if clusters:
-            clusters = await name_topic_clusters(clusters, groq_client_for_topics, model_full, domain=domain)
-
-            # Cross-day story tracking: match today's clusters against open stories
-            open_stories = _fetch_open_stories(supabase_client, domain)
-            matches = await match_clusters_to_stories(
-                clusters, open_stories, groq_client_for_topics, model_full, domain=domain
-            )
-            url_to_story.update(_apply_story_matches(supabase_client, domain, clusters, matches, today_str))
-
-        _close_stale_stories(supabase_client, domain, today_str)
-
-        for c in clusters:
-            for art in c["articles"]:
-                if art.url not in url_to_cluster or c["score"] > url_to_cluster[art.url]["score"]:
-                    url_to_cluster[art.url] = c
-
-    hot_count = 0
-    for art in articles:
-        cluster = url_to_cluster.get(art.url)
-        if cluster:
-            art.hot_topic = True
-            art.hot_reason = cluster["label"]
-            art.mention_count = cluster["article_count"]
-            art.supa_hot = cluster["article_count"] >= 5
-            art.story_id = url_to_story.get(art.url)
-            hot_count += 1
-        else:
-            art.hot_topic = False
-            art.hot_reason = ""
-            art.mention_count = 0
-            art.supa_hot = False
-            art.story_id = None
-    logging.info(f"{hot_count} articles tagged hot via topic clustering")
+        await refresh_stories(domain, domain_articles, supabase_client, groq_client_for_topics, model_full)
+    logging.info(f"{sum(1 for a in articles if a.hot_topic)} articles tagged hot via stories")
 
     # 3. Classify with Groq
     logging.info(f"Classifying {len(articles)} articles with Groq...")
@@ -1548,4 +1525,8 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if "--backfill-topics" in sys.argv:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        asyncio.run(backfill_topics(os.environ.get("TOPIC_BACKFILL_MODEL")))
+    else:
+        asyncio.run(main())

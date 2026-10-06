@@ -2,8 +2,8 @@
 AI Radar — Weekly Newsletter
 Builds the weekly reader-facing newsletter (IA domain only) from Supabase.
 
-Topic candidates are this week's hot clusters, grouped by cross-day story when
-one exists (see "story tracking" in CLAUDE.md). The editor picks which
+Topic candidates are the stories with articles this week (see "Histoires
+sémantiques" in CLAUDE.md). The editor picks which
 candidates make it into the edition; Groq only writes the prose (edito + one
 paragraph per topic) — titles, chronology and source links are rendered
 straight from the DB so no link can be hallucinated.
@@ -37,6 +37,7 @@ from dashboard import (  # noqa: E402
     _deduplicate_articles,
     _fetch_stories_lookup,
     _hot_sort_key,
+    _story_members,
     load_articles,
 )
 
@@ -75,16 +76,28 @@ def _truncate(text: str, n: int) -> str:
 # ---------------------------------------------------------------------------
 
 def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], limit: int | None = 15) -> list[dict]:
-    """Group this week's hot articles into topic candidates, best first.
+    """Group this week's articles into topic candidates, best first.
 
-    A candidate is a cross-day story when the articles carry a `story_id`,
-    otherwise the hot cluster label (`hot_reason`). Returns dicts:
-    {id, title, blurb, days: [{date, articles}], article_count, span_days,
-    has_supra, emoji}.
+    A candidate is a story with at least 2 articles this week (an article can
+    feed several candidates). Before topic-based stories exist, falls back to
+    hot articles grouped by legacy `story_id`, else by `hot_reason`. Returns
+    dicts: {id, title, blurb, days: [{date, articles}], article_count,
+    span_days, has_supra, emoji}.
     """
     groups: dict[str, list[dict]] = defaultdict(list)
     titles: dict[str, str] = {}
-    for a in articles:
+    members = _story_members(articles, stories_lookup)
+    for sid, arts in (members or {}).items():
+        if len(_deduplicate_articles(arts)) < 2:
+            continue
+        key = f"story-{sid}"
+        groups[key] = arts
+        meta = stories_lookup[sid]
+        titles[key] = meta["label"] or "Sans titre"
+        if meta.get("summary") and meta["summary"].lower() != meta["label"].lower():
+            titles[key] += f" — {meta['summary']}"
+    # Pre-topics fallback: hot articles by legacy story_id, else by hot_reason
+    for a in (articles if members is None else []):
         reason = (a.get("hot_reason") or "").strip()
         if not a.get("hot_topic") or not reason or reason.lower() in _OLD_HOT_REASONS:
             continue
@@ -135,12 +148,13 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
     return candidates[:limit]
 
 
-def compute_stats(articles: list[dict]) -> dict:
+def compute_stats(articles: list[dict], stories_lookup: dict[int, dict] | None = None) -> dict:
     by_cat = Counter(a.get("category", "") for a in articles)
+    members = _story_members(articles, stories_lookup)
     return {
         "total": len(articles),
         "hot": sum(1 for a in articles if a.get("hot_topic")),
-        "stories": len({a["story_id"] for a in articles if a.get("story_id")}),
+        "stories": len(members) if members is not None else len({a["story_id"] for a in articles if a.get("story_id")}),
         "top_categories": by_cat.most_common(3),
     }
 
@@ -456,7 +470,7 @@ def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str
     week_start = (today - timedelta(days=WINDOW_DAYS)).strftime("%d/%m")
     week_end = today.strftime("%d/%m/%Y")
     prose = generate_prose(picked, notes)
-    return render_markdown(picked, prose, compute_stats(articles), week_start, week_end)
+    return render_markdown(picked, prose, compute_stats(articles, _fetch_stories_lookup(DOMAIN)), week_start, week_end)
 
 
 def write_edition(markdown: str) -> str:

@@ -501,16 +501,41 @@ def _hot_sort_key(a: dict):
 _OLD_HOT_REASONS = {"debat", "tech", "societe", "tendance", "unknown", "autre"}
 
 
-def _extract_hot_topics(articles: list[dict]) -> list[dict]:
-    """Group hot articles by topic label (hot_reason) and return sorted list.
+HOT_TOPICS_LIMIT = 15
+STORIES_PANEL_LIMIT = 40
 
-    Only considers articles from the last 2 days to avoid stale pre-migration
-    data (old hot_reason values: debat/tech/societe/tendance) polluting the tabs.
+
+def _extract_hot_topics(articles: list[dict], stories_lookup: dict[int, dict] | None = None) -> list[dict]:
+    """Return the stories active in the last 2 days, as Hot Articles tabs.
+
+    A story is active when it has >= 2 (deduplicated) articles published in
+    the last 2 days; its tab shows those recent articles. An article can sit in
+    several tabs, since it can belong to several stories. Before topic-based
+    stories exist, falls back to grouping hot articles by `hot_reason`.
 
     Returns a list of topic dicts: {label, articles, count, has_supra, color}
     sorted by: supra_hot presence first, then article count desc.
     """
     two_days_ago = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%Y-%m-%d")
+    members = _story_members(articles, stories_lookup)
+    if members is not None:
+        topics = []
+        for sid, arts in members.items():
+            recent = _deduplicate_articles([a for a in arts if a.get("published", "") >= two_days_ago])
+            if len(recent) < 2:
+                continue
+            topics.append({
+                "label": stories_lookup[sid].get("label") or "Sans titre",
+                "articles": sorted(recent, key=_hot_sort_key),
+                "count": len(recent),
+                "has_supra": any(a.get("supa_hot") for a in recent),
+            })
+        topics.sort(key=lambda t: (-t["has_supra"], -t["count"]))
+        topics = topics[:HOT_TOPICS_LIMIT]
+        for i, t in enumerate(topics):
+            t["color"] = _TOPIC_PALETTE[i % len(_TOPIC_PALETTE)]
+        return topics
+
     hot = _deduplicate_articles([
         a for a in articles
         if (
@@ -544,49 +569,82 @@ def _extract_hot_topics(articles: list[dict]) -> list[dict]:
     return topics
 
 
-_STORIES_COLS = "id, label, summary"
+_STORIES_COLS = "id, label, summary, status, article_urls"
 
 
 def _fetch_stories_lookup(domain: str) -> dict[int, dict]:
-    """Fetch id -> {label, summary} for this domain's stories (open or closed —
-    a closed story can still be part of a multi-day timeline already loaded).
+    """Fetch id -> {label, summary, status, article_urls} for this domain's
+    open stories, plus the pre-topics ones (no `topic_key`), whose articles
+    point at them through `story_id`. Closed topic-based stories are left out:
+    they pile up run after run and are never displayed.
 
-    `label` is the story's title, fixed at creation. `summary` is a short
-    (3-6 word) phrase Groq refreshes each time a new cluster is matched into
-    the story (see `match_clusters_to_stories` in main.py) — the part meant to
-    evolve day to day. The dashboard title is "{label} — {summary}".
+    `label` is the story's title, fixed at creation; `summary` is a short
+    phrase about its latest development, refreshed by each collection run
+    (see `refresh_stories` in main.py). The dashboard title is
+    "{label} — {summary}". `article_urls` lists the story's articles — an
+    article can belong to several stories.
 
-    Degrades gracefully (empty dict) if the `stories` table or its `summary`
-    column don't exist yet — same optional-columns spirit as `load_articles`."""
+    Degrades gracefully if the `stories` table or its newer columns don't
+    exist yet — same optional-columns spirit as `load_articles`."""
     try:
         client = _supabase_client()
     except RuntimeError:
         return {}
-    cols = _STORIES_COLS
-    for _ in range(2):
+    cols, only_live = _STORIES_COLS, True
+    while True:
         try:
-            resp = client.table("stories").select(cols).eq("domain", domain).execute()
+            query = client.table("stories").select(cols).eq("domain", domain)
+            if only_live:
+                query = query.or_("status.eq.open,topic_key.is.null")
+            resp = query.execute()
             return {
-                row["id"]: {"label": row.get("label") or "", "summary": row.get("summary") or ""}
+                row["id"]: {
+                    "label": row.get("label") or "",
+                    "summary": row.get("summary") or "",
+                    "status": row.get("status") or "open",
+                    "article_urls": row.get("article_urls") or [],
+                }
                 for row in (resp.data or [])
             }
         except Exception as e:
-            if "summary" in str(e) and ", summary" in cols:
-                cols = cols.replace(", summary", "")
-                continue
-            print(f"Stories lookup failed ({domain}): {e}", file=sys.stderr)
-            return {}
-    return {}
+            missing = [c for c in ("article_urls", "status", "summary") if f", {c}" in cols and c in str(e)]
+            if missing:
+                for c in missing:
+                    cols = cols.replace(f", {c}", "")
+            elif only_live and "topic_key" in str(e):
+                only_live = False
+            else:
+                print(f"Stories lookup failed ({domain}): {e}", file=sys.stderr)
+                return {}
+
+
+def _story_members(articles: list[dict], stories_lookup: dict[int, dict] | None) -> dict[int, list[dict]] | None:
+    """story id -> its articles among `articles`, for the open topic-based
+    stories (an article can appear under several). None while no topic-based
+    story exists yet, so callers fall back to their pre-topics grouping."""
+    lookup = stories_lookup or {}
+    if not any(s.get("article_urls") for s in lookup.values()):
+        return None
+    by_url = {a.get("url"): a for a in articles}
+    members = {}
+    for sid, s in lookup.items():
+        if s.get("status") != "open":
+            continue
+        arts = [by_url[u] for u in s.get("article_urls") or [] if u in by_url]
+        if arts:
+            members[sid] = arts
+    return members
 
 
 def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict] | None = None) -> list[dict]:
-    """Group hot articles sharing a `story_id` into cross-day timelines.
+    """Group each story's articles into a cross-day timeline.
 
-    `story_id` is assigned by main.py's cross-day story matching (a hot cluster
-    gets matched against open stories from previous runs — see CLAUDE.md). Only
-    stories with activity on ≥ 2 distinct days are returned: a single-day story
-    is just today's hot topic and already shown in the Hot Articles tabs, so
-    surfacing it here too would be pure duplication.
+    Membership comes from the open topic-based stories (`_story_members`, an
+    article can be in several), or before those exist from the articles'
+    legacy `story_id`. Only stories with activity on ≥ 2 distinct days are
+    returned: a single-day story is already shown in the Hot Articles tabs,
+    so surfacing it here too would be pure duplication. At most
+    STORIES_PANEL_LIMIT stories are kept.
 
     `stories_lookup` (from `_fetch_stories_lookup`) supplies each story's
     "{label} — {summary}" title. When it's missing a story (migration not
@@ -597,11 +655,13 @@ def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict]
     has_supra, is_ongoing}, `days` being [{date, articles}] sorted chronologically.
     Sorted with active-today stories first, then by most recently active.
     """
-    groups: dict[int, list[dict]] = defaultdict(list)
-    for a in articles:
-        sid = a.get("story_id")
-        if sid:
-            groups[sid].append(a)
+    groups = _story_members(articles, stories_lookup)
+    if groups is None:
+        groups = defaultdict(list)
+        for a in articles:
+            sid = a.get("story_id")
+            if sid:
+                groups[sid].append(a)
 
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     stories = []
@@ -641,6 +701,7 @@ def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict]
     # Stable sort: most recently active first, then active-today stories bubbled to the top
     stories.sort(key=lambda s: s["days"][-1]["date"], reverse=True)
     stories.sort(key=lambda s: s["is_ongoing"], reverse=True)
+    stories = stories[:STORIES_PANEL_LIMIT]
 
     for i, s in enumerate(stories):
         s["color"] = _TOPIC_PALETTE[i % len(_TOPIC_PALETTE)]
@@ -1189,10 +1250,15 @@ def fig_category_radar(articles: list[dict], category_order: list[str] | None = 
     return fig
 
 
-def _render_hot_articles(articles: list[dict], container, category_emoji: dict[str, str] | None = None) -> None:
+def _render_hot_articles(
+    articles: list[dict],
+    container,
+    category_emoji: dict[str, str] | None = None,
+    stories_lookup: dict[int, dict] | None = None,
+) -> None:
     """Render hot articles as dynamic topic tabs in Streamlit."""
     import streamlit as st
-    topics = _extract_hot_topics(articles)
+    topics = _extract_hot_topics(articles, stories_lookup)
     container.markdown("#### 🔥 Hot Articles")
     if not topics:
         container.info("Aucun article hot topic sur la période sélectionnée.")
@@ -1453,8 +1519,9 @@ def run_streamlit() -> None:
     else:
         display_articles = filtered
 
-    _render_hot_articles(display_articles, st, category_emoji=cat_emoji_map)
-    _render_stories(display_articles, st, _cached_stories_lookup(domain), category_emoji=cat_emoji_map)
+    stories_lookup = _cached_stories_lookup(domain)
+    _render_hot_articles(display_articles, st, category_emoji=cat_emoji_map, stories_lookup=stories_lookup)
+    _render_stories(display_articles, st, stories_lookup, category_emoji=cat_emoji_map)
 
     # ── Table — local filters ─────────────────────────────────────────────────
     display_articles = _deduplicate_articles(display_articles)
@@ -1623,7 +1690,12 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
     </div>"""
 
 
-def _hot_articles_html(articles: list[dict], category_emoji: dict[str, str] | None = None, domain: str = "ia") -> str:
+def _hot_articles_html(
+    articles: list[dict],
+    category_emoji: dict[str, str] | None = None,
+    domain: str = "ia",
+    stories_lookup: dict[int, dict] | None = None,
+) -> str:
     """Build hot articles as dynamic topic tabs for CI HTML export.
 
     `domain` scopes element ids and the click-handler's queries to this
@@ -1631,7 +1703,7 @@ def _hot_articles_html(articles: list[dict], category_emoji: dict[str, str] | No
     domain (Phase 1's export toggle) without id collisions or cross-domain
     click handlers firing on each other's tabs.
     """
-    topics = _extract_hot_topics(articles)
+    topics = _extract_hot_topics(articles, stories_lookup)
     if not topics:
         return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
 
@@ -1792,8 +1864,9 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     )
 
     deduped     = _deduplicate_articles(articles)
-    hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain)
-    stories_html = _stories_html(articles, _fetch_stories_lookup(domain), domain=domain)
+    stories_lookup = _fetch_stories_lookup(domain)
+    hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain, stories_lookup=stories_lookup)
+    stories_html = _stories_html(articles, stories_lookup, domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
 
     def _options(values: list[str]) -> str:
