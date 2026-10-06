@@ -69,6 +69,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # output/ only exists when build() actually wrote an edition
+          if [ ! -d output ]; then
+            echo "No edition to archive."
+            exit 0
+          fi
           git add output/
           if git diff --cached --quiet; then
             echo "No edition to archive."
