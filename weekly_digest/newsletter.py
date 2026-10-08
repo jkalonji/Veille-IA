@@ -50,16 +50,26 @@ GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\""
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 
-_FR_WEEKDAYS = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
+# The edition is written in English; DB category names stay French
+CATEGORY_EN = {
+    "Innovation / Tech": "Innovation & Tech",
+    "Politique / Regulation": "Policy & Regulation",
+    "Business / Industrie": "Business & Industry",
+    "Societe / Ethique": "Society & Ethics",
+    "Recherche Academique": "Academic Research",
+    "Drama / Controverses": "Drama & Controversies",
+    "Energie / Environnement": "Energy & Environment",
+    "Semiconducteurs / Hardware": "Semiconductors & Hardware",
+}
 
 
-def _fr_date(iso_day: str) -> str:
-    """'2026-10-05' -> 'lun. 05/10'."""
+def _en_date(iso_day: str) -> str:
+    """'2026-10-05' -> 'Mon, Oct 5'."""
     try:
         d = datetime.strptime(iso_day[:10], "%Y-%m-%d")
     except ValueError:
         return iso_day
-    return f"{_FR_WEEKDAYS[d.weekday()]} {d:%d/%m}"
+    return f"{d:%a, %b} {d.day}"
 
 
 def _slug(text: str) -> str:
@@ -164,24 +174,24 @@ def compute_stats(articles: list[dict], stories_lookup: dict[int, dict] | None =
 # ---------------------------------------------------------------------------
 
 _SYSTEM_PROMPT = (
-    "Tu es le rédacteur d'une newsletter hebdomadaire francophone sur l'actualité de l'IA, "
-    "destinée à un public curieux mais pas forcément technique. On te donne les sujets "
-    "retenus par l'éditeur, avec pour chacun les titres et résumés des articles de la semaine, "
-    "jour par jour, et parfois une note de l'éditeur.\n"
-    "Réponds en JSON strict : {\"edito\": str, \"topics\": {\"<id>\": str}}.\n"
-    "- edito : 3 à 4 phrases qui dégagent le fil rouge de la semaine à partir des sujets retenus.\n"
-    "- topics : pour chaque id, un paragraphe de 3 à 5 phrases qui explique ce qui s'est passé, "
-    "comment l'histoire a évolué au fil des jours et pourquoi c'est important.\n"
-    "Si une note de l'éditeur est fournie pour un sujet, suis-la en priorité (angle, insistance).\n"
-    "Ton clair, direct, factuel. N'invente aucun fait absent des articles fournis. "
-    "Pas de liens, pas de Markdown, pas de titres."
+    "You write a weekly English-language newsletter about AI news, for curious readers who "
+    "are not necessarily technical. You get the topics picked by the editor, each with the "
+    "titles and summaries of the week's articles, day by day, and sometimes an editor's note. "
+    "Some summaries and notes are in French: always write in English.\n"
+    "Reply in strict JSON: {\"edito\": str, \"topics\": {\"<id>\": str}}.\n"
+    "- edito: 3 to 4 sentences drawing the common thread of the week from the picked topics.\n"
+    "- topics: for each id, one paragraph of 3 to 5 sentences explaining what happened, "
+    "how the story evolved over the days and why it matters.\n"
+    "If an editor's note is given for a topic, follow it first (angle, emphasis).\n"
+    "Clear, direct, factual tone. Do not invent any fact absent from the articles provided. "
+    "No links, no Markdown, no headings."
 )
 
 
 def _topic_context(c: dict, note: str) -> str:
     lines = [f"[{c['id']}] {c['title']}"]
     if note:
-        lines.append(f"Note de l'éditeur : {note}")
+        lines.append(f"Editor's note: {note}")
     for day in c["days"]:
         for a in day["articles"][:4]:
             extra = _truncate(a.get("summary") or a.get("description") or "", 200)
@@ -191,10 +201,15 @@ def _topic_context(c: dict, note: str) -> str:
 
 def generate_prose(picked: list[dict], notes: dict[str, str]) -> dict:
     """Return {"edito": str, "topics": {id: str}}; falls back to article summaries on failure."""
+    # Fallback text: the source's own description (mostly English), not our French summary
     fallback = {
         "edito": "",
         "topics": {
-            c["id"]: (c["days"][-1]["articles"][0].get("summary") or c["blurb"]) for c in picked
+            c["id"]: _truncate(
+                c["days"][-1]["articles"][0].get("description")
+                or c["days"][-1]["articles"][0].get("summary") or c["blurb"], 400
+            )
+            for c in picked
         },
     }
     if not os.environ.get("GROQ_API_KEY"):
@@ -204,21 +219,25 @@ def generate_prose(picked: list[dict], notes: dict[str, str]) -> dict:
     from groq import Groq
 
     user_msg = "\n\n".join(_topic_context(c, notes.get(c["id"], "")) for c in picked)
-    try:
-        resp = Groq(api_key=os.environ["GROQ_API_KEY"]).chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.4,
-            max_tokens=4000,
-            reasoning_effort="low",
-            response_format={"type": "json_object"},
-        )
-        result = json.loads(resp.choices[0].message.content)
-    except Exception as e:
-        logging.error(f"Groq newsletter prose failed: {e}")
+    # Groq sometimes emits malformed JSON (json_validate_failed): one retry
+    for attempt in (1, 2):
+        try:
+            resp = Groq(api_key=os.environ["GROQ_API_KEY"]).chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": user_msg},
+                ],
+                temperature=0.4,
+                max_tokens=4000,
+                reasoning_effort="low",
+                response_format={"type": "json_object"},
+            )
+            result = json.loads(resp.choices[0].message.content)
+            break
+        except Exception as e:
+            logging.error(f"Groq newsletter prose failed (attempt {attempt}/2): {e}")
+    else:
         return fallback
 
     topics = result.get("topics") or {}
@@ -239,16 +258,16 @@ def _link(a: dict) -> str:
 
 def render_markdown(picked: list[dict], prose: dict, stats: dict, week_start: str, week_end: str) -> str:
     out = [
-        f"# 🤖 AI Radar — la semaine du {week_start} au {week_end}",
+        f"# 🤖 AI Radar — week of {week_start} to {week_end}",
         "",
     ]
     if prose["edito"]:
         out += [prose["edito"], ""]
-    out += ["**Au sommaire :** " + " · ".join(f"{c['emoji']} {c['title']}" for c in picked), "", "---", ""]
+    out += ["**In this issue:** " + " · ".join(f"{c['emoji']} {c['title']}" for c in picked), "", "---", ""]
 
     for i, c in enumerate(picked, 1):
         badge = " 🌋" if c["has_supra"] else ""
-        span = f"{c['span_days']} jours de couverture · " if c["span_days"] > 1 else ""
+        span = f"{c['span_days']} days of coverage · " if c["span_days"] > 1 else ""
         out += [
             f"## {i}. {c['emoji']} {c['title']}{badge}",
             f"*{span}{c['article_count']} articles*",
@@ -257,22 +276,24 @@ def render_markdown(picked: list[dict], prose: dict, stats: dict, week_start: st
             "",
         ]
         if c["span_days"] > 1:
-            out.append("**📅 Chronologie**")
-            out += [f"- **{_fr_date(d['date'])}** — {_link(d['articles'][0])}" for d in c["days"]]
+            out.append("**📅 Timeline**")
+            out += [f"- **{_en_date(d['date'])}** — {_link(d['articles'][0])}" for d in c["days"]]
         else:
-            out.append("**🔗 À lire**")
+            out.append("**🔗 Read more**")
             out += [f"- {_link(a)}" for a in c["days"][0]["articles"][:3]]
         out += ["", "---", ""]
 
-    cats = " · ".join(f"{CATEGORY_EMOJI.get(cat, '📌')} {cat} ({n})" for cat, n in stats["top_categories"])
+    cats = " · ".join(
+        f"{CATEGORY_EMOJI.get(cat, '📌')} {CATEGORY_EN.get(cat, cat)} ({n})" for cat, n in stats["top_categories"]
+    )
     out += [
-        "## 📊 La semaine en chiffres",
-        f"- 📰 **{stats['total']}** articles analysés, dont **{stats['hot']}** sur des sujets chauds",
-        f"- 📖 **{stats['stories']}** histoire{'s' if stats['stories'] > 1 else ''} suivie{'s' if stats['stories'] > 1 else ''}",
-        f"- 🏆 Catégories les plus actives : {cats}",
+        "## 📊 The week in numbers",
+        f"- 📰 **{stats['total']}** articles analyzed, **{stats['hot']}** of them on hot topics",
+        f"- 📖 **{stats['stories']}** stor{'ies' if stats['stories'] != 1 else 'y'} tracked",
+        f"- 🏆 Most active categories: {cats}",
     ]
     if DASHBOARD_URL:
-        out += ["", f"👉 [Explorer toute l'actu sur le dashboard]({DASHBOARD_URL})"]
+        out += ["", f"👉 [Explore all the news on the dashboard]({DASHBOARD_URL})"]
     return "\n".join(out) + "\n"
 
 
@@ -467,8 +488,9 @@ def load_week() -> tuple[list[dict], list[dict]]:
 
 def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str]) -> str:
     today = datetime.now(timezone.utc)
-    week_start = (today - timedelta(days=WINDOW_DAYS)).strftime("%d/%m")
-    week_end = today.strftime("%d/%m/%Y")
+    start = today - timedelta(days=WINDOW_DAYS)
+    week_start = f"{start:%b} {start.day}"
+    week_end = f"{today:%b} {today.day}, {today.year}"
     prose = generate_prose(picked, notes)
     return render_markdown(picked, prose, compute_stats(articles, _fetch_stories_lookup(DOMAIN)), week_start, week_end)
 
