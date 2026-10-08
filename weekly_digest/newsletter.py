@@ -20,6 +20,7 @@ GITHUB_TOKEN + GITHUB_REPOSITORY for propose/build (set automatically in Actions
 """
 
 import argparse
+import html
 import json
 import logging
 import os
@@ -32,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard import (  # noqa: E402
+    DOMAIN_CATEGORY_COLORS,
     DOMAIN_CATEGORY_EMOJI,
     _OLD_HOT_REASONS,
     _deduplicate_articles,
@@ -46,30 +48,24 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 DOMAIN = "ia"
 WINDOW_DAYS = 7
 CATEGORY_EMOJI = DOMAIN_CATEGORY_EMOJI[DOMAIN]
+CATEGORY_COLOR = DOMAIN_CATEGORY_COLORS[DOMAIN]
 GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 
-# The edition is written in English; DB category names stay French
-CATEGORY_EN = {
-    "Innovation / Tech": "Innovation & Tech",
-    "Politique / Regulation": "Policy & Regulation",
-    "Business / Industrie": "Business & Industry",
-    "Societe / Ethique": "Society & Ethics",
-    "Recherche Academique": "Academic Research",
-    "Drama / Controverses": "Drama & Controversies",
-    "Energie / Environnement": "Energy & Environment",
-    "Semiconducteurs / Hardware": "Semiconductors & Hardware",
-}
+# Closing line of every edition (Markdown); empty = no sign-off
+SIGNOFF = "*Stay on top of the news.*"
+WORDS_PER_MINUTE = 230
+_STOP_LABEL_MAX = 50  # chars: hard cut of a Groq timeline label (asked for 40)
 
 
-def _en_date(iso_day: str) -> str:
-    """'2026-10-05' -> 'Mon, Oct 5'."""
+def _short_date(iso_day: str) -> str:
+    """'2026-10-05' -> 'Oct 5'."""
     try:
         d = datetime.strptime(iso_day[:10], "%Y-%m-%d")
     except ValueError:
         return iso_day
-    return f"{d:%a, %b} {d.day}"
+    return f"{d:%b} {d.day}"
 
 
 def _slug(text: str) -> str:
@@ -85,27 +81,35 @@ def _truncate(text: str, n: int) -> str:
 # Candidates
 # ---------------------------------------------------------------------------
 
+def _story_titles(meta: dict) -> tuple[str, str]:
+    """(label, headline) of a story: its stable topic name and the summary of
+    its latest development, minus the topic prefix older summaries repeat."""
+    label = meta.get("label") or "Untitled"
+    headline = " ".join((meta.get("summary") or "").split())
+    if headline.lower().startswith(label.lower()) and not headline[len(label):len(label) + 1].isalnum():
+        headline = headline[len(label):].lstrip(" —–-:|")
+    return label, ("" if headline.lower() == label.lower() else headline)
+
+
 def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], limit: int | None = 15) -> list[dict]:
     """Group this week's articles into topic candidates, best first.
 
     A candidate is a story with at least 2 articles this week (an article can
     feed several candidates). Before topic-based stories exist, falls back to
     hot articles grouped by legacy `story_id`, else by `hot_reason`. Returns
-    dicts: {id, title, blurb, days: [{date, articles}], article_count,
-    span_days, has_supra, emoji}.
+    dicts: {id, title, label, headline, blurb, days: [{date, articles}],
+    article_count, span_days, has_supra, emoji, color}; `title` is
+    "label — headline" for the picker issue and the CLI.
     """
     groups: dict[str, list[dict]] = defaultdict(list)
-    titles: dict[str, str] = {}
+    titles: dict[str, tuple[str, str]] = {}
     members = _story_members(articles, stories_lookup)
     for sid, arts in (members or {}).items():
         if len(_deduplicate_articles(arts)) < 2:
             continue
         key = f"story-{sid}"
         groups[key] = arts
-        meta = stories_lookup[sid]
-        titles[key] = meta["label"] or "Sans titre"
-        if meta.get("summary") and meta["summary"].lower() != meta["label"].lower():
-            titles[key] += f" — {meta['summary']}"
+        titles[key] = _story_titles(stories_lookup[sid])
     # Pre-topics fallback: hot articles by legacy story_id, else by hot_reason
     for a in (articles if members is None else []):
         reason = (a.get("hot_reason") or "").strip()
@@ -116,12 +120,10 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
             key = f"story-{sid}"
             meta = stories_lookup.get(sid, {})
             if meta.get("label"):
-                titles[key] = meta["label"]
-                if meta.get("summary") and meta["summary"].lower() != meta["label"].lower():
-                    titles[key] += f" — {meta['summary']}"
+                titles[key] = _story_titles(meta)
         else:
             key = f"topic-{_slug(reason)}"
-        titles.setdefault(key, reason)
+        titles.setdefault(key, (reason, ""))
         groups[key].append(a)
 
     candidates = []
@@ -137,9 +139,12 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
         article_count = sum(len(d["articles"]) for d in days)
         top_cat = Counter(a.get("category", "") for a in arts).most_common(1)[0][0]
         lead = max(arts, key=lambda a: a.get("mention_count", 0))
+        label, headline = titles[key]
         candidates.append({
             "id": key,
-            "title": titles[key],
+            "title": f"{label} — {headline}" if headline else label,
+            "label": label,
+            "headline": headline,
             "blurb": _truncate(
                 lead.get("summary") or lead.get("description") or lead.get("title", ""), 160
             ),
@@ -148,6 +153,7 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
             "span_days": len(days),
             "has_supra": any(a.get("supa_hot") for a in arts),
             "emoji": CATEGORY_EMOJI.get(top_cat, "📌"),
+            "color": CATEGORY_COLOR.get(top_cat, "#6b7280"),
         })
 
     # Breadth (articles) plus persistence (days covered) plus a supa-hot bump
@@ -156,17 +162,6 @@ def select_candidates(articles: list[dict], stories_lookup: dict[int, dict], lim
         reverse=True,
     )
     return candidates[:limit]
-
-
-def compute_stats(articles: list[dict], stories_lookup: dict[int, dict] | None = None) -> dict:
-    by_cat = Counter(a.get("category", "") for a in articles)
-    members = _story_members(articles, stories_lookup)
-    return {
-        "total": len(articles),
-        "hot": sum(1 for a in articles if a.get("hot_topic")),
-        "stories": len(members) if members is not None else len({a["story_id"] for a in articles if a.get("story_id")}),
-        "top_categories": by_cat.most_common(3),
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -179,12 +174,25 @@ _SYSTEM_PROMPT = (
     "titles and summaries of the week's articles, day by day, and sometimes an editor's note. "
     "Some summaries and notes are in French: always write in English.\n"
     "Reply in strict JSON: {\"edito\": str, \"topics\": {\"<id>\": str}}.\n"
-    "- edito: 3 to 4 sentences drawing the common thread of the week from the picked topics.\n"
-    "- topics: for each id, one paragraph of 3 to 5 sentences explaining what happened, "
-    "how the story evolved over the days and why it matters.\n"
+    "- edito: 2 to 3 short sentences (60 words max) drawing the common thread of the week.\n"
+    "- topics: for each id, 2 to 3 sentences: what happened and why it matters. A day-by-day "
+    "timeline is shown below each paragraph, so do not enumerate every development.\n"
     "If an editor's note is given for a topic, follow it first (angle, emphasis).\n"
     "Clear, direct, factual tone. Do not invent any fact absent from the articles provided. "
     "No links, no Markdown, no headings."
+)
+
+# Separate call: asked together with the prose, the model copies the full titles
+_STOPS_PROMPT = (
+    "Rewrite each news headline below as a short timeline label, in English (some headlines "
+    "are in French).\n"
+    "Rules: 3 to 6 words, at most 40 characters, sentence case, no date, no "
+    "source, no final period. Keep the key actor and the action. Never copy the headline: "
+    "shorten it.\n"
+    "Examples: \"Broadcom To Lend Anthropic $42 Billion To Manage Surging Cost\" -> "
+    "\"Broadcom lends Anthropic $42B\"; \"California subpoenas OpenAI over rogue AI agents "
+    "conducting hacking attacks\" -> \"California subpoenas OpenAI\".\n"
+    "Reply in strict JSON: {\"labels\": {\"<key>\": str}} with one entry per key."
 )
 
 
@@ -199,8 +207,50 @@ def _topic_context(c: dict, note: str) -> str:
     return "\n".join(lines)
 
 
+def _groq_json(system: str, user: str, max_tokens: int = 4000) -> dict | None:
+    """One JSON-mode Groq call; None on failure. Groq sometimes emits malformed
+    JSON (json_validate_failed), hence one retry."""
+    from groq import Groq
+
+    for attempt in (1, 2):
+        try:
+            resp = Groq(api_key=os.environ["GROQ_API_KEY"]).chat.completions.create(
+                model=GROQ_MODEL,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                temperature=0.4,
+                max_tokens=max_tokens,
+                reasoning_effort="low",
+                response_format={"type": "json_object"},
+            )
+            return json.loads(resp.choices[0].message.content)
+        except Exception as e:
+            logging.error(f"Groq newsletter call failed (attempt {attempt}/2): {e}")
+    return None
+
+
+def generate_stop_labels(picked: list[dict]) -> dict[str, list[str]]:
+    """{candidate id: one short label per timeline stop}. A topic is left out
+    (its stops then show the truncated headline) unless every label came back."""
+    keys = {
+        f"{c['id']}#{k}": a.get("title", "")
+        for c in picked for k, (_, a) in enumerate(_timeline_stops(c))
+    }
+    result = _groq_json(_STOPS_PROMPT, json.dumps(keys, ensure_ascii=False), max_tokens=3000)
+    got = (result or {}).get("labels") or {}
+    out = {}
+    for c in picked:
+        labels = [
+            _truncate(" ".join(str(got.get(f"{c['id']}#{k}") or "").split()).rstrip("."), _STOP_LABEL_MAX)
+            for k in range(len(_timeline_stops(c)))
+        ]
+        if all(labels):
+            out[c["id"]] = labels
+    return out
+
+
 def generate_prose(picked: list[dict], notes: dict[str, str]) -> dict:
-    """Return {"edito": str, "topics": {id: str}}; falls back to article summaries on failure."""
+    """Return {"edito": str, "topics": {id: str}, "stops": {id: [str]}}; falls back
+    to article descriptions and truncated headlines on failure."""
     # Fallback text: the source's own description (mostly English), not our French summary
     fallback = {
         "edito": "",
@@ -211,39 +261,21 @@ def generate_prose(picked: list[dict], notes: dict[str, str]) -> dict:
             )
             for c in picked
         },
+        "stops": {},
     }
     if not os.environ.get("GROQ_API_KEY"):
-        logging.warning("GROQ_API_KEY not set — using article summaries instead of Groq prose.")
+        logging.warning("GROQ_API_KEY not set — using article descriptions instead of Groq prose.")
         return fallback
-
-    from groq import Groq
 
     user_msg = "\n\n".join(_topic_context(c, notes.get(c["id"], "")) for c in picked)
-    # Groq sometimes emits malformed JSON (json_validate_failed): one retry
-    for attempt in (1, 2):
-        try:
-            resp = Groq(api_key=os.environ["GROQ_API_KEY"]).chat.completions.create(
-                model=GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": user_msg},
-                ],
-                temperature=0.4,
-                max_tokens=4000,
-                reasoning_effort="low",
-                response_format={"type": "json_object"},
-            )
-            result = json.loads(resp.choices[0].message.content)
-            break
-        except Exception as e:
-            logging.error(f"Groq newsletter prose failed (attempt {attempt}/2): {e}")
-    else:
-        return fallback
-
+    result = _groq_json(_SYSTEM_PROMPT, user_msg) or {}
     topics = result.get("topics") or {}
     return {
         "edito": (result.get("edito") or "").strip(),
-        "topics": {c["id"]: (topics.get(c["id"]) or fallback["topics"][c["id"]]).strip() for c in picked},
+        "topics": {
+            c["id"]: (str(topics.get(c["id"]) or "") or fallback["topics"][c["id"]]).strip() for c in picked
+        },
+        "stops": generate_stop_labels(picked),
     }
 
 
@@ -251,50 +283,115 @@ def generate_prose(picked: list[dict], notes: dict[str, str]) -> dict:
 # Rendering
 # ---------------------------------------------------------------------------
 
-def _link(a: dict) -> str:
-    title = a.get("title", "").replace("[", "(").replace("]", ")")
-    return f"[{title}]({a.get('url', '')}) — *{a.get('source', '')}*"
+def _esc(text: str) -> str:
+    # Feed titles sometimes carry raw entities (&#8217;): decode before escaping
+    return html.escape(html.unescape(text or ""), quote=True)
 
 
-def render_markdown(picked: list[dict], prose: dict, stats: dict, week_start: str, week_end: str) -> str:
+# Metro-line timeline: one row per stop. The line is drawn with stacked divs in
+# a narrow cell (top half, dot, bottom half) so it stays continuous between rows;
+# inline styles and tables only, since email clients drop <style> and flexbox.
+_STOP_HEIGHT = 26  # px, one text line per stop
+_STOP_TITLE_MAX = 60  # chars; CSS ellipsis trims further on narrow screens
+
+
+def _metro_line(stops: list[tuple[str, str, dict]], color: str) -> str:
+    """stops: [(label, text, article)] in order -> email-safe HTML timeline."""
+    seg = (_STOP_HEIGHT - 12) // 2
+    rows = []
+    for i, (label, text, a) in enumerate(stops):
+        top = color if i > 0 else "transparent"
+        bottom = color if i < len(stops) - 1 else "transparent"
+        rows.append(
+            "<tr>"
+            '<td width="20" style="width:20px;padding:0;vertical-align:top;">'
+            f'<div style="width:4px;height:{seg}px;margin:0 auto;background:{top};"></div>'
+            f'<div style="width:8px;height:8px;margin:0 auto;border:2px solid {color};'
+            'border-radius:50%;background:#ffffff;"></div>'
+            f'<div style="width:4px;height:{seg}px;margin:0 auto;background:{bottom};"></div>'
+            "</td>"
+            f'<td style="padding:0 0 0 10px;height:{_STOP_HEIGHT}px;line-height:{_STOP_HEIGHT}px;'
+            'font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f'<span style="color:#6b7280;font-weight:600;">{_esc(label)}</span>&nbsp;&nbsp;'
+            f'<a href="{_esc(a.get("url", ""))}" title="{_esc(a.get("source", ""))}" '
+            f'style="color:#111827;text-decoration:none;">{_esc(_truncate(text, _STOP_TITLE_MAX))}</a>'
+            "</td>"
+            "</tr>"
+        )
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" '
+        'style="border-collapse:collapse;table-layout:fixed;margin:4px 0 8px;">'
+        + "".join(rows) + "</table>"
+    )
+
+
+def _timeline_stops(c: dict) -> list[tuple[str, dict]]:
+    """One stop per day (its lead article); a one-day story gets its top 3
+    articles, labelled by source instead of date."""
+    if c["span_days"] > 1:
+        return [(_short_date(d["date"]), d["articles"][0]) for d in c["days"]]
+    return [(a.get("source", ""), a) for a in c["days"][0]["articles"][:3]]
+
+
+def _kicker(text: str, color: str) -> str:
+    """Small uppercase line above a topic heading, in its metro-line color."""
+    return (
+        f'<p style="margin:28px 0 0;font-size:12px;font-weight:700;letter-spacing:0.08em;'
+        f'text-transform:uppercase;color:{color};">{_esc(text)}</p>'
+    )
+
+
+def _reading_minutes(prose: dict) -> int:
+    text = " ".join([prose["edito"], *prose["topics"].values(), *(" ".join(v) for v in prose["stops"].values())])
+    return max(1, round(len(text.split()) / WORDS_PER_MINUTE))
+
+
+def render_markdown(picked: list[dict], prose: dict, week_start: str, week_end: str) -> str:
+    """Edition template: title (becomes the email subject), reading time, short
+    intro, contents (one line per topic), then for each topic: kicker (topic
+    name), headline (latest development), meta line, short paragraph and
+    metro-line timeline; ends with the dashboard link and the sign-off."""
     out = [
         f"# 🤖 AI Radar — week of {week_start} to {week_end}",
+        f"*⏱ {_reading_minutes(prose)} min read*",
         "",
     ]
     if prose["edito"]:
         out += [prose["edito"], ""]
-    out += ["**In this issue:** " + " · ".join(f"{c['emoji']} {c['title']}" for c in picked), "", "---", ""]
+    out += ["**In this issue**", ""]
+    out += [
+        f"{i}. {c['emoji']} **{c['label']}**" + (f" · {c['headline']}" if c["headline"] else "")
+        for i, c in enumerate(picked, 1)
+    ]
+    out += ["", "---", ""]
 
     for i, c in enumerate(picked, 1):
+        color = c.get("color", "#6b7280")
         badge = " 🌋" if c["has_supra"] else ""
-        span = f"{c['span_days']} days of coverage · " if c["span_days"] > 1 else ""
+        span = f" · {c['span_days']} days" if c["span_days"] > 1 else ""
+        labels = prose["stops"].get(c["id"])
+        stops = [
+            (label, labels[k] if labels else a.get("title", ""), a)
+            for k, (label, a) in enumerate(_timeline_stops(c))
+        ]
         out += [
-            f"## {i}. {c['emoji']} {c['title']}{badge}",
-            f"*{span}{c['article_count']} articles*",
+            _kicker(f"{i} · {c['label']}" if c["headline"] else str(i), color),
+            "",
+            f"## {c['emoji']} {c['headline'] or c['label']}{badge}",
+            f"*{c['article_count']} articles{span}*",
             "",
             prose["topics"][c["id"]],
             "",
+            _metro_line(stops, color),
+            "",
         ]
-        if c["span_days"] > 1:
-            out.append("**📅 Timeline**")
-            out += [f"- **{_en_date(d['date'])}** — {_link(d['articles'][0])}" for d in c["days"]]
-        else:
-            out.append("**🔗 Read more**")
-            out += [f"- {_link(a)}" for a in c["days"][0]["articles"][:3]]
-        out += ["", "---", ""]
 
-    cats = " · ".join(
-        f"{CATEGORY_EMOJI.get(cat, '📌')} {CATEGORY_EN.get(cat, cat)} ({n})" for cat, n in stats["top_categories"]
-    )
-    out += [
-        "## 📊 The week in numbers",
-        f"- 📰 **{stats['total']}** articles analyzed, **{stats['hot']}** of them on hot topics",
-        f"- 📖 **{stats['stories']}** stor{'ies' if stats['stories'] != 1 else 'y'} tracked",
-        f"- 🏆 Most active categories: {cats}",
-    ]
+    out += ["---", ""]
     if DASHBOARD_URL:
-        out += ["", f"👉 [Explore all the news on the dashboard]({DASHBOARD_URL})"]
-    return "\n".join(out) + "\n"
+        out += [f"👉 [Explore all the news on the dashboard]({DASHBOARD_URL})", ""]
+    if SIGNOFF:
+        out += [SIGNOFF, ""]
+    return "\n".join(out).rstrip() + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -492,12 +589,12 @@ def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str
     week_start = f"{start:%b} {start.day}"
     week_end = f"{today:%b} {today.day}, {today.year}"
     prose = generate_prose(picked, notes)
-    return render_markdown(picked, prose, compute_stats(articles, _fetch_stories_lookup(DOMAIN)), week_start, week_end)
+    return render_markdown(picked, prose, week_start, week_end)
 
 
-def write_edition(markdown: str) -> str:
+def write_edition(markdown: str, suffix: str = "") -> str:
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    path = os.path.join(OUTPUT_DIR, f"newsletter-{datetime.now(timezone.utc):%Y-%m-%d}.md")
+    path = os.path.join(OUTPUT_DIR, f"newsletter-{datetime.now(timezone.utc):%Y-%m-%d}{suffix}.md")
     with open(path, "w", encoding="utf-8") as f:
         f.write(markdown)
     logging.info(f"Edition written to {path}")
@@ -542,7 +639,8 @@ def main() -> None:
         picked = [by_id[w] for w in wanted]
     else:
         picked = candidates[:5]
-    write_edition(build_edition(articles, picked, notes={}))
+    # Separate file: never overwrite an archived edition (output/ is committed)
+    write_edition(build_edition(articles, picked, notes={}), suffix="-preview")
 
 
 if __name__ == "__main__":
