@@ -378,6 +378,10 @@ async def review_stories(stories: list[dict], client, model: str, domain: str) -
         if row.get("coherent") is False:
             incoherent.add(i)
         summary = " ".join(str(row.get("summary") or "").split())
+        # Groq sometimes echoes the topic anyway ("<topic> — <summary>"): strip it
+        label = top[i]["label"]
+        if summary.lower().startswith(label.lower()) and not summary[len(label):len(label) + 1].isalnum():
+            summary = summary[len(label):].lstrip(" —–-:|")
         if summary and summary.lower() != top[i]["label"].lower():
             top[i]["summary"] = summary
     if incoherent:
