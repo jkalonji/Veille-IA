@@ -19,7 +19,6 @@ import feedparser
 from groq import AsyncGroq
 import requests
 from supabase import create_client
-from bluesky_scraper import fetch_all_bluesky
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -925,20 +924,6 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             logging.error(f"Fetch task failed: {result}")
         else:
             articles.extend(result)
-
-    # Fetch Bluesky sources
-    bluesky_dicts = await fetch_all_bluesky(sources)
-    for d in bluesky_dicts:
-        articles.append(Article(
-            title=d["title"],
-            url=d["url"],
-            source=d["source"],
-            country=d["country"],
-            published=d["published"],
-            published_is_estimated=d.get("published_is_estimated", False),
-            description=d.get("description", ""),
-            domain=d.get("domain", "ia"),
-        ))
 
     # Deduplicate by URL
     seen: set[str] = set()

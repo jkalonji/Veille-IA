@@ -62,13 +62,6 @@
       "enabled": true
     },
     {
-      "name": "Euronews Tech",
-      "type": "rss",
-      "url": "https://feeds.euronews.com/news/technology",
-      "country": "🇪🇺",
-      "enabled": true
-    },
-    {
       "name": "ZDNet France",
       "type": "rss",
       "url": "https://www.zdnet.fr/feeds/rss/actualites/",
@@ -228,70 +221,6 @@
       "url": "https://www.digitimes.com/rss/daily.xml",
       "country": "🇹🇼",
       "enabled": true
-    },
-    {
-      "comment": "=== BLUESKY ===",
-      "name": "Bluesky - Generative AI",
-      "type": "bluesky",
-      "query": "generative AI",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 25,
-      "count": 20
-    },
-    {
-      "name": "Bluesky - LLM & Model Releases",
-      "type": "bluesky",
-      "query": "LLM model release benchmark",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 20,
-      "count": 20
-    },
-    {
-      "name": "Bluesky - OpenAI & Anthropic",
-      "type": "bluesky",
-      "query": "OpenAI Anthropic Claude GPT",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 30,
-      "count": 20
-    },
-    {
-      "name": "Bluesky - Open Source Models",
-      "type": "bluesky",
-      "query": "DeepSeek Llama Mistral open source AI",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 20,
-      "count": 20
-    },
-    {
-      "name": "Bluesky - AI Agents & Dev Tools",
-      "type": "bluesky",
-      "query": "AI agent agentic vibe coding MCP",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 20,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - Robotics & Embodied AI",
-      "type": "bluesky",
-      "query": "robotics humanoid robot AI embodied",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - AI Regulation & Ethics",
-      "type": "bluesky",
-      "query": "AI regulation safety ethics policy",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
     },
     {
       "comment": "=== BUSINESS / INDUSTRIE ===",
@@ -531,87 +460,6 @@
       "url": "https://www.usine-digitale.fr/rss",
       "country": "🇫🇷",
       "enabled": false
-    },
-    {
-      "name": "Bluesky - New Architectures",
-      "type": "bluesky",
-      "query": "transformer architecture MoE mixture experts SSM Mamba diffusion",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - Multimodal & Generation",
-      "type": "bluesky",
-      "query": "multimodal image video audio generation Sora Runway Kling",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - AI & Work",
-      "type": "bluesky",
-      "query": "AI jobs automation workforce displacement productivity future work",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - AI Safety & Alignment",
-      "type": "bluesky",
-      "query": "AI safety alignment AGI existential risk interpretability",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - AI Hardware & Infra",
-      "type": "bluesky",
-      "query": "GPU chip NVIDIA data center inference cost training compute",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - AI in Science & Health",
-      "type": "bluesky",
-      "query": "AI drug discovery biology genomics health medicine clinical",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 10,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - Energy & AI Power",
-      "type": "bluesky",
-      "query": "AI energy data center power consumption electricity grid nuclear",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - Semiconducteurs Industrie",
-      "type": "bluesky",
-      "query": "TSMC semiconductor chips foundry fab supply chain ASML wafer",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
-    },
-    {
-      "name": "Bluesky - Chip War & Geopolitique",
-      "type": "bluesky",
-      "query": "chip war export controls CHIPS Act semiconductor ban NVIDIA China",
-      "country": "🌐",
-      "enabled": true,
-      "min_score": 15,
-      "count": 15
     },
     {
       "comment": "=== DOMAINE POLITIQUE / EVENEMENTS MAJEURS (Phase 1) ===",

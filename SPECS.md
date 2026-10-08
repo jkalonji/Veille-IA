@@ -6,7 +6,7 @@
 
 Chaque matin à 8h (CET), un pipeline GitHub Actions :
 
-1. **Collecte** les actualités IA depuis ~100+ sources : flux RSS (blogs, médias tech, institutions), Bluesky (13 requêtes thématiques), et anciennement Twitter
+1. **Collecte** les actualités IA depuis ~100+ sources : flux RSS (blogs, médias tech, institutions)
 2. **Classe** chaque article dans 6 catégories (Innovation/Tech, Politique/Régulation, Business, Société/Éthique, Recherche Académique, Drama/Controverses) via Groq (LLM rapide)
 3. **Détecte les sujets chauds** en croisant 4 signaux : Google Trends, débats Hacker News, repos GitHub trending, et auto-bootstrap depuis la DB
 4. **Priorise** les articles : `hot_topic` → `supa_hot` (badge 🌋) si fortement cross-mentionné
@@ -23,14 +23,12 @@ Chaque matin à 8h (CET), un pipeline GitHub Actions :
 | Dashboard | Streamlit (`dashboard.py`, 1600+ lignes) avec globe D3 canvas |
 | Recherche | Sémantique avec expansion de requêtes Groq + scoring multi-champ |
 | Automatisation | GitHub Actions (3 workflows : collecte quotidienne, dashboard, digest hebdo) |
-| Social scraping | Bluesky API (`bluesky_scraper.py`) |
 
 ## Structure (plate, comme voulu)
 
 ```
 main.py              — pipeline principal (860 lignes)
 dashboard.py         — UI Streamlit (1600 lignes)
-bluesky_scraper.py   — scraper Bluesky
 sources.json         — toutes les sources (~100+ entrées avec catégorie, pays)
 .github/workflows/   — 3 workflows CI/CD
 weekly_digest/       — génération du digest hebdomadaire
