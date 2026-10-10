@@ -1265,6 +1265,12 @@ INDICATOR_TABS: list[tuple[str, str]] = [
 ]
 
 
+# Windows has no colour font for flag emoji (🇺🇸 shows as "US"), so the
+# country charts load Noto Color Emoji and list it first for their labels.
+FLAG_FONT_LINK = '<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">'
+FLAG_FONT_FAMILY = '"Noto Color Emoji", "Open Sans", verdana, arial, sans-serif'
+
+
 def _fmt_indicator(value: float, unit: str) -> str:
     if unit.startswith("%"):
         return f"{value:.2f}%" if value >= 1 else f"{value:.3f}%"
@@ -1298,7 +1304,8 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
             x=0.5, xanchor="center",
         ),
         xaxis=dict(visible=False),
-        yaxis=dict(tickfont=dict(size=11, color="#adb5bd")),
+        yaxis=dict(tickfont=dict(size=11, color="#adb5bd", family=FLAG_FONT_FAMILY)),
+        hoverlabel=dict(font=dict(family=FLAG_FONT_FAMILY)),
         paper_bgcolor="#0e1117",
         plot_bgcolor="#0e1117",
         height=380,
@@ -1552,6 +1559,7 @@ def run_streamlit() -> None:
     with col_ranking:
         indicators = load_indicators() if domain == "ia" else {}
         if indicators:
+            st.markdown(FLAG_FONT_LINK, unsafe_allow_html=True)
             tabs = st.tabs([label for _, label in INDICATOR_TABS])
             for tab, (key, _) in zip(tabs, INDICATOR_TABS):
                 with tab:
@@ -2081,6 +2089,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0e1117">
   <title>Cobalt.xyz · Radars</title>
+  {FLAG_FONT_LINK}
   <style>
     /* ── Reset & base ───────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
