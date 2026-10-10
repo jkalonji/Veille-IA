@@ -6,7 +6,7 @@
     "year": 2025,
     "updated": "2026-10-11",
     "next_review": "2027-04-30",
-    "note": "Only the top 15 countries by absolute amount are published, so the GDP-share ranking is computed among those 15.",
+    "note": "Only the top 15 countries are published.",
     "values_usd_bn": {
       "USA": 285.88, "CHN": 12.41, "GBR": 5.90, "FRA": 4.36, "CAN": 4.28,
       "IND": 4.09, "DEU": 3.89, "ISR": 3.58, "AUS": 2.52, "SAU": 2.03,

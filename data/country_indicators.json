@@ -1,105 +1,105 @@
 {
- "generated_at": "2026-10-10T22:37:07+00:00",
+ "generated_at": "2026-10-10T23:45:23+00:00",
  "private_investment": {
   "title": "Private AI investment",
-  "unit": "% of GDP",
+  "unit": "USD bn",
   "source": "Stanford AI Index 2026 (Quid data)",
   "source_url": "https://hai.stanford.edu/ai-index/2026-ai-index-report/economy",
   "as_of": "2025",
   "updated": "2026-10-11",
   "next_review": "2027-04-30",
   "auto": false,
-  "note": "Only the top 15 countries by absolute amount are published, so the GDP-share ranking is computed among those 15.",
+  "note": "Only the top 15 countries are published.",
   "rows": [
    {
     "iso3": "USA",
     "name": "🇺🇸 United States",
-    "value": 0.9290958312885728,
-    "detail": "$285.9bn private AI investment in 2025"
-   },
-   {
-    "iso3": "ISR",
-    "name": "🇮🇱 Israel",
-    "value": 0.5861378309266709,
-    "detail": "$3.6bn private AI investment in 2025"
-   },
-   {
-    "iso3": "SGP",
-    "name": "🇸🇬 Singapore",
-    "value": 0.30138961294908406,
-    "detail": "$1.8bn private AI investment in 2025"
-   },
-   {
-    "iso3": "CAN",
-    "name": "🇨🇦 Canada",
-    "value": 0.18449072890439588,
-    "detail": "$4.3bn private AI investment in 2025"
-   },
-   {
-    "iso3": "BEL",
-    "name": "🇧🇪 Belgium",
-    "value": 0.16541081654827106,
-    "detail": "$1.2bn private AI investment in 2025"
-   },
-   {
-    "iso3": "SAU",
-    "name": "🇸🇦 Saudi Arabia",
-    "value": 0.1589734315456753,
-    "detail": "$2.0bn private AI investment in 2025"
-   },
-   {
-    "iso3": "GBR",
-    "name": "🇬🇧 United Kingdom",
-    "value": 0.14740464607749457,
-    "detail": "$5.9bn private AI investment in 2025"
-   },
-   {
-    "iso3": "SWE",
-    "name": "🇸🇪 Sweden",
-    "value": 0.14499281569282602,
-    "detail": "$1.0bn private AI investment in 2025"
-   },
-   {
-    "iso3": "AUS",
-    "name": "🇦🇺 Australia",
-    "value": 0.1401152889077933,
-    "detail": "$2.5bn private AI investment in 2025"
-   },
-   {
-    "iso3": "FRA",
-    "name": "🇫🇷 France",
-    "value": 0.12951844372213092,
-    "detail": "$4.4bn private AI investment in 2025"
-   },
-   {
-    "iso3": "IND",
-    "name": "🇮🇳 India",
-    "value": 0.10338550586501478,
-    "detail": "$4.1bn private AI investment in 2025"
-   },
-   {
-    "iso3": "KOR",
-    "name": "🇰🇷 South Korea",
-    "value": 0.09506642828226435,
-    "detail": "$1.8bn private AI investment in 2025"
-   },
-   {
-    "iso3": "DEU",
-    "name": "🇩🇪 Germany",
-    "value": 0.07701562779170233,
-    "detail": "$3.9bn private AI investment in 2025"
+    "value": 285.88,
+    "detail": "Private AI investment in 2025 (0.93% of GDP)"
    },
    {
     "iso3": "CHN",
     "name": "🇨🇳 China",
-    "value": 0.06364742502064376,
-    "detail": "$12.4bn private AI investment in 2025"
+    "value": 12.41,
+    "detail": "Private AI investment in 2025 (0.06% of GDP)"
+   },
+   {
+    "iso3": "GBR",
+    "name": "🇬🇧 United Kingdom",
+    "value": 5.9,
+    "detail": "Private AI investment in 2025 (0.15% of GDP)"
+   },
+   {
+    "iso3": "FRA",
+    "name": "🇫🇷 France",
+    "value": 4.36,
+    "detail": "Private AI investment in 2025 (0.13% of GDP)"
+   },
+   {
+    "iso3": "CAN",
+    "name": "🇨🇦 Canada",
+    "value": 4.28,
+    "detail": "Private AI investment in 2025 (0.18% of GDP)"
+   },
+   {
+    "iso3": "IND",
+    "name": "🇮🇳 India",
+    "value": 4.09,
+    "detail": "Private AI investment in 2025 (0.10% of GDP)"
+   },
+   {
+    "iso3": "DEU",
+    "name": "🇩🇪 Germany",
+    "value": 3.89,
+    "detail": "Private AI investment in 2025 (0.08% of GDP)"
+   },
+   {
+    "iso3": "ISR",
+    "name": "🇮🇱 Israel",
+    "value": 3.58,
+    "detail": "Private AI investment in 2025 (0.59% of GDP)"
+   },
+   {
+    "iso3": "AUS",
+    "name": "🇦🇺 Australia",
+    "value": 2.52,
+    "detail": "Private AI investment in 2025 (0.14% of GDP)"
+   },
+   {
+    "iso3": "SAU",
+    "name": "🇸🇦 Saudi Arabia",
+    "value": 2.03,
+    "detail": "Private AI investment in 2025 (0.16% of GDP)"
+   },
+   {
+    "iso3": "SGP",
+    "name": "🇸🇬 Singapore",
+    "value": 1.82,
+    "detail": "Private AI investment in 2025 (0.30% of GDP)"
+   },
+   {
+    "iso3": "KOR",
+    "name": "🇰🇷 South Korea",
+    "value": 1.78,
+    "detail": "Private AI investment in 2025 (0.10% of GDP)"
+   },
+   {
+    "iso3": "BEL",
+    "name": "🇧🇪 Belgium",
+    "value": 1.2,
+    "detail": "Private AI investment in 2025 (0.17% of GDP)"
    },
    {
     "iso3": "JPN",
     "name": "🇯🇵 Japan",
-    "value": 0.02502726506344347,
-    "detail": "$1.1bn private AI investment in 2025"
+    "value": 1.11,
+    "detail": "Private AI investment in 2025 (0.03% of GDP)"
+   },
+   {
+    "iso3": "SWE",
+    "name": "🇸🇪 Sweden",
+    "value": 0.97,
+    "detail": "Private AI investment in 2025 (0.14% of GDP)"
    }
   ]
  },

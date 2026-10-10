@@ -1274,6 +1274,8 @@ FLAG_FONT_FAMILY = '"Noto Color Emoji", "Open Sans", verdana, arial, sans-serif'
 def _fmt_indicator(value: float, unit: str) -> str:
     if unit.startswith("%"):
         return f"{value:.2f}%" if value >= 1 else f"{value:.3f}%"
+    if unit == "USD bn":
+        return f"${value:,.1f}bn"
     return f"{value:,.0f}"
 
 
@@ -1283,6 +1285,8 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
     rows = ind.get("rows", [])[:top_n][::-1]  # largest on top
     unit = ind.get("unit", "")
     low  = [r.get("confidence") == "low" for r in rows]
+    # The formatted value already carries "%" or "$...bn"; only add what's left.
+    suffix = unit[1:] if unit.startswith("%") else ("" if unit == "USD bn" else " " + unit)
 
     fig = go.Figure(go.Bar(
         x=[r["value"] for r in rows],
@@ -1293,7 +1297,7 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
         textposition="outside",
         textfont=dict(size=10, color="#adb5bd"),
         customdata=[r.get("detail", "") for r in rows],
-        hovertemplate="<b>%{y}</b><br>%{text} " + unit + "<br>%{customdata}<extra></extra>",
+        hovertemplate="<b>%{y}</b><br>%{text}" + suffix + "<br>%{customdata}<extra></extra>",
         cliponaxis=False,
     ))
     fig.update_layout(

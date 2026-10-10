@@ -149,11 +149,11 @@ Le code est backward-compatible (fallback automatique dans `save_to_supabase` et
 
 ## « Who really invests in AI? » — indicateurs pays (domaine IA)
 
-Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, **pour le domaine IA uniquement**, par 4 onglets (textes en anglais) à droite du globe. Chaque classement est un top 10 rapporté au PIB, pour voir les pays qui font un effort proportionnel (« put their money where their mouth is ») :
+Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, **pour le domaine IA uniquement**, par 4 onglets (textes en anglais) à droite du globe. Chaque classement est un top 10 ; tous sauf l'investissement privé sont rapportés au PIB, pour voir les pays qui font un effort proportionnel (« put their money where their mouth is ») :
 
 | Onglet | Mesure | Source | Mise à jour |
 |---|---|---|---|
-| 💰 Investment | Investissement privé IA / PIB | Stanford AI Index (Quid), top 15 pays publiés | Manuelle, 1×/an (avril) |
+| 💰 Investment | Investissement privé IA, en milliards de $ (valeur absolue) | Stanford AI Index (Quid), top 15 pays publiés | Manuelle, 1×/an (avril) |
 | 📦 Hardware | Importations nettes HS 847150 + 847330 / PIB | UN Comtrade (API publique) | Auto, mensuelle |
 | 🖥️ Supercomputers | Rmax des systèmes TOP500 accélérés (GPU) des sites Research/Academic/Government, PFlop/s par 1 000 Md$ de PIB | TOP500 (scraping) | Auto (listes de juin et novembre) |
 | 📢 Announcements | Budgets IA **publics** annoncés, étalés sur la durée du plan / PIB | Documents officiels, une URL par chiffre | Manuelle, tous les 3 mois |

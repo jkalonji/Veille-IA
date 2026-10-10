@@ -1,9 +1,9 @@
 """
 Country-level AI investment indicators ("Who really invests in AI?").
 
-Builds four rankings, each normalised by GDP so that small countries that
-commit heavily stand out as much as large ones:
-  - private_investment : private AI investment (Stanford AI Index, hand-entered)
+Builds four rankings. All but private investment are normalised by GDP so
+that small countries that commit heavily stand out as much as large ones:
+  - private_investment : private AI investment in USD (Stanford AI Index, hand-entered)
   - hardware_imports   : net imports of servers + computer parts (UN Comtrade)
   - public_compute     : GPU-accelerated public supercomputers (TOP500)
   - announcements      : public AI budgets announced per year (hand-entered)
@@ -127,17 +127,16 @@ def build_private_investment(manual: dict, gdp: dict, countries: dict) -> dict:
     rows = []
     for iso3, usd_bn in m["values_usd_bn"].items():
         g = gdp.get(iso3)
-        if not g:
-            continue
+        share = f" ({usd_bn * 1e9 / g['value'] * 100:.2f}% of GDP)" if g else ""
         rows.append({
             "iso3": iso3,
             "name": _country_label(iso3, countries),
-            "value": usd_bn * 1e9 / g["value"] * 100,
-            "detail": f"${usd_bn:,.1f}bn private AI investment in {m['year']}",
+            "value": usd_bn,
+            "detail": f"Private AI investment in {m['year']}{share}",
         })
     return {
         "title": "Private AI investment",
-        "unit": "% of GDP",
+        "unit": "USD bn",
         "source": m["source"],
         "source_url": m["source_url"],
         "as_of": str(m["year"]),
