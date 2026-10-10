@@ -20,6 +20,8 @@ from groq import AsyncGroq
 import requests
 from supabase import create_client
 
+from country_indicators import load_indicators, stale_reason
+
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
@@ -1457,6 +1459,29 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
     for domain, domain_articles in by_domain.items():
         _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url)
 
+
+def send_data_reminders() -> None:
+    """Weekly (Mondays) Telegram nudge when the 'Who really invests in AI?'
+    dashboard data needs a manual update or its monthly refresh broke."""
+    if datetime.now(timezone.utc).weekday() != 0:
+        return
+    indicators = load_indicators()
+    lines = []
+    for key, ind in indicators.items():
+        if not isinstance(ind, dict):
+            continue
+        reason = stale_reason(ind)
+        if reason:
+            src = f' — <a href="{ind["source_url"]}">{ind.get("source", "")}</a>' if ind.get("source_url") else ""
+            lines.append(f"• <b>{ind.get('title', key)}</b> : {reason}{src}")
+    if not lines:
+        return
+    _post_telegram(
+        os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+        "🔄 <b>Données « Who really invests in AI? » à mettre à jour</b>\n" + "\n".join(lines)
+        + "\n\nÉditer <code>data/country_indicators_manual.json</code> puis lancer <code>python country_indicators.py</code>.",
+    )
+
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
@@ -1509,6 +1534,7 @@ async def main():
     logging.info("Sending articles to Telegram...")
     dashboard_url = os.environ.get("DASHBOARD_URL", "")
     send_telegram(classified, dashboard_url=dashboard_url)
+    send_data_reminders()
 
     logging.info("AI Radar pipeline complete.")
 

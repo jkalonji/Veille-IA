@@ -1,0 +1,54 @@
+{
+  "_comment": "Hand-curated inputs for the 'Who really invests in AI?' charts. Edit, bump 'updated' and 'next_review', then run: python country_indicators.py",
+  "private_investment": {
+    "source": "Stanford AI Index 2026 (Quid data)",
+    "source_url": "https://hai.stanford.edu/ai-index/2026-ai-index-report/economy",
+    "year": 2025,
+    "updated": "2026-10-11",
+    "next_review": "2027-04-30",
+    "note": "Only the top 15 countries by absolute amount are published, so the GDP-share ranking is computed among those 15.",
+    "values_usd_bn": {
+      "USA": 285.88, "CHN": 12.41, "GBR": 5.90, "FRA": 4.36, "CAN": 4.28,
+      "IND": 4.09, "DEU": 3.89, "ISR": 3.58, "AUS": 2.52, "SAU": 2.03,
+      "SGP": 1.82, "KOR": 1.78, "BEL": 1.20, "JPN": 1.11, "SWE": 0.97
+    }
+  },
+  "announcements": {
+    "source": "Official national AI plans and budgets (public money only)",
+    "updated": "2026-10-11",
+    "next_review": "2027-01-11",
+    "note": "Public money announced for AI, spread evenly over the plan's duration. Excluded: Saudi Project Transcendence and UAE MGX (press-reported targets, mixed public/private capital), private pledges such as France's EUR 109bn or Stargate.",
+    "entries": [
+      {"iso3": "USA", "label": "Federal non-defense AI R&D, FY2025 request (NITRD)", "amount": 3316.1e6, "currency": "USD", "years": 1, "period": "FY2025", "confidence": "high",
+       "source_url": "https://www.nitrd.gov/ai-rd-investments/", "note": "Excludes defense AI (DoD requested $13.4bn for AI & autonomy in FY2026)."},
+      {"iso3": "KOR", "label": "Government AI budget 2026 (passed)", "amount": 9.9334e12, "currency": "KRW", "years": 1, "period": "2026", "confidence": "medium",
+       "source_url": "https://en.bizhankook.com/articles/30882.html", "note": ""},
+      {"iso3": "IND", "label": "IndiaAI Mission", "amount": 10371.92e7, "currency": "INR", "years": 5, "period": "2024-2029", "confidence": "high",
+       "source_url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2012355", "note": "Rs 10,371.92 crore over five years."},
+      {"iso3": "GBR", "label": "Spending Review 2025 - AI Opportunities Action Plan", "amount": 2e9, "currency": "GBP", "years": 4, "period": "2026/27-2029/30", "confidence": "medium",
+       "source_url": "https://www.osborneclarke.com/insights/government-invest-over-ps2-billion-uks-ai-ecosystem", "note": ""},
+      {"iso3": "FRA", "label": "National AI strategy, phase 3 (France 2030)", "amount": 2.5e9, "currency": "EUR", "years": 6, "period": "2025-2030", "confidence": "low",
+       "source_url": "https://www.economie.gouv.fr/la-strategie-nationale-pour-lintelligence-artificielle", "note": "Duration not stated by the source; 2025-2030 assumed (consistent with the EUR 400M announced for 2025)."},
+      {"iso3": "DEU", "label": "Federal research ministry (BMFTR) AI funding, current legislature", "amount": 1.6e9, "currency": "EUR", "years": 5, "period": "2025-2029", "confidence": "medium",
+       "source_url": "https://www.oecd.org/en/publications/progress-in-implementing-the-european-union-coordinated-plan-on-artificial-intelligence-volume-1_533c355d-en/full-report/set-enabling-conditions-for-ai-development-and-uptake-in-the-european-union_1590bb01.html", "note": "Research ministry only; other ministries not included."},
+      {"iso3": "JPN", "label": "METI AI and semiconductor budget FY2026", "amount": 1.239e12, "currency": "JPY", "years": 1, "period": "FY2026", "confidence": "low",
+       "source_url": "https://www.eenewseurope.com/en/meti-budget-hike-japan-chip-ai-fy-2026/", "note": "Mixes AI and chips (includes JPY 150bn for semiconductor firms such as Rapidus)."},
+      {"iso3": "CAN", "label": "Canadian Sovereign AI Compute Strategy", "amount": 2e9, "currency": "CAD", "years": 5, "period": "2024-2029", "confidence": "high",
+       "source_url": "https://ised-isde.canada.ca/site/ised/en/canadian-sovereign-ai-compute-strategy", "note": ""},
+      {"iso3": "SGP", "label": "National AI R&D Plan (NAIRD)", "amount": 1e9, "currency": "SGD", "years": 5, "period": "2025-2030", "confidence": "high",
+       "source_url": "https://mothership.sg/2026/01/singapore-1-billion-ai/", "note": "'More than' S$1bn."},
+      {"iso3": "ITA", "label": "CDP Venture Capital AI fund", "amount": 1e9, "currency": "EUR", "years": 5, "period": "2024-2029", "confidence": "medium",
+       "source_url": "https://dig.watch/updates/italys-cdp-to-invest-e1-billion-in-ai-and-cybersecurity", "note": "State lender CDP; covers AI and cybersecurity."},
+      {"iso3": "ESP", "label": "AI Strategy 2024", "amount": 1.5e9, "currency": "EUR", "years": 2, "period": "2024-2025", "confidence": "high",
+       "source_url": "https://www.lamoncloa.gob.es/lang/en/gobierno/councilministers/paginas/2024/20240514-council-press-conference.aspx", "note": ""},
+      {"iso3": "BRA", "label": "Brazilian AI Plan (PBIA)", "amount": 23e9, "currency": "BRL", "years": 4, "period": "2024-2028", "confidence": "medium",
+       "source_url": "https://digitalpolicyalert.org/event/22006-launched-artificial-intelligence-plan-pbia-2024-2028-including-publishing-guides-on-ai-and-creating-the-national-center-for-algorithmic-transparency-and-trustworthy-ai", "note": "Indicative envelope, not a fixed appropriation."},
+      {"iso3": "CHN", "label": "National AI Industry Investment Fund", "amount": 60.06e9, "currency": "CNY", "years": 5, "period": "2025-", "confidence": "low",
+       "source_url": "https://globaltradealert.org/intervention/143238-china-launch-of-the-cny-60-billion-ai-industry-investment-fund", "note": "Fund duration not published; spread over 5 years by assumption. Local-government AI funds not included."}
+    ]
+  },
+  "gdp_overrides_usd": {
+    "_comment": "Economies missing from the World Bank API.",
+    "TWN": {"value": 781e9, "year": 2024, "name": "Taiwan", "iso2": "TW", "source": "IMF World Economic Outlook"}
+  }
+}

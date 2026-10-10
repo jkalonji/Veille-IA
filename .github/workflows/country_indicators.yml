@@ -1,0 +1,47 @@
+name: AI Radar - Country Indicators
+
+on:
+  schedule:
+    # 1st of each month, 05:00 UTC — before the daily collection run
+    - cron: '0 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # A failed source keeps its previous data and is flagged in the file
+      # (dashboard badge + Monday Telegram reminder), so commit either way.
+      - name: Refresh indicators
+        id: refresh
+        continue-on-error: true
+        run: python country_indicators.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/country_indicators.json
+          git diff --cached --quiet || git commit -m "chore(data): refresh country indicators $(date -u +%F)"
+          git push
+
+      - name: Fail if a source could not be refreshed
+        if: steps.refresh.outcome == 'failure'
+        run: exit 1

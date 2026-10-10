@@ -1,0 +1,1031 @@
+{
+ "generated_at": "2026-10-10T22:37:07+00:00",
+ "private_investment": {
+  "title": "Private AI investment",
+  "unit": "% of GDP",
+  "source": "Stanford AI Index 2026 (Quid data)",
+  "source_url": "https://hai.stanford.edu/ai-index/2026-ai-index-report/economy",
+  "as_of": "2025",
+  "updated": "2026-10-11",
+  "next_review": "2027-04-30",
+  "auto": false,
+  "note": "Only the top 15 countries by absolute amount are published, so the GDP-share ranking is computed among those 15.",
+  "rows": [
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 United States",
+    "value": 0.9290958312885728,
+    "detail": "$285.9bn private AI investment in 2025"
+   },
+   {
+    "iso3": "ISR",
+    "name": "🇮🇱 Israel",
+    "value": 0.5861378309266709,
+    "detail": "$3.6bn private AI investment in 2025"
+   },
+   {
+    "iso3": "SGP",
+    "name": "🇸🇬 Singapore",
+    "value": 0.30138961294908406,
+    "detail": "$1.8bn private AI investment in 2025"
+   },
+   {
+    "iso3": "CAN",
+    "name": "🇨🇦 Canada",
+    "value": 0.18449072890439588,
+    "detail": "$4.3bn private AI investment in 2025"
+   },
+   {
+    "iso3": "BEL",
+    "name": "🇧🇪 Belgium",
+    "value": 0.16541081654827106,
+    "detail": "$1.2bn private AI investment in 2025"
+   },
+   {
+    "iso3": "SAU",
+    "name": "🇸🇦 Saudi Arabia",
+    "value": 0.1589734315456753,
+    "detail": "$2.0bn private AI investment in 2025"
+   },
+   {
+    "iso3": "GBR",
+    "name": "🇬🇧 United Kingdom",
+    "value": 0.14740464607749457,
+    "detail": "$5.9bn private AI investment in 2025"
+   },
+   {
+    "iso3": "SWE",
+    "name": "🇸🇪 Sweden",
+    "value": 0.14499281569282602,
+    "detail": "$1.0bn private AI investment in 2025"
+   },
+   {
+    "iso3": "AUS",
+    "name": "🇦🇺 Australia",
+    "value": 0.1401152889077933,
+    "detail": "$2.5bn private AI investment in 2025"
+   },
+   {
+    "iso3": "FRA",
+    "name": "🇫🇷 France",
+    "value": 0.12951844372213092,
+    "detail": "$4.4bn private AI investment in 2025"
+   },
+   {
+    "iso3": "IND",
+    "name": "🇮🇳 India",
+    "value": 0.10338550586501478,
+    "detail": "$4.1bn private AI investment in 2025"
+   },
+   {
+    "iso3": "KOR",
+    "name": "🇰🇷 South Korea",
+    "value": 0.09506642828226435,
+    "detail": "$1.8bn private AI investment in 2025"
+   },
+   {
+    "iso3": "DEU",
+    "name": "🇩🇪 Germany",
+    "value": 0.07701562779170233,
+    "detail": "$3.9bn private AI investment in 2025"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 China",
+    "value": 0.06364742502064376,
+    "detail": "$12.4bn private AI investment in 2025"
+   },
+   {
+    "iso3": "JPN",
+    "name": "🇯🇵 Japan",
+    "value": 0.02502726506344347,
+    "detail": "$1.1bn private AI investment in 2025"
+   }
+  ]
+ },
+ "hardware_imports": {
+  "title": "Net imports of servers & GPU parts",
+  "unit": "% of GDP",
+  "source": "UN Comtrade (HS 847150 + 847330, imports minus exports)",
+  "source_url": "https://comtradeplus.un.org/",
+  "as_of": "2025",
+  "updated": "2026-10-11",
+  "auto": true,
+  "note": "Includes non-AI servers. Countries that do not report customs data (e.g. UAE) are missing.",
+  "rows": [
+   {
+    "iso3": "FIN",
+    "name": "🇫🇮 Finland",
+    "value": 0.7898376009601545,
+    "detail": "$2.5bn net imports ($2.6bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "MYS",
+    "name": "🇲🇾 Malaysia",
+    "value": 0.6918384630867456,
+    "detail": "$3.3bn net imports ($20.8bn in, $17.5bn out) in 2025"
+   },
+   {
+    "iso3": "IRL",
+    "name": "🇮🇪 Ireland",
+    "value": 0.6288524526207466,
+    "detail": "$4.5bn net imports ($9.0bn in, $4.4bn out) in 2025"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 United States",
+    "value": 0.6109038614351131,
+    "detail": "$188.0bn net imports ($253.9bn in, $66.0bn out) in 2025"
+   },
+   {
+    "iso3": "NOR",
+    "name": "🇳🇴 Norway",
+    "value": 0.3413621363810181,
+    "detail": "$1.8bn net imports ($2.1bn in, $0.3bn out) in 2025"
+   },
+   {
+    "iso3": "AUS",
+    "name": "🇦🇺 Australia",
+    "value": 0.28201176023740787,
+    "detail": "$5.1bn net imports ($5.5bn in, $0.4bn out) in 2025"
+   },
+   {
+    "iso3": "NLD",
+    "name": "🇳🇱 Netherlands",
+    "value": 0.27444438625345097,
+    "detail": "$3.7bn net imports ($13.2bn in, $9.6bn out) in 2025"
+   },
+   {
+    "iso3": "SWE",
+    "name": "🇸🇪 Sweden",
+    "value": 0.23863276525424088,
+    "detail": "$1.6bn net imports ($2.2bn in, $0.6bn out) in 2025"
+   },
+   {
+    "iso3": "OMN",
+    "name": "🇴🇲 Oman",
+    "value": 0.23042234031374412,
+    "detail": "$0.3bn net imports ($0.3bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ZAF",
+    "name": "🇿🇦 South Africa",
+    "value": 0.2160673039253361,
+    "detail": "$0.9bn net imports ($1.0bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "JPN",
+    "name": "🇯🇵 Japan",
+    "value": 0.19911530839112146,
+    "detail": "$8.8bn net imports ($10.0bn in, $1.2bn out) in 2025"
+   },
+   {
+    "iso3": "KAZ",
+    "name": "🇰🇿 Kazakhstan",
+    "value": 0.19092644576381865,
+    "detail": "$0.6bn net imports ($0.6bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "CAN",
+    "name": "🇨🇦 Canada",
+    "value": 0.1862515047231841,
+    "detail": "$4.3bn net imports ($5.5bn in, $1.2bn out) in 2025"
+   },
+   {
+    "iso3": "IND",
+    "name": "🇮🇳 India",
+    "value": 0.18601592862113628,
+    "detail": "$7.4bn net imports ($7.9bn in, $0.5bn out) in 2025"
+   },
+   {
+    "iso3": "ISR",
+    "name": "🇮🇱 Israel",
+    "value": 0.1772893389363017,
+    "detail": "$1.1bn net imports ($1.6bn in, $0.5bn out) in 2025"
+   },
+   {
+    "iso3": "IDN",
+    "name": "🇮🇩 Indonesia",
+    "value": 0.17368890886846486,
+    "detail": "$2.5bn net imports ($2.8bn in, $0.3bn out) in 2025"
+   },
+   {
+    "iso3": "POL",
+    "name": "🇵🇱 Poland",
+    "value": 0.1530570735747918,
+    "detail": "$1.6bn net imports ($3.2bn in, $1.6bn out) in 2025"
+   },
+   {
+    "iso3": "MAC",
+    "name": "🇲🇴 Macao SAR, China",
+    "value": 0.15014473151811403,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "GBR",
+    "name": "🇬🇧 United Kingdom",
+    "value": 0.1422421423402571,
+    "detail": "$5.7bn net imports ($8.8bn in, $3.1bn out) in 2025"
+   },
+   {
+    "iso3": "DNK",
+    "name": "🇩🇰 Denmark",
+    "value": 0.13997079969150028,
+    "detail": "$0.6bn net imports ($2.2bn in, $1.5bn out) in 2025"
+   },
+   {
+    "iso3": "CHL",
+    "name": "🇨🇱 Chile",
+    "value": 0.113806318828535,
+    "detail": "$0.4bn net imports ($0.4bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "CHE",
+    "name": "🇨🇭 Switzerland",
+    "value": 0.10726459447721597,
+    "detail": "$1.1bn net imports ($1.5bn in, $0.3bn out) in 2025"
+   },
+   {
+    "iso3": "ESP",
+    "name": "🇪🇸 Spain",
+    "value": 0.10133178064997081,
+    "detail": "$1.9bn net imports ($2.2bn in, $0.3bn out) in 2025"
+   },
+   {
+    "iso3": "LUX",
+    "name": "🇱🇺 Luxembourg",
+    "value": 0.10080682474505323,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "NZL",
+    "name": "🇳🇿 New Zealand",
+    "value": 0.09573164586582514,
+    "detail": "$0.3bn net imports ($0.3bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "SAU",
+    "name": "🇸🇦 Saudi Arabia",
+    "value": 0.09279330245282716,
+    "detail": "$1.2bn net imports ($1.2bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "HRV",
+    "name": "🇭🇷 Croatia",
+    "value": 0.09132482545088833,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "BEL",
+    "name": "🇧🇪 Belgium",
+    "value": 0.09013563927620304,
+    "detail": "$0.7bn net imports ($1.2bn in, $0.5bn out) in 2025"
+   },
+   {
+    "iso3": "AUT",
+    "name": "🇦🇹 Austria",
+    "value": 0.08885039691988153,
+    "detail": "$0.5bn net imports ($0.8bn in, $0.3bn out) in 2025"
+   },
+   {
+    "iso3": "PHL",
+    "name": "🇵🇭 Philippines",
+    "value": 0.08332736393717698,
+    "detail": "$0.4bn net imports ($1.8bn in, $1.4bn out) in 2025"
+   },
+   {
+    "iso3": "BGR",
+    "name": "🇧🇬 Bulgaria",
+    "value": 0.08137565816178148,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "PRT",
+    "name": "🇵🇹 Portugal",
+    "value": 0.08029305720141289,
+    "detail": "$0.3bn net imports ($0.4bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "SVK",
+    "name": "🇸🇰 Slovakia",
+    "value": 0.07819179906882956,
+    "detail": "$0.1bn net imports ($0.3bn in, $0.2bn out) in 2025"
+   },
+   {
+    "iso3": "KWT",
+    "name": "🇰🇼 Kuwait",
+    "value": 0.07785517349286017,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "BRA",
+    "name": "🇧🇷 Brazil",
+    "value": 0.0765477208498273,
+    "detail": "$1.7bn net imports ($1.8bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "MAR",
+    "name": "🇲🇦 Morocco",
+    "value": 0.06954061041743378,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "GTM",
+    "name": "🇬🇹 Guatemala",
+    "value": 0.06405774443187247,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "UGA",
+    "name": "🇺🇬 Uganda",
+    "value": 0.06273069089588489,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "AZE",
+    "name": "🇦🇿 Azerbaijan",
+    "value": 0.06144420269416086,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ECU",
+    "name": "🇪🇨 Ecuador",
+    "value": 0.06131153496405623,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "TUR",
+    "name": "🇹🇷 Turkey",
+    "value": 0.05808432985182948,
+    "detail": "$0.9bn net imports ($1.0bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "SVN",
+    "name": "🇸🇮 Slovenia",
+    "value": 0.05612005085059,
+    "detail": "$0.0bn net imports ($0.1bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "KEN",
+    "name": "🇰🇪 Kenya",
+    "value": 0.05549430336921486,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "EGY",
+    "name": "🇪🇬 Egypt",
+    "value": 0.05523137551185287,
+    "detail": "$0.2bn net imports ($0.2bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "FRA",
+    "name": "🇫🇷 France",
+    "value": 0.054329154564760174,
+    "detail": "$1.8bn net imports ($4.0bn in, $2.1bn out) in 2025"
+   },
+   {
+    "iso3": "LTU",
+    "name": "🇱🇹 Lithuania",
+    "value": 0.05404538860375592,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "DEU",
+    "name": "🇩🇪 Germany",
+    "value": 0.05262412926030225,
+    "detail": "$2.7bn net imports ($11.5bn in, $8.8bn out) in 2025"
+   },
+   {
+    "iso3": "URY",
+    "name": "🇺🇾 Uruguay",
+    "value": 0.05176031565781097,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ROU",
+    "name": "🇷🇴 Romania",
+    "value": 0.051251340078030234,
+    "detail": "$0.2bn net imports ($0.4bn in, $0.2bn out) in 2025"
+   },
+   {
+    "iso3": "DOM",
+    "name": "🇩🇴 Dominican Republic",
+    "value": 0.04915056005857845,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ITA",
+    "name": "🇮🇹 Italy",
+    "value": 0.04757556569302658,
+    "detail": "$1.2bn net imports ($1.9bn in, $0.7bn out) in 2025"
+   },
+   {
+    "iso3": "SRB",
+    "name": "🇷🇸 Serbia",
+    "value": 0.047295340349399834,
+    "detail": "$0.0bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "GRC",
+    "name": "🇬🇷 Greece",
+    "value": 0.046230004124820305,
+    "detail": "$0.1bn net imports ($0.2bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "COL",
+    "name": "🇨🇴 Colombia",
+    "value": 0.04604400240086345,
+    "detail": "$0.2bn net imports ($0.2bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ARG",
+    "name": "🇦🇷 Argentina",
+    "value": 0.045715278128007956,
+    "detail": "$0.3bn net imports ($0.3bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "PAN",
+    "name": "🇵🇦 Panama",
+    "value": 0.041660830000464284,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "PAK",
+    "name": "🇵🇰 Pakistan",
+    "value": 0.03240506860938632,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "LKA",
+    "name": "🇱🇰 Sri Lanka",
+    "value": 0.030929847866254565,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "TZA",
+    "name": "🇹🇿 Tanzania",
+    "value": 0.03039566012118038,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "AGO",
+    "name": "🇦🇴 Angola",
+    "value": 0.027339944883582774,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "BOL",
+    "name": "🇧🇴 Bolivia",
+    "value": 0.027051851079020476,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "CIV",
+    "name": "🇨🇮 Cote d'Ivoire",
+    "value": 0.019047838942997997,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "NGA",
+    "name": "🇳🇬 Nigeria",
+    "value": 0.016008026033289748,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "GHA",
+    "name": "🇬🇭 Ghana",
+    "value": 0.009292997620564378,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "MMR",
+    "name": "🇲🇲 Myanmar",
+    "value": 0.0033536404937371768,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   }
+  ]
+ },
+ "public_compute": {
+  "title": "Public AI supercomputers",
+  "unit": "PFlop/s per $1tn GDP",
+  "source": "TOP500 list 2026/06 (GPU-accelerated, research/academic/government sites)",
+  "source_url": "https://top500.org/lists/top500/2026/06/",
+  "as_of": "2026/06",
+  "updated": "2026-10-11",
+  "auto": true,
+  "note": "HPL (FP64) performance; private clusters are rarely listed in TOP500.",
+  "rows": [
+   {
+    "iso3": "FIN",
+    "name": "🇫🇮 Finland",
+    "value": 1271.7663471927292,
+    "detail": "403 PFlop/s across 2 systems (LUMI, Roihu-G)"
+   },
+   {
+    "iso3": "CHE",
+    "name": "🇨🇭 Switzerland",
+    "value": 428.5550421899957,
+    "detail": "447 PFlop/s across 2 systems (Alps, Kuma)"
+   },
+   {
+    "iso3": "GRC",
+    "name": "🇬🇷 Greece",
+    "value": 305.3426722162314,
+    "detail": "86 PFlop/s across 1 systems (DAEDALUS)"
+   },
+   {
+    "iso3": "DEU",
+    "name": "🇩🇪 Germany",
+    "value": 252.1499573245094,
+    "detail": "1,274 PFlop/s across 21 systems (JUPITER Booster, JUWELS Booster Module, Helma…)"
+   },
+   {
+    "iso3": "SGP",
+    "name": "🇸🇬 Singapore",
+    "value": 178.48226639369386,
+    "detail": "108 PFlop/s across 5 systems (ASPIRE 2B (GPU Partition), Hopper NUS, ASPIRE 2A+…)"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 United States",
+    "value": 161.9430803680244,
+    "detail": "4,983 PFlop/s across 45 systems (El Capitan, Frontier, Aurora…)"
+   },
+   {
+    "iso3": "SVK",
+    "name": "🇸🇰 Slovakia",
+    "value": 156.02141735261748,
+    "detail": "24 PFlop/s across 2 systems (PERUN, PERUN)"
+   },
+   {
+    "iso3": "DNK",
+    "name": "🇩🇰 Denmark",
+    "value": 143.9700793302713,
+    "detail": "67 PFlop/s across 1 systems (Gefion)"
+   },
+   {
+    "iso3": "TWN",
+    "name": "🇹🇼 Taiwan",
+    "value": 139.28297055057618,
+    "detail": "109 PFlop/s across 4 systems (Nano 4, Nano 5, Taiwania 2…)"
+   },
+   {
+    "iso3": "SWE",
+    "name": "🇸🇪 Sweden",
+    "value": 138.4008742783377,
+    "detail": "93 PFlop/s across 5 systems (Arrhenius GPU, Dardel GPU, Berzelius3…)"
+   },
+   {
+    "iso3": "ITA",
+    "name": "🇮🇹 Italy",
+    "value": 110.13275621710781,
+    "detail": "281 PFlop/s across 5 systems (Leonardo, PITAGORA, Peano…)"
+   },
+   {
+    "iso3": "LUX",
+    "name": "🇱🇺 Luxembourg",
+    "value": 103.9959047453152,
+    "detail": "11 PFlop/s across 1 systems (MeluXina - Accelerator Module)"
+   },
+   {
+    "iso3": "SAU",
+    "name": "🇸🇦 Saudi Arabia",
+    "value": 96.16717927984695,
+    "detail": "123 PFlop/s across 1 systems (Shaheen III - GPU)"
+   },
+   {
+    "iso3": "ESP",
+    "name": "🇪🇸 Spain",
+    "value": 91.95084877336879,
+    "detail": "175 PFlop/s across 1 systems (MareNostrum 5 ACC)"
+   },
+   {
+    "iso3": "GBR",
+    "name": "🇬🇧 United Kingdom",
+    "value": 85.58463654289244,
+    "detail": "343 PFlop/s across 7 systems (Isambard-AI phase 2, Sunrise, Zenith…)"
+   },
+   {
+    "iso3": "AUT",
+    "name": "🇦🇹 Austria",
+    "value": 77.84699528497609,
+    "detail": "45 PFlop/s across 2 systems (MUSICA Phase 1, Phase 3)"
+   },
+   {
+    "iso3": "JPN",
+    "name": "🇯🇵 Japan",
+    "value": 72.25213594216629,
+    "detail": "320 PFlop/s across 11 systems (ABCI 3.0, ABCI-Q, TSUBAME4.0…)"
+   },
+   {
+    "iso3": "KAZ",
+    "name": "🇰🇿 Kazakhstan",
+    "value": 66.87582567694363,
+    "detail": "20 PFlop/s across 1 systems (Alem.Cloud)"
+   },
+   {
+    "iso3": "FRA",
+    "name": "🇫🇷 France",
+    "value": 62.83723945078522,
+    "detail": "212 PFlop/s across 7 systems (CEA-HE, Jean Zay H100, Adastra…)"
+   },
+   {
+    "iso3": "ARE",
+    "name": "🇦🇪 United Arab Emirates",
+    "value": 44.48468492100601,
+    "detail": "25 PFlop/s across 2 systems (TII-Oryx-HPC, Dhabi Supercomputer)"
+   },
+   {
+    "iso3": "POL",
+    "name": "🇵🇱 Poland",
+    "value": 41.50684791121905,
+    "detail": "43 PFlop/s across 4 systems (Helios GPU, Lem, Kraken-Fregata…)"
+   },
+   {
+    "iso3": "SVN",
+    "name": "🇸🇮 Slovenia",
+    "value": 38.921153349322346,
+    "detail": "3 PFlop/s across 1 systems (VEGA HPC GPU)"
+   },
+   {
+    "iso3": "AUS",
+    "name": "🇦🇺 Australia",
+    "value": 30.703040688445817,
+    "detail": "55 PFlop/s across 4 systems (Setonix – GPU, Virga, Gadi…)"
+   },
+   {
+    "iso3": "UZB",
+    "name": "🇺🇿 Uzbekistan",
+    "value": 30.26426872426098,
+    "detail": "4 PFlop/s across 1 systems (digital.uz)"
+   },
+   {
+    "iso3": "NOR",
+    "name": "🇳🇴 Norway",
+    "value": 24.870198316384023,
+    "detail": "13 PFlop/s across 1 systems (Olivia (GPU))"
+   },
+   {
+    "iso3": "CAN",
+    "name": "🇨🇦 Canada",
+    "value": 19.690505832600003,
+    "detail": "46 PFlop/s across 5 systems (Fir (GPU), Trillium-GPU, Rorqual (GPU)…)"
+   },
+   {
+    "iso3": "CZE",
+    "name": "🇨🇿 Czechia",
+    "value": 17.262236730831905,
+    "detail": "7 PFlop/s across 1 systems (Karolina, GPU partition)"
+   },
+   {
+    "iso3": "THA",
+    "name": "🇹🇭 Thailand",
+    "value": 14.124539031878271,
+    "detail": "8 PFlop/s across 1 systems (LANTA)"
+   },
+   {
+    "iso3": "NLD",
+    "name": "🇳🇱 Netherlands",
+    "value": 12.93548803181554,
+    "detail": "17 PFlop/s across 2 systems (Snellius Phase 3 GPU, Snellius Phase 1 GPU)"
+   },
+   {
+    "iso3": "HUN",
+    "name": "🇭🇺 Hungary",
+    "value": 12.576564220614893,
+    "detail": "3 PFlop/s across 1 systems (Komondor)"
+   },
+   {
+    "iso3": "BEL",
+    "name": "🇧🇪 Belgium",
+    "value": 11.2892882294195,
+    "detail": "8 PFlop/s across 1 systems (sofia)"
+   },
+   {
+    "iso3": "BRA",
+    "name": "🇧🇷 Brazil",
+    "value": 7.873082946683125,
+    "detail": "18 PFlop/s across 2 systems (Santos Dumont, IARA)"
+   },
+   {
+    "iso3": "TUR",
+    "name": "🇹🇷 Turkey",
+    "value": 7.569054809927878,
+    "detail": "12 PFlop/s across 1 systems (ARF ACC)"
+   },
+   {
+    "iso3": "KOR",
+    "name": "🇰🇷 South Korea",
+    "value": 4.998998700685361,
+    "detail": "9 PFlop/s across 2 systems (DAIDC, Dream-AI)"
+   },
+   {
+    "iso3": "IND",
+    "name": "🇮🇳 India",
+    "value": 4.608111911782933,
+    "detail": "18 PFlop/s across 3 systems (AIRAWAT - PSAI, PARAM Rudra-104, Arka AI/ML)"
+   }
+  ],
+  "site_segments": {
+   "49763": "Research",
+   "48553": "Research",
+   "47347": "Research",
+   "51016": "Research",
+   "50489": "Industry",
+   "50981": "Industry",
+   "50422": "Research",
+   "50908": "Research",
+   "50944": "Academic",
+   "49136": "Academic",
+   "50986": "Others",
+   "50979": "Research",
+   "50949": "Industry",
+   "51131": "Others",
+   "50762": "Research",
+   "51133": "Vendor",
+   "51045": "Industry",
+   "50205": "Academic",
+   "48448": "Vendor",
+   "51109": "Industry",
+   "50903": "Industry",
+   "50157": "Research",
+   "47593": "Research",
+   "51148": "Research",
+   "48468": "Research",
+   "48429": "Research",
+   "51076": "Industry",
+   "51134": "Industry",
+   "49587": "Industry",
+   "51079": "Research",
+   "48748": "Research",
+   "51123": "Research",
+   "51051": "Research",
+   "50631": "Research",
+   "51056": "Industry",
+   "50870": "Vendor",
+   "50403": "Academic",
+   "51065": "Industry",
+   "51122": "Others",
+   "51073": "Industry",
+   "50203": "Academic",
+   "51037": "Vendor",
+   "51041": "Industry",
+   "47871": "Research",
+   "51055": "Industry",
+   "47912": "Academic",
+   "50809": "Industry",
+   "48957": "Academic",
+   "51145": "Research",
+   "49143": "Academic",
+   "51091": "Industry",
+   "50983": "Industry",
+   "49515": "Academic",
+   "51009": "Industry",
+   "51054": "Academic",
+   "50543": "Research",
+   "48331": "Research",
+   "50897": "Vendor",
+   "47495": "Academic",
+   "50488": "Research",
+   "51014": "Vendor",
+   "50732": "Research",
+   "50565": "Academic",
+   "47508": "Academic",
+   "50997": "Others",
+   "50874": "Industry",
+   "51104": "Others",
+   "48751": "Industry",
+   "51018": "Industry",
+   "51137": "Industry",
+   "50974": "Industry",
+   "50862": "Industry",
+   "51078": "Industry",
+   "51106": "Government",
+   "51084": "Research",
+   "50831": "Research",
+   "50920": "Industry",
+   "51111": "Research",
+   "51059": "Academic",
+   "47634": "Academic",
+   "48481": "Research",
+   "48420": "Academic",
+   "51095": "Industry",
+   "51103": "Industry",
+   "49751": "Academic",
+   "48248": "Academic",
+   "50889": "Others",
+   "50868": "Vendor",
+   "50871": "Vendor",
+   "50767": "Research",
+   "51063": "Academic",
+   "50320": "Government",
+   "50576": "Academic",
+   "50840": "Others",
+   "50405": "Academic",
+   "51049": "Industry",
+   "50900": "Research",
+   "48296": "Academic",
+   "51077": "Academic",
+   "51068": "Research",
+   "49215": "Academic",
+   "51028": "Industry",
+   "50102": "Academic",
+   "47783": "Academic",
+   "51003": "Government",
+   "50820": "Industry",
+   "51032": "Others",
+   "51035": "Others",
+   "50966": "Research",
+   "51075": "Industry",
+   "49783": "Academic",
+   "51006": "Industry",
+   "50882": "Research",
+   "51040": "Industry",
+   "50961": "Industry",
+   "51101": "Academic",
+   "48188": "Academic",
+   "50497": "Academic",
+   "51099": "Academic",
+   "47369": "Academic",
+   "49083": "Academic",
+   "49220": "Academic",
+   "48455": "Academic",
+   "49466": "Research",
+   "51083": "Vendor",
+   "51120": "Academic",
+   "50937": "Research",
+   "50444": "Academic",
+   "51050": "Academic",
+   "50926": "Others",
+   "51092": "Industry",
+   "51033": "Industry",
+   "48657": "Academic",
+   "50813": "Industry",
+   "51128": "Government",
+   "50800": "Academic",
+   "50967": "Industry",
+   "50561": "Academic",
+   "47642": "Research",
+   "48488": "Academic",
+   "50984": "Government",
+   "50425": "Government",
+   "49152": "Academic",
+   "47529": "Academic",
+   "50964": "Academic",
+   "50947": "Academic",
+   "50675": "Academic",
+   "49151": "Academic",
+   "49020": "Academic",
+   "51001": "Research",
+   "50207": "Research",
+   "48558": "Academic",
+   "49104": "Academic",
+   "48418": "Research",
+   "51129": "Research",
+   "51080": "Research",
+   "51144": "Government",
+   "50096": "Academic",
+   "50367": "Academic",
+   "51021": "Academic",
+   "51060": "Academic",
+   "50985": "Academic",
+   "50863": "Research",
+   "50452": "Research",
+   "50722": "Academic",
+   "48473": "Research",
+   "51097": "Academic",
+   "48098": "Academic",
+   "50939": "Academic",
+   "51046": "Academic",
+   "48247": "Research",
+   "50904": "Vendor",
+   "50927": "Academic",
+   "50864": "Research",
+   "50539": "Academic",
+   "50100": "Academic",
+   "50630": "Vendor",
+   "51093": "Research",
+   "50943": "Research",
+   "49702": "Industry",
+   "50296": "Research",
+   "50819": "Research"
+  }
+ },
+ "announcements": {
+  "title": "Announced public AI budgets",
+  "unit": "% of GDP per year",
+  "source": "Official national AI plans and budgets (public money only)",
+  "source_url": "",
+  "as_of": "2026-10-11",
+  "updated": "2026-10-11",
+  "next_review": "2027-01-11",
+  "auto": false,
+  "note": "Public money announced for AI, spread evenly over the plan's duration. Excluded: Saudi Project Transcendence and UAE MGX (press-reported targets, mixed public/private capital), private pledges such as France's EUR 109bn or Stargate.",
+  "rows": [
+   {
+    "iso3": "KOR",
+    "name": "🇰🇷 South Korea",
+    "value": 0.3729674131173444,
+    "detail": "Government AI budget 2026 (passed) (2026): $6.98bn per year",
+    "confidence": "medium",
+    "source_url": "https://en.bizhankook.com/articles/30882.html"
+   },
+   {
+    "iso3": "JPN",
+    "name": "🇯🇵 Japan",
+    "value": 0.18666461370745008,
+    "detail": "METI AI and semiconductor budget FY2026 (FY2026): $8.28bn per year. Mixes AI and chips (includes JPY 150bn for semiconductor firms such as Rapidus).",
+    "confidence": "low",
+    "source_url": "https://www.eenewseurope.com/en/meti-budget-hike-japan-chip-ai-fy-2026/"
+   },
+   {
+    "iso3": "BRA",
+    "name": "🇧🇷 Brazil",
+    "value": 0.045138518172026944,
+    "detail": "Brazilian AI Plan (PBIA) (2024-2028): $1.03bn per year. Indicative envelope, not a fixed appropriation.",
+    "confidence": "medium",
+    "source_url": "https://digitalpolicyalert.org/event/22006-launched-artificial-intelligence-plan-pbia-2024-2028-including-publishing-guides-on-ai-and-creating-the-national-center-for-algorithmic-transparency-and-trustworthy-ai"
+   },
+   {
+    "iso3": "ESP",
+    "name": "🇪🇸 Spain",
+    "value": 0.04445361176704884,
+    "detail": "AI Strategy 2024 (2024-2025): $0.85bn per year",
+    "confidence": "high",
+    "source_url": "https://www.lamoncloa.gob.es/lang/en/gobierno/councilministers/paginas/2024/20240514-council-press-conference.aspx"
+   },
+   {
+    "iso3": "SGP",
+    "name": "🇸🇬 Singapore",
+    "value": 0.025331552018595382,
+    "detail": "National AI R&D Plan (NAIRD) (2025-2030): $0.15bn per year. 'More than' S$1bn.",
+    "confidence": "high",
+    "source_url": "https://mothership.sg/2026/01/singapore-1-billion-ai/"
+   },
+   {
+    "iso3": "GBR",
+    "name": "🇬🇧 United Kingdom",
+    "value": 0.01644812048971978,
+    "detail": "Spending Review 2025 - AI Opportunities Action Plan (2026/27-2029/30): $0.66bn per year",
+    "confidence": "medium",
+    "source_url": "https://www.osborneclarke.com/insights/government-invest-over-ps2-billion-uks-ai-ecosystem"
+   },
+   {
+    "iso3": "FRA",
+    "name": "🇫🇷 France",
+    "value": 0.013986396919868669,
+    "detail": "National AI strategy, phase 3 (France 2030) (2025-2030): $0.47bn per year. Duration not stated by the source; 2025-2030 assumed (consistent with the EUR 400M announced for 2025).",
+    "confidence": "low",
+    "source_url": "https://www.economie.gouv.fr/la-strategie-nationale-pour-lintelligence-artificielle"
+   },
+   {
+    "iso3": "CAN",
+    "name": "🇨🇦 Canada",
+    "value": 0.012332490099322793,
+    "detail": "Canadian Sovereign AI Compute Strategy (2024-2029): $0.29bn per year",
+    "confidence": "high",
+    "source_url": "https://ised-isde.canada.ca/site/ised/en/canadian-sovereign-ai-compute-strategy"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 United States",
+    "value": 0.010777160648300112,
+    "detail": "Federal non-defense AI R&D, FY2025 request (NITRD) (FY2025): $3.32bn per year. Excludes defense AI (DoD requested $13.4bn for AI & autonomy in FY2026).",
+    "confidence": "high",
+    "source_url": "https://www.nitrd.gov/ai-rd-investments/"
+   },
+   {
+    "iso3": "ITA",
+    "name": "🇮🇹 Italy",
+    "value": 0.008857204895536574,
+    "detail": "CDP Venture Capital AI fund (2024-2029): $0.23bn per year. State lender CDP; covers AI and cybersecurity.",
+    "confidence": "medium",
+    "source_url": "https://dig.watch/updates/italys-cdp-to-invest-e1-billion-in-ai-and-cybersecurity"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 China",
+    "value": 0.008568498180960237,
+    "detail": "National AI Industry Investment Fund (2025-): $1.67bn per year. Fund duration not published; spread over 5 years by assumption. Local-government AI funds not included.",
+    "confidence": "low",
+    "source_url": "https://globaltradealert.org/intervention/143238-china-launch-of-the-cny-60-billion-ai-industry-investment-fund"
+   },
+   {
+    "iso3": "DEU",
+    "name": "🇩🇪 Germany",
+    "value": 0.007158980829591649,
+    "detail": "Federal research ministry (BMFTR) AI funding, current legislature (2025-2029): $0.36bn per year. Research ministry only; other ministries not included.",
+    "confidence": "medium",
+    "source_url": "https://www.oecd.org/en/publications/progress-in-implementing-the-european-union-coordinated-plan-on-artificial-intelligence-volume-1_533c355d-en/full-report/set-enabling-conditions-for-ai-development-and-uptake-in-the-european-union_1590bb01.html"
+   },
+   {
+    "iso3": "IND",
+    "name": "🇮🇳 India",
+    "value": 0.0060161133887354015,
+    "detail": "IndiaAI Mission (2024-2029): $0.24bn per year. Rs 10,371.92 crore over five years.",
+    "confidence": "high",
+    "source_url": "https://www.pib.gov.in/PressReleasePage.aspx?PRID=2012355"
+   }
+  ]
+ }
+}

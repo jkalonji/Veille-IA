@@ -32,6 +32,8 @@ import plotly.io as pio
 from plotly.offline import get_plotlyjs
 from supabase import create_client
 
+from country_indicators import load_indicators, stale_reason
+
 # Load .env (local only, no-op if absent)
 try:
     from dotenv import load_dotenv
@@ -1250,6 +1252,78 @@ def fig_category_radar(articles: list[dict], category_order: list[str] | None = 
     return fig
 
 
+# ---------------------------------------------------------------------------
+# "Who really invests in AI?" — country indicators (IA domain only)
+# ---------------------------------------------------------------------------
+
+# (key in data/country_indicators.json, tab label)
+INDICATOR_TABS: list[tuple[str, str]] = [
+    ("private_investment", "💰 Investment"),
+    ("hardware_imports",   "📦 Hardware"),
+    ("public_compute",     "🖥️ Supercomputers"),
+    ("announcements",      "📢 Announcements"),
+]
+
+
+def _fmt_indicator(value: float, unit: str) -> str:
+    if unit.startswith("%"):
+        return f"{value:.2f}%" if value >= 1 else f"{value:.3f}%"
+    return f"{value:,.0f}"
+
+
+def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
+    """Horizontal top-N bar chart for one country indicator.
+    Low-confidence values are drawn lighter and prefixed with '≈'."""
+    rows = ind.get("rows", [])[:top_n][::-1]  # largest on top
+    unit = ind.get("unit", "")
+    low  = [r.get("confidence") == "low" for r in rows]
+
+    fig = go.Figure(go.Bar(
+        x=[r["value"] for r in rows],
+        y=[r["name"] for r in rows],
+        orientation="h",
+        marker=dict(color=["rgba(0,180,216,0.35)" if l else "#00b4d8" for l in low]),
+        text=[("≈ " if l else "") + _fmt_indicator(r["value"], unit) for r, l in zip(rows, low)],
+        textposition="outside",
+        textfont=dict(size=10, color="#adb5bd"),
+        customdata=[r.get("detail", "") for r in rows],
+        hovertemplate="<b>%{y}</b><br>%{text} " + unit + "<br>%{customdata}<extra></extra>",
+        cliponaxis=False,
+    ))
+    fig.update_layout(
+        template=PLOTLY_TEMPLATE,
+        title=dict(
+            text=f"{ind.get('title', '')} <span style='font-size:11px;color:#777'>({unit})</span>",
+            font=dict(size=14, color="#adb5bd"),
+            x=0.5, xanchor="center",
+        ),
+        xaxis=dict(visible=False),
+        yaxis=dict(tickfont=dict(size=11, color="#adb5bd")),
+        paper_bgcolor="#0e1117",
+        plot_bgcolor="#0e1117",
+        height=380,
+        margin=dict(l=10, r=60, t=50, b=10),
+        showlegend=False,
+    )
+    return fig
+
+
+def _indicator_footer_html(ind: dict) -> str:
+    """Source line under an indicator chart; turns orange when the data needs attention."""
+    reason = stale_reason(ind)
+    src = ind.get("source", "")
+    if ind.get("source_url"):
+        src = f'<a href="{ind["source_url"]}" target="_blank" style="color:inherit">{src}</a>'
+    parts = [f"Source: {src}", f"data as of {ind.get('as_of', '?')}"]
+    if ind.get("note"):
+        parts.append(ind["note"])
+    color = "#666"
+    if reason:
+        parts.insert(0, f"⚠️ {reason}")
+        color = "#f4a261"
+    return f'<p style="color:{color};font-size:11px;text-align:center;margin:4px 8px 8px;">{" · ".join(parts)}</p>'
+
+
 def _render_hot_articles(
     articles: list[dict],
     container,
@@ -1476,8 +1550,17 @@ def run_streamlit() -> None:
 
     col_globe, col_ranking = st.columns([3, 2])
     with col_ranking:
-        st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True)
-        st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
+        indicators = load_indicators() if domain == "ia" else {}
+        if indicators:
+            tabs = st.tabs([label for _, label in INDICATOR_TABS])
+            for tab, (key, _) in zip(tabs, INDICATOR_TABS):
+                with tab:
+                    ind = indicators.get(key) or {}
+                    st.plotly_chart(fig_country_indicator(ind), use_container_width=True)
+                    st.markdown(_indicator_footer_html(ind), unsafe_allow_html=True)
+        else:
+            st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True)
+            st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
     with col_globe:
         # Build iso_counts for the Globe.gl component
         _iso_counts: dict[str, int] = {}
@@ -1855,13 +1938,36 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
         include_plotlyjs=False,   # bundled once at the page level
         config={"responsive": True, "scrollZoom": False},
     )
-    radar_html = pio.to_html(
-        fig_category_radar(articles, category_order=cat_order),
-        div_id=f"radar-div-{domain}",
-        full_html=False,
-        include_plotlyjs=False,
-        config={"responsive": True},
-    )
+    indicators = load_indicators() if domain == "ia" else {}
+    if indicators:
+        buttons, panels = [], []
+        for i, (key, label) in enumerate(INDICATOR_TABS):
+            ind = indicators.get(key) or {}
+            plot = pio.to_html(
+                fig_country_indicator(ind),
+                div_id=f"ind-div-{domain}-{key}",
+                full_html=False,
+                include_plotlyjs=False,
+                config={"responsive": True, "displayModeBar": False},
+            )
+            active_cls = " active" if i == 0 else ""
+            buttons.append(f'<button class="ind-tab{active_cls}" data-target="ind-panel-{domain}-{key}">{label}</button>')
+            panels.append(
+                f'<div class="ind-panel{active_cls}" id="ind-panel-{domain}-{key}">{plot}{_indicator_footer_html(ind)}</div>'
+            )
+        right_card = f'<div class="ind-tabs">{"".join(buttons)}</div>{"".join(panels)}'
+    else:
+        radar_html = pio.to_html(
+            fig_category_radar(articles, category_order=cat_order),
+            div_id=f"radar-div-{domain}",
+            full_html=False,
+            include_plotlyjs=False,
+            config={"responsive": True},
+        )
+        right_card = f"""{radar_html}
+        <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
+          L'axe maximal correspond à la catégorie dominante (étalon = 100).
+        </p>"""
 
     deduped     = _deduplicate_articles(articles)
     stories_lookup = _fetch_stories_lookup(domain)
@@ -1883,10 +1989,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     <div class="charts-row">
       <div class="globe-card">{globe_html}</div>
       <div class="radar-card">
-        {radar_html}
-        <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
-          L'axe maximal correspond à la catégorie dominante (étalon = 100).
-        </p>
+        {right_card}
       </div>
     </div>
     <div class="country-filter-bar" id="country-filter-bar-{domain}">
@@ -2045,6 +2148,16 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px;
     }}
     .country-filter-clear:hover {{ background: #e63946; color: #fff; }}
+
+    /* ── Country indicator tabs (IA domain) ─────────────── */
+    .ind-tabs {{ display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 0; }}
+    .ind-tab {{
+      background: #1a1d27; color: #adb5bd; border: none; border-radius: 6px;
+      padding: 6px 10px; cursor: pointer; font-size: 12px;
+    }}
+    .ind-tab.active {{ background: #00b4d8; color: #0e1117; font-weight: 600; }}
+    .ind-panel {{ display: none; }}
+    .ind-panel.active {{ display: block; }}
 
     /* ── Hot articles ────────────────────────────────────── */
     .hot-card {{
@@ -2255,7 +2368,23 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       }}
       const radarEl = document.getElementById('radar-div-' + domain);
       if (radarEl) Plotly.Plots.resize(radarEl);
+      document.querySelectorAll('.domain-panel[data-domain="' + domain + '"] .ind-panel.active .js-plotly-plot')
+        .forEach(function(el) {{ Plotly.Plots.resize(el); }});
     }}
+
+    // Country indicator tabs: a chart rendered while hidden has no width,
+    // so resize it when its tab is shown.
+    document.querySelectorAll('.ind-tab').forEach(function(btn) {{
+      btn.addEventListener('click', function() {{
+        const card = btn.closest('.radar-card');
+        card.querySelectorAll('.ind-tab').forEach(function(b) {{ b.classList.toggle('active', b === btn); }});
+        card.querySelectorAll('.ind-panel').forEach(function(p) {{
+          p.classList.toggle('active', p.id === btn.dataset.target);
+        }});
+        const plot = document.querySelector('#' + btn.dataset.target + ' .js-plotly-plot');
+        if (plot) Plotly.Plots.resize(plot);
+      }});
+    }});
 
     window.addEventListener('load', function() {{
       DOMAINS.forEach(function(domain) {{

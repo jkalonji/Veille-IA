@@ -146,3 +146,20 @@ Le dashboard affiche cette estimation avec un préfixe `~` (ex: `~20h`, `~Hier 0
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
 ```
 Le code est backward-compatible (fallback automatique dans `save_to_supabase` et `load_articles` si la colonne est absente — la marque `~` reste simplement désactivée jusqu'à la migration).
+
+## « Who really invests in AI? » — indicateurs pays (domaine IA)
+
+Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, **pour le domaine IA uniquement**, par 4 onglets (textes en anglais) à droite du globe. Chaque classement est un top 10 rapporté au PIB, pour voir les pays qui font un effort proportionnel (« put their money where their mouth is ») :
+
+| Onglet | Mesure | Source | Mise à jour |
+|---|---|---|---|
+| 💰 Investment | Investissement privé IA / PIB | Stanford AI Index (Quid), top 15 pays publiés | Manuelle, 1×/an (avril) |
+| 📦 Hardware | Importations nettes HS 847150 + 847330 / PIB | UN Comtrade (API publique) | Auto, mensuelle |
+| 🖥️ Supercomputers | Rmax des systèmes TOP500 accélérés (GPU) des sites Research/Academic/Government, PFlop/s par 1 000 Md$ de PIB | TOP500 (scraping) | Auto (listes de juin et novembre) |
+| 📢 Announcements | Budgets IA **publics** annoncés, étalés sur la durée du plan / PIB | Documents officiels, une URL par chiffre | Manuelle, tous les 3 mois |
+
+- `country_indicators.py` : récupère les sources auto + PIB/taux de change Banque mondiale, fusionne avec `data/country_indicators_manual.json` et écrit `data/country_indicators.json` (lu par `dashboard.py`). Lancement : `python country_indicators.py`.
+- Workflow `AI Radar - Country Indicators` : le 1er de chaque mois, rafraîchit et commite le JSON. Une source en échec garde ses dernières données et est marquée `error`.
+- Données à revoir : bandeau orange sous le graphique + message Telegram le lundi (`send_data_reminders` dans `main.py`), dès qu'un `next_review` manuel est dépassé ou qu'une source auto a plus de 45 jours.
+- Les valeurs `confidence: "low"` sont affichées en plus clair avec le préfixe `≈`.
+- Exclus volontairement : Project Transcendence (Arabie saoudite) et MGX (Émirats), qui sont des objectifs rapportés par la presse et non des budgets publics. Les Émirats ne déclarent pas leurs données douanières à Comtrade.
