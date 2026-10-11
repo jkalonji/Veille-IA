@@ -136,7 +136,91 @@ SENTIMENT_COLORS = {
     "Neutre":  "#adb5bd",
 }
 
-PLOTLY_TEMPLATE = "plotly_dark"
+# ---------------------------------------------------------------------------
+# Chart theme — "cobalt", taken from https://cobaltgroupe.xyz/ (style.css :root)
+# ---------------------------------------------------------------------------
+
+COBALT = {
+    "ink":     "#060810",
+    "cream":   "#e8eef8",
+    "warm":    "#c8d4ec",
+    "cobalt":  "#0047ab",
+    "light":   "#4488ff",
+    "sky":     "#7eb8f7",
+    "steel":   "#1a3a6e",
+    "muted":   "#5a6a8a",
+    "line":    "rgba(68,136,255,0.12)",
+}
+CHART_FONT       = '"DM Mono", ui-monospace, Menlo, Consolas, monospace'
+CHART_TITLE_FONT = '"DM Serif Display", Georgia, serif'
+CHART_FONTS_LINK = (
+    '<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display'
+    '&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">'
+)
+# Passed to every plotly chart: no hover toolbar.
+PLOTLY_CONFIG = {"displayModeBar": False, "responsive": True}
+
+_axis = dict(
+    automargin=True,
+    gridcolor=COBALT["line"], linecolor=COBALT["line"], zerolinecolor=COBALT["line"],
+    tickfont=dict(color=COBALT["muted"], size=10),
+    title=dict(font=dict(color=COBALT["muted"], size=10)),
+)
+pio.templates["cobalt"] = go.layout.Template(
+    layout=dict(
+        font=dict(family=CHART_FONT, color=COBALT["warm"], size=11),
+        title=dict(font=dict(family=CHART_TITLE_FONT, color=COBALT["cream"], size=18),
+                   x=0.5, xanchor="center"),
+        colorway=[COBALT["light"], COBALT["sky"], COBALT["cobalt"], COBALT["warm"], COBALT["steel"]],
+        # Transparent so charts sit on whatever card/page they are embedded in.
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=_axis, yaxis=_axis,
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            radialaxis=dict(gridcolor=COBALT["line"], linecolor=COBALT["line"],
+                            tickfont=dict(color=COBALT["muted"], size=9)),
+            angularaxis=dict(gridcolor=COBALT["line"], linecolor=COBALT["line"],
+                             tickfont=dict(color=COBALT["warm"], size=10)),
+        ),
+        geo=dict(
+            bgcolor="rgba(0,0,0,0)", showframe=False,
+            showland=True, landcolor="#0d1220",
+            showocean=True, oceancolor=COBALT["ink"],
+            showcoastlines=True, coastlinecolor="rgba(68,136,255,0.18)",
+            showcountries=True, countrycolor="rgba(68,136,255,0.18)",
+            showlakes=False,
+        ),
+        hoverlabel=dict(
+            bgcolor="rgba(6,8,16,0.95)", bordercolor=COBALT["light"],
+            font=dict(family=CHART_FONT, color=COBALT["cream"], size=12),
+        ),
+        legend=dict(font=dict(color=COBALT["warm"], size=10), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=10, r=10, t=56, b=10),
+    ),
+    data=dict(choropleth=[go.Choropleth(colorbar=dict(
+        tickfont=dict(color=COBALT["muted"]), outlinewidth=0, thickness=10,
+        title=dict(font=dict(color=COBALT["muted"], size=11)),
+    ))]),
+)
+PLOTLY_TEMPLATE = "cobalt"
+
+# Sequential scale for counts: deep steel → cobalt → sky → cream.
+COBALT_SCALE = [
+    [0.0, COBALT["steel"]],
+    [0.35, COBALT["cobalt"]],
+    [0.7, COBALT["light"]],
+    [0.9, COBALT["sky"]],
+    [1.0, COBALT["cream"]],
+]
+
+
+def _chart_title(title: str, subtitle: str = "") -> dict:
+    """Serif title with an optional small mono subtitle (unit, scope)."""
+    t = dict(text=title)
+    if subtitle:
+        t["subtitle"] = dict(text=subtitle, font=dict(family=CHART_FONT, color=COBALT["muted"], size=11))
+    return t
 
 # ---------------------------------------------------------------------------
 # Geography — ISO-3 mappings for the 3D globe
@@ -1036,13 +1120,8 @@ def fig_globe(articles: list[dict]) -> go.Figure:
         fig.update_layout(
             template=PLOTLY_TEMPLATE,
             height=460,
-            title="Aucune donnée géographique disponible",
-            geo=dict(
-                showframe=False, showland=True, landcolor="#1a1d27",
-                showocean=True, oceancolor="#0e1117",
-                projection_type="orthographic", bgcolor="#0e1117",
-            ),
-            paper_bgcolor="#0e1117",
+            title=_chart_title("Aucune donnée géographique disponible"),
+            geo=dict(projection_type="orthographic"),
         )
         return fig
 
@@ -1055,59 +1134,24 @@ def fig_globe(articles: list[dict]) -> go.Figure:
         for iso, cnt in zip(iso_list, counts)
     ]
 
-    # Gradient: dark-blue (1 article) → cyan (brand) → orange → red (max)
-    colorscale = [
-        [0.0,  "#0d3b5e"],
-        [0.15, "#0077b6"],
-        [0.40, "#00b4d8"],
-        [0.70, "#f4a261"],
-        [1.0,  "#e63946"],
-    ]
-
     fig = go.Figure(go.Choropleth(
         locations=iso_list,
         z=counts,
         locationmode="ISO-3",
-        colorscale=colorscale,
+        colorscale=COBALT_SCALE,
         zmin=1,
         zmax=max_count,
         showscale=True,
-        colorbar=dict(
-            title=dict(text="Articles", font=dict(color="#adb5bd", size=12)),
-            tickfont=dict(color="#adb5bd"),
-            thickness=14,
-            len=0.55,
-            bgcolor="rgba(0,0,0,0)",
-            bordercolor="rgba(0,0,0,0)",
-        ),
+        marker_line=dict(color=COBALT["ink"], width=0.5),
+        colorbar=dict(title=dict(text="Articles"), len=0.55),
         hovertext=hover_text,
         hoverinfo="text",
     ))
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        title=dict(
-            text="🌍 Couverture mondiale  ·  cliquez sur un pays pour filtrer",
-            font=dict(size=14, color="#adb5bd"),
-            x=0.5, xanchor="center",
-        ),
-        geo=dict(
-            showframe=False,
-            showcoastlines=True,
-            coastlinecolor="#2a2d3a",
-            showland=True,
-            landcolor="#1a1d27",
-            showocean=True,
-            oceancolor="#0e1117",
-            showlakes=False,
-            lakecolor="#0e1117",
-            showcountries=True,
-            countrycolor="#2a2d3a",
-            projection_type="orthographic",
-            bgcolor="#0e1117",
-        ),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
-        margin=dict(l=0, r=0, t=50, b=0),
+        title=_chart_title("Couverture mondiale", "cliquez sur un pays pour filtrer"),
+        geo=dict(projection_type="orthographic"),
+        margin=dict(l=0, r=0, t=56, b=0),
         height=460,
         dragmode="pan",
     )
@@ -1205,8 +1249,8 @@ def fig_category_radar(articles: list[dict], category_order: list[str] | None = 
     if not any(raw):
         fig = go.Figure()
         fig.update_layout(
-            template=PLOTLY_TEMPLATE, height=380, paper_bgcolor="#0e1117",
-            title=dict(text="📊 Répartition par catégorie — aucune donnée", font=dict(color="#adb5bd")),
+            template=PLOTLY_TEMPLATE, height=380,
+            title=_chart_title("Répartition par catégorie", "aucune donnée"),
         )
         return fig
 
@@ -1215,38 +1259,18 @@ def fig_category_radar(articles: list[dict], category_order: list[str] | None = 
         r=norm_closed,
         theta=cats_closed,
         fill="toself",
-        fillcolor="rgba(0, 180, 216, 0.15)",
-        line=dict(color="#00b4d8", width=2),
+        fillcolor="rgba(68,136,255,0.15)",
+        line=dict(color=COBALT["light"], width=2),
+        marker=dict(color=COBALT["sky"], size=5),
         customdata=raw_closed,
         hovertemplate="<b>%{theta}</b><br>%{customdata} articles<extra></extra>",
     ))
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 100],
-                tickvals=[25, 50, 75, 100],
-                tickfont=dict(size=9, color="#555"),
-                gridcolor="#2a2d3a",
-                linecolor="#2a2d3a",
-            ),
-            angularaxis=dict(
-                tickfont=dict(size=10, color="#adb5bd"),
-                gridcolor="#2a2d3a",
-                linecolor="#2a2d3a",
-            ),
-            bgcolor="#0e1117",
-        ),
-        title=dict(
-            text="📊 Répartition par catégorie",
-            font=dict(size=14, color="#adb5bd"),
-            x=0.5, xanchor="center",
-        ),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
+        polar=dict(radialaxis=dict(visible=True, range=[0, 100], tickvals=[25, 50, 75, 100])),
+        title=_chart_title("Répartition par catégorie"),
         height=380,
-        margin=dict(l=60, r=60, t=50, b=30),
+        margin=dict(l=60, r=60, t=56, b=30),
         showlegend=False,
     )
     return fig
@@ -1268,7 +1292,7 @@ INDICATOR_TABS: list[tuple[str, str]] = [
 # Windows has no colour font for flag emoji (🇺🇸 shows as "US"), so the
 # country charts load Noto Color Emoji and list it first for their labels.
 FLAG_FONT_LINK = '<link href="https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap" rel="stylesheet">'
-FLAG_FONT_FAMILY = '"Noto Color Emoji", "Open Sans", verdana, arial, sans-serif'
+FLAG_FONT_FAMILY = '"Noto Color Emoji", ' + CHART_FONT
 
 
 def _fmt_indicator(value: float, unit: str) -> str:
@@ -1292,28 +1316,22 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
         x=[r["value"] for r in rows],
         y=[r["name"] for r in rows],
         orientation="h",
-        marker=dict(color=["rgba(0,180,216,0.35)" if l else "#00b4d8" for l in low]),
+        marker=dict(color=["rgba(68,136,255,0.3)" if l else COBALT["light"] for l in low]),
         text=[("≈ " if l else "") + _fmt_indicator(r["value"], unit) for r, l in zip(rows, low)],
         textposition="outside",
-        textfont=dict(size=10, color="#adb5bd"),
+        textfont=dict(size=10, color=COBALT["warm"]),
         customdata=[r.get("detail", "") for r in rows],
         hovertemplate="<b>%{y}</b><br>%{text}" + suffix + "<br>%{customdata}<extra></extra>",
         cliponaxis=False,
     ))
     fig.update_layout(
         template=PLOTLY_TEMPLATE,
-        title=dict(
-            text=f"{ind.get('title', '')} <span style='font-size:11px;color:#777'>({unit})</span>",
-            font=dict(size=14, color="#adb5bd"),
-            x=0.5, xanchor="center",
-        ),
+        title=_chart_title(ind.get("title", ""), unit),
         xaxis=dict(visible=False),
-        yaxis=dict(tickfont=dict(size=11, color="#adb5bd", family=FLAG_FONT_FAMILY)),
+        yaxis=dict(tickfont=dict(size=11, color=COBALT["warm"], family=FLAG_FONT_FAMILY), ticklabelstandoff=6),
         hoverlabel=dict(font=dict(family=FLAG_FONT_FAMILY)),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
         height=380,
-        margin=dict(l=10, r=60, t=50, b=10),
+        margin=dict(l=10, r=60, t=64, b=10),
         showlegend=False,
     )
     return fig
@@ -1563,15 +1581,16 @@ def run_streamlit() -> None:
     with col_ranking:
         indicators = load_indicators() if domain == "ia" else {}
         if indicators:
-            st.markdown(FLAG_FONT_LINK, unsafe_allow_html=True)
+            st.markdown(FLAG_FONT_LINK + CHART_FONTS_LINK, unsafe_allow_html=True)
             tabs = st.tabs([label for _, label in INDICATOR_TABS])
             for tab, (key, _) in zip(tabs, INDICATOR_TABS):
                 with tab:
                     ind = indicators.get(key) or {}
-                    st.plotly_chart(fig_country_indicator(ind), use_container_width=True)
+                    st.plotly_chart(fig_country_indicator(ind), use_container_width=True, config=PLOTLY_CONFIG)
                     st.markdown(_indicator_footer_html(ind), unsafe_allow_html=True)
         else:
-            st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True)
+            st.markdown(CHART_FONTS_LINK, unsafe_allow_html=True)
+            st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True, config=PLOTLY_CONFIG)
             st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
     with col_globe:
         # Build iso_counts for the Globe.gl component
@@ -1948,7 +1967,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
         div_id=f"globe-div-{domain}",
         full_html=False,
         include_plotlyjs=False,   # bundled once at the page level
-        config={"responsive": True, "scrollZoom": False},
+        config={**PLOTLY_CONFIG, "scrollZoom": False},
     )
     indicators = load_indicators() if domain == "ia" else {}
     if indicators:
@@ -1960,7 +1979,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
                 div_id=f"ind-div-{domain}-{key}",
                 full_html=False,
                 include_plotlyjs=False,
-                config={"responsive": True, "displayModeBar": False},
+                config=PLOTLY_CONFIG,
             )
             active_cls = " active" if i == 0 else ""
             buttons.append(f'<button class="ind-tab{active_cls}" data-target="ind-panel-{domain}-{key}">{label}</button>')
@@ -1974,7 +1993,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
             div_id=f"radar-div-{domain}",
             full_html=False,
             include_plotlyjs=False,
-            config={"responsive": True},
+            config=PLOTLY_CONFIG,
         )
         right_card = f"""{radar_html}
         <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
@@ -2094,6 +2113,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <meta name="theme-color" content="#0e1117">
   <title>Cobalt.xyz · Radars</title>
   {FLAG_FONT_LINK}
+  {CHART_FONTS_LINK}
   <style>
     /* ── Reset & base ───────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
