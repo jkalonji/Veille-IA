@@ -346,13 +346,13 @@ def _reading_minutes(prose: dict) -> int:
     return max(1, round(len(text.split()) / WORDS_PER_MINUTE))
 
 
-def render_markdown(picked: list[dict], prose: dict, week_start: str, week_end: str) -> str:
+def render_markdown(picked: list[dict], prose: dict, week_number: int) -> str:
     """Edition template: title (becomes the email subject), reading time, short
     intro, contents (one line per topic), then for each topic: kicker (topic
     name), headline (latest development), meta line, short paragraph and
     metro-line timeline; ends with the dashboard link and the sign-off."""
     out = [
-        f"# 🤖 AI Radar — week of {week_start} to {week_end}",
+        f"# Cobalt Radar - week {week_number}",
         f"*⏱ {_reading_minutes(prose)} min read*",
         "",
     ]
@@ -584,12 +584,10 @@ def load_week() -> tuple[list[dict], list[dict]]:
 
 
 def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str]) -> str:
-    today = datetime.now(timezone.utc)
-    start = today - timedelta(days=WINDOW_DAYS)
-    week_start = f"{start:%b} {start.day}"
-    week_end = f"{today:%b} {today.day}, {today.year}"
+    # ISO week of the period covered (built on Monday, so the previous week)
+    start = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
     prose = generate_prose(picked, notes)
-    return render_markdown(picked, prose, week_start, week_end)
+    return render_markdown(picked, prose, start.isocalendar().week)
 
 
 def write_edition(markdown: str, suffix: str = "") -> str:
