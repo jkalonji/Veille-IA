@@ -59,7 +59,7 @@ DOMAIN_META: dict[str, dict[str, str]] = {
 
 # Category colors/emoji/order, keyed by domain — mirrors DOMAIN_TAXONOMY / DOMAIN_CATEGORY_EMOJI
 # in main.py. Adding a domain here (Phase 2/3/4) is enough to make the dashboard
-# selector, radar chart and hot-topic cards pick it up automatically.
+# selector, category chart and hot-topic cards pick it up automatically.
 DOMAIN_CATEGORY_COLORS: dict[str, dict[str, str]] = {
     "ia": {
         "Innovation / Tech":        "#00b4d8",
@@ -1227,55 +1227,6 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     return fig
 
 
-def fig_category_radar(articles: list[dict], category_order: list[str] | None = None) -> go.Figure:
-    """Radar chart: article count per category, normalized so the dominant category = 100."""
-    CATEGORY_ORDER = category_order or DOMAIN_CATEGORY_ORDER["ia"]
-
-    counts = {cat: 0 for cat in CATEGORY_ORDER}
-    for a in articles:
-        cat = a.get("category", "")
-        if cat in counts:
-            counts[cat] += 1
-
-    max_count = max(counts.values()) or 1
-    raw        = [counts[c] for c in CATEGORY_ORDER]
-    normalized = [round(v / max_count * 100, 1) for v in raw]
-
-    # Close the polygon loop
-    cats_closed = CATEGORY_ORDER + [CATEGORY_ORDER[0]]
-    norm_closed = normalized + [normalized[0]]
-    raw_closed  = raw + [raw[0]]
-
-    if not any(raw):
-        fig = go.Figure()
-        fig.update_layout(
-            template=PLOTLY_TEMPLATE, height=380,
-            title=_chart_title("Répartition par catégorie", "aucune donnée"),
-        )
-        return fig
-
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=norm_closed,
-        theta=cats_closed,
-        fill="toself",
-        fillcolor="rgba(68,136,255,0.15)",
-        line=dict(color=COBALT["light"], width=2),
-        marker=dict(color=COBALT["sky"], size=5),
-        customdata=raw_closed,
-        hovertemplate="<b>%{theta}</b><br>%{customdata} articles<extra></extra>",
-    ))
-    fig.update_layout(
-        template=PLOTLY_TEMPLATE,
-        polar=dict(radialaxis=dict(visible=True, range=[0, 100], tickvals=[25, 50, 75, 100])),
-        title=_chart_title("Répartition par catégorie"),
-        height=380,
-        margin=dict(l=60, r=60, t=56, b=30),
-        showlegend=False,
-    )
-    return fig
-
-
 # ---------------------------------------------------------------------------
 # "Who really invests in AI?" — country indicators (IA domain only)
 # ---------------------------------------------------------------------------
@@ -1303,9 +1254,29 @@ def _fmt_indicator(value: float, unit: str) -> str:
     return f"{value:,.0f}"
 
 
+def _bar_style(values: list[float], low: list[bool] | None = None) -> dict:
+    """Shared bar marker: rounded ends, cobalt → sky gradient by value (the
+    leader stands out), hatched where the value is low-confidence."""
+    low = low or [False] * len(values)
+    return dict(
+        color=values,
+        colorscale=[[0, COBALT["cobalt"]], [0.6, COBALT["light"]], [1, COBALT["sky"]]],
+        cmin=0,
+        cmax=max(values, default=0) or 1,
+        cornerradius=4,
+        line=dict(width=0),
+        pattern=dict(
+            shape=["/" if l else "" for l in low],
+            fgcolor="rgba(6,8,16,0.6)",
+            size=6,
+            solidity=0.35,
+        ),
+    )
+
+
 def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
     """Horizontal top-N bar chart for one country indicator.
-    Low-confidence values are drawn lighter and prefixed with '≈'."""
+    Low-confidence values are hatched and prefixed with '≈'."""
     rows = ind.get("rows", [])[:top_n][::-1]  # largest on top
     unit = ind.get("unit", "")
     low  = [r.get("confidence") == "low" for r in rows]
@@ -1316,7 +1287,7 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
         x=[r["value"] for r in rows],
         y=[r["name"] for r in rows],
         orientation="h",
-        marker=dict(color=["rgba(68,136,255,0.3)" if l else COBALT["light"] for l in low]),
+        marker=_bar_style([r["value"] for r in rows], low),
         text=[("≈ " if l else "") + _fmt_indicator(r["value"], unit) for r, l in zip(rows, low)],
         textposition="outside",
         textfont=dict(size=10, color=COBALT["warm"]),
@@ -1330,8 +1301,55 @@ def fig_country_indicator(ind: dict, top_n: int = 10) -> go.Figure:
         xaxis=dict(visible=False),
         yaxis=dict(tickfont=dict(size=11, color=COBALT["warm"], family=FLAG_FONT_FAMILY), ticklabelstandoff=6),
         hoverlabel=dict(font=dict(family=FLAG_FONT_FAMILY)),
+        bargap=0.35,
         height=380,
         margin=dict(l=10, r=60, t=64, b=10),
+        showlegend=False,
+    )
+    return fig
+
+
+def fig_category_bars(
+    articles: list[dict],
+    category_order: list[str] | None = None,
+    category_emoji: dict[str, str] | None = None,
+) -> go.Figure:
+    """Horizontal bars: article count per category, largest on top."""
+    order = category_order or DOMAIN_CATEGORY_ORDER["ia"]
+    emoji = category_emoji or {}
+
+    counts = Counter(a.get("category", "") for a in articles)
+    rows   = sorted(((c, counts.get(c, 0)) for c in order), key=lambda r: r[1])  # largest on top
+    total  = sum(n for _, n in rows)
+
+    if not total:
+        fig = go.Figure()
+        fig.update_layout(
+            template=PLOTLY_TEMPLATE, height=380,
+            title=_chart_title("Répartition par catégorie", "aucune donnée"),
+        )
+        return fig
+
+    values = [n for _, n in rows]
+    fig = go.Figure(go.Bar(
+        x=values,
+        y=[f"{emoji.get(c, '')} {c}".strip() for c, _ in rows],
+        orientation="h",
+        marker=_bar_style(values),
+        text=[f"{n} · {n / total:.0%}" for n in values],
+        textposition="outside",
+        textfont=dict(size=10, color=COBALT["warm"]),
+        hovertemplate="<b>%{y}</b><br>%{x} articles<extra></extra>",
+        cliponaxis=False,
+    ))
+    fig.update_layout(
+        template=PLOTLY_TEMPLATE,
+        title=_chart_title("Répartition par catégorie", f"{total} articles"),
+        xaxis=dict(visible=False),
+        yaxis=dict(tickfont=dict(size=11, color=COBALT["warm"], family=FLAG_FONT_FAMILY), ticklabelstandoff=6),
+        bargap=0.35,
+        height=380,
+        margin=dict(l=10, r=70, t=64, b=10),
         showlegend=False,
     )
     return fig
@@ -1589,9 +1607,11 @@ def run_streamlit() -> None:
                     st.plotly_chart(fig_country_indicator(ind), use_container_width=True, config=PLOTLY_CONFIG)
                     st.markdown(_indicator_footer_html(ind), unsafe_allow_html=True)
         else:
-            st.markdown(CHART_FONTS_LINK, unsafe_allow_html=True)
-            st.plotly_chart(fig_category_radar(filtered, category_order=cat_order), use_container_width=True, config=PLOTLY_CONFIG)
-            st.caption("L'axe maximal correspond à la catégorie dominante (étalon = 100).")
+            st.markdown(FLAG_FONT_LINK + CHART_FONTS_LINK, unsafe_allow_html=True)
+            st.plotly_chart(
+                fig_category_bars(filtered, category_order=cat_order, category_emoji=cat_emoji_map),
+                use_container_width=True, config=PLOTLY_CONFIG,
+            )
     with col_globe:
         # Build iso_counts for the Globe.gl component
         _iso_counts: dict[str, int] = {}
@@ -1989,16 +2009,13 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
         right_card = f'<div class="ind-tabs">{"".join(buttons)}</div>{"".join(panels)}'
     else:
         radar_html = pio.to_html(
-            fig_category_radar(articles, category_order=cat_order),
+            fig_category_bars(articles, category_order=cat_order, category_emoji=cat_emoji_map),
             div_id=f"radar-div-{domain}",
             full_html=False,
             include_plotlyjs=False,
             config=PLOTLY_CONFIG,
         )
-        right_card = f"""{radar_html}
-        <p style="color:#666;font-size:11px;text-align:center;margin:4px 8px 8px;">
-          L'axe maximal correspond à la catégorie dominante (étalon = 100).
-        </p>"""
+        right_card = radar_html
 
     deduped     = _deduplicate_articles(articles)
     stories_lookup = _fetch_stories_lookup(domain)
@@ -2399,10 +2416,9 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         Plotly.Plots.resize(st.globeEl);
         if (!st.selectedIso) startRotation(domain);
       }}
-      const radarEl = document.getElementById('radar-div-' + domain);
-      if (radarEl) Plotly.Plots.resize(radarEl);
-      document.querySelectorAll('.domain-panel[data-domain="' + domain + '"] .ind-panel.active .js-plotly-plot')
-        .forEach(function(el) {{ Plotly.Plots.resize(el); }});
+      visibleBarCharts(domain).forEach(function(el) {{
+        Plotly.Plots.resize(el).then(function() {{ growBars(el); }});
+      }});
     }}
 
     // Country indicator tabs: a chart rendered while hidden has no width,
@@ -2415,9 +2431,30 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
           p.classList.toggle('active', p.id === btn.dataset.target);
         }});
         const plot = document.querySelector('#' + btn.dataset.target + ' .js-plotly-plot');
-        if (plot) Plotly.Plots.resize(plot);
+        if (plot) Plotly.Plots.resize(plot).then(function() {{ growBars(plot); }});
       }});
     }});
+
+    function visibleBarCharts(domain) {{
+      const panel = '.domain-panel[data-domain="' + domain + '"] ';
+      return Array.from(document.querySelectorAll(
+        panel + '.ind-panel.active .js-plotly-plot, ' + panel + '#radar-div-' + domain));
+    }}
+
+    // Bars grow from zero when a bar chart is shown. The x range is frozen
+    // first so the axis does not rescale while the bars are at zero.
+    function growBars(gd) {{
+      if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== 'bar' || !gd._fullLayout) return;
+      if (!gd._growX) {{
+        gd._growX = Array.from(gd.data[0].x);
+        Plotly.relayout(gd, {{'xaxis.range': gd._fullLayout.xaxis.range.slice(), 'xaxis.autorange': false}});
+      }}
+      const x = gd._growX;
+      Plotly.restyle(gd, {{x: [x.map(function() {{ return 0; }})]}}, [0]).then(function() {{
+        Plotly.animate(gd, {{data: [{{x: x}}], traces: [0]}},
+          {{transition: {{duration: 700, easing: 'cubic-out'}}, frame: {{duration: 700, redraw: false}}}});
+      }});
+    }}
 
     window.addEventListener('load', function() {{
       DOMAINS.forEach(function(domain) {{
@@ -2427,6 +2464,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         updateHotTabCounts(domain);
       }});
       startRotation(activeDomain);
+      visibleBarCharts(activeDomain).forEach(growBars);
       document.querySelectorAll('.domain-toggle-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ showDomain(btn.dataset.domain); }});
       }});
