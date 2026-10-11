@@ -62,7 +62,7 @@ DOMAIN_META: dict[str, dict[str, str]] = {
 # selector, category chart and hot-topic cards pick it up automatically.
 DOMAIN_CATEGORY_COLORS: dict[str, dict[str, str]] = {
     "ia": {
-        "Innovation / Tech":        "#00b4d8",
+        "Innovation / Tech":        "#4488ff",
         "Politique / Regulation":   "#f4a261",
         "Business / Industrie":     "#2a9d8f",
         "Societe / Ethique":        "#e9c46a",
@@ -77,7 +77,7 @@ DOMAIN_CATEGORY_COLORS: dict[str, dict[str, str]] = {
         "Catastrophes naturelles":               "#e9c46a",
         "Changements de regime / Coups d'Etat":  "#9b5de5",
         "Diplomatie / Sommets internationaux":   "#2a9d8f",
-        "Sanctions / Guerre economique":         "#00b4d8",
+        "Sanctions / Guerre economique":         "#4488ff",
     },
 }
 DOMAIN_CATEGORY_EMOJI: dict[str, dict[str, str]] = {
@@ -133,7 +133,7 @@ _CATEGORY_ALIAS: dict[str, str] = {
 SENTIMENT_COLORS = {
     "Positif": "#2a9d8f",
     "Negatif": "#e63946",
-    "Neutre":  "#adb5bd",
+    "Neutre":  "#c8d4ec",
 }
 
 # ---------------------------------------------------------------------------
@@ -205,13 +205,12 @@ pio.templates["cobalt"] = go.layout.Template(
 )
 PLOTLY_TEMPLATE = "cobalt"
 
-# Sequential scale for counts: deep steel → cobalt → sky → cream.
+# Sequential scale for counts: deep steel → cobalt → sky (also in _globe_component).
 COBALT_SCALE = [
     [0.0, COBALT["steel"]],
-    [0.35, COBALT["cobalt"]],
-    [0.7, COBALT["light"]],
-    [0.9, COBALT["sky"]],
-    [1.0, COBALT["cream"]],
+    [0.4, COBALT["cobalt"]],
+    [0.75, COBALT["light"]],
+    [1.0, COBALT["sky"]],
 ]
 
 
@@ -398,7 +397,7 @@ _TOPIC_PALETTE = [
     {"border": "#9d4edd", "color": "#7b2ff7"},   # purple
     {"border": "#f4a261", "color": "#c47c35"},   # amber
     {"border": "#e63946", "color": "#c1121f"},   # red
-    {"border": "#00b4d8", "color": "#0077b6"},   # blue
+    {"border": "#4488ff", "color": "#0077b6"},   # blue
     {"border": "#a8dadc", "color": "#457b9d"},   # teal
 ]
 
@@ -801,15 +800,15 @@ def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict]
 # and the story itself is already one.
 _STORY_TIMELINE_CSS = """
 <style>
-  .story-timeline { border-top:1px solid #2a2d3a; padding:16px 0 4px 26px; position:relative; }
+  .story-timeline { border-top:1px solid #1a2540; padding:16px 0 4px 26px; position:relative; }
   .story-timeline::before {
-    content:''; position:absolute; left:9px; top:4px; bottom:18px; width:2px; background:#2a2d3a;
+    content:''; position:absolute; left:9px; top:4px; bottom:18px; width:2px; background:#1a2540;
   }
   .story-day { position:relative; margin-bottom:18px; }
   .story-day:last-child { margin-bottom:4px; }
   .story-day__dot {
     position:absolute; left:-21px; top:3px; width:10px; height:10px; border-radius:50%;
-    background:#2a2d3a; border:2px solid #1a1d27; box-sizing:content-box;
+    background:#1a2540; border:2px solid #0c1222; box-sizing:content-box;
   }
   .story-day--today .story-day__dot {
     background:#3fb950; box-shadow:0 0 0 3px rgba(63,185,80,0.25);
@@ -821,13 +820,13 @@ _STORY_TIMELINE_CSS = """
   }
   .story-day__summary::-webkit-details-marker { display:none; }
   .story-day__summary::before {
-    content:'▸'; color:#666; font-size:10px; flex:0 0 auto; transition:transform 0.15s ease;
+    content:'▸'; color:#5a6a8a; font-size:10px; flex:0 0 auto; transition:transform 0.15s ease;
   }
   .story-day__details[open] > .story-day__summary::before { transform:rotate(90deg); }
-  .story-day__date { font-size:12px; font-weight:700; color:#adb5bd; flex:0 0 auto; }
-  .story-day__count { font-size:11px; font-weight:400; color:#666; flex:0 0 auto; }
+  .story-day__date { font-size:12px; font-weight:700; color:#c8d4ec; flex:0 0 auto; }
+  .story-day__count { font-size:11px; font-weight:400; color:#5a6a8a; flex:0 0 auto; }
   .story-day__headline {
-    font-size:12px; color:#999; overflow:hidden; text-overflow:ellipsis;
+    font-size:12px; color:#7d8db0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; min-width:0;
   }
   .story-day__cards { margin-top:8px; }
@@ -1165,8 +1164,8 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     if not ranking:
         fig = go.Figure()
         fig.update_layout(
-            template=PLOTLY_TEMPLATE, height=400, paper_bgcolor="#0e1117",
-            title=dict(text="🏆 Top 10 pays — aucune donnée", font=dict(color="#adb5bd")),
+            template=PLOTLY_TEMPLATE, height=400, paper_bgcolor="#060810",
+            title=dict(text="🏆 Top 10 pays — aucune donnée", font=dict(color="#c8d4ec")),
         )
         return fig
 
@@ -1177,7 +1176,7 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
     metrics = [
         ("virale",     "🔥 Influence virale",  "#e63946"),
         ("innovation", "🚀 Innovation",        "#f4a261"),
-        ("couverture", "📰 Couverture",       "#00b4d8"),
+        ("couverture", "📰 Couverture",       "#4488ff"),
     ]
     fig = go.Figure()
     for key, label, color in metrics:
@@ -1196,31 +1195,31 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
         barmode="group",
         title=dict(
             text="🏆 Top 10 pays — Score d'influence IA",
-            font=dict(size=14, color="#adb5bd"),
+            font=dict(size=14, color="#c8d4ec"),
             x=0.5, xanchor="center",
         ),
         xaxis=dict(
             title=dict(
                 text="Score / 100",
-                font=dict(size=10, color="#666"),
+                font=dict(size=10, color="#5a6a8a"),
                 standoff=8,
             ),
             range=[0, 108],
-            gridcolor="#2a2d3a",
+            gridcolor="#1a2540",
             tickfont=dict(size=10),
         ),
-        yaxis=dict(tickfont=dict(size=11, color="#fafafa"), automargin=True),
+        yaxis=dict(tickfont=dict(size=11, color="#e8eef8"), automargin=True),
         legend=dict(
             orientation="v",
             yanchor="middle", y=0.5,
             xanchor="left",   x=1.02,
-            font=dict(size=10, color="#adb5bd"),
-            bgcolor="#1a1d27",
-            bordercolor="#2a2d3a",
+            font=dict(size=10, color="#c8d4ec"),
+            bgcolor="#0c1222",
+            bordercolor="#1a2540",
             borderwidth=1,
         ),
-        paper_bgcolor="#0e1117",
-        plot_bgcolor="#0e1117",
+        paper_bgcolor="#060810",
+        plot_bgcolor="#060810",
         margin=dict(l=10, r=130, t=44, b=10),
         height=450,
     )
@@ -1364,7 +1363,7 @@ def _indicator_footer_html(ind: dict) -> str:
     parts = [f"Source: {src}", f"data as of {ind.get('as_of', '?')}"]
     if ind.get("note"):
         parts.append(ind["note"])
-    color = "#666"
+    color = "#5a6a8a"
     if reason:
         parts.insert(0, f"⚠️ {reason}")
         color = "#f4a261"
@@ -1767,7 +1766,7 @@ def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str]
         age    = _time_ago(a.get("published_raw") or a.get("published", ""), estimated=estimated)
         age_attr = ' title="Heure de collecte — date de publication non fournie par la source"' if estimated else ""
         n_src  = a.get("source_count", 1)
-        src_display = src if n_src == 1 else f"{src} <small style='color:#888'>+{n_src-1}</small>"
+        src_display = src if n_src == 1 else f"{src} <small style='color:#7d8db0'>+{n_src-1}</small>"
         iso = _country_to_iso3(a.get("country", "")) or ""
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
@@ -1786,13 +1785,13 @@ def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str]
 def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | None = None) -> str:
     """Build one hot article card HTML for a given source group."""
     cat_emoji  = (category_emoji or CATEGORY_EMOJI).get(a.get("category", ""), "📌")
-    sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#adb5bd")
+    sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#c8d4ec")
     title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
     mentions   = a.get("mention_count", 0)
     is_supra   = a.get("supa_hot", False)
     n_src      = a.get("source_count", 1)
     src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
-    src_badge  = (f'<span style="background:#333;color:#ccc;font-size:10px;padding:1px 5px;'
+    src_badge  = (f'<span style="background:#1a2540;color:#c8d4ec;font-size:10px;padding:1px 5px;'
                   f'border-radius:3px;margin-left:4px;">{n_src} sources</span>') if n_src > 1 else ""
     if is_supra:
         card_style  = ("background:linear-gradient(135deg,#2a0a00,#1a0d00);"
@@ -1803,8 +1802,8 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
                        f'padding:2px 6px;border-radius:4px;margin-right:6px;">🌋 SUPA HOT · {mentions} mentions</span>')
     else:
         border      = meta["border"]
-        card_style  = f"background:#1a1d27;border-left:4px solid {border};"
-        title_color = "#fafafa"
+        card_style  = f"background:#0c1222;border-left:4px solid {border};"
+        title_color = "#e8eef8"
         badge_html  = ""
     iso = _country_to_iso3(a.get("country", "")) or ""
     estimated = a.get("published_is_estimated", False)
@@ -1816,7 +1815,7 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
         {badge_html}<a href="{a.get('url','#')}" target="_blank"
            style="color:{title_color};text-decoration:none;">{title}</a>
       </div>
-      <div style="font-size:12px;color:#888;line-height:1.6;">
+      <div style="font-size:12px;color:#7d8db0;line-height:1.6;">
         {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; <span{age_attr}>{age}</span>
         &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
         &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
@@ -1839,7 +1838,7 @@ def _hot_articles_html(
     """
     topics = _extract_hot_topics(articles, stories_lookup)
     if not topics:
-        return "<p style='color:#888;'>Aucun article hot topic sur la période.</p>"
+        return "<p style='color:#7d8db0;'>Aucun article hot topic sur la période.</p>"
 
     wrap_id = f"hot-articles-{domain}"
 
@@ -1875,13 +1874,13 @@ def _hot_articles_html(
     display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
   }}
   .hot-tab {{
-    background: #1a1d27; color: #adb5bd;
-    border: 2px solid #2a2d3a; border-radius: 20px;
+    background: #0c1222; color: #c8d4ec;
+    border: 2px solid #1a2540; border-radius: 20px;
     padding: 8px 18px; font-size: 13px; cursor: pointer;
     transition: all 0.15s ease; white-space: nowrap;
   }}
-  .hot-tab:hover {{ background: #252836; color: #fafafa; }}
-  .hot-tab--active {{ background: #252836; font-weight: 700; }}
+  .hot-tab:hover {{ background: #141d33; color: #e8eef8; }}
+  .hot-tab--active {{ background: #141d33; font-weight: 500; }}
   .hot-tab__count {{
     background: rgba(255,255,255,0.12); border-radius: 10px;
     padding: 1px 7px; font-size: 11px; margin-left: 6px; font-weight: 400;
@@ -1899,7 +1898,7 @@ def _hot_articles_html(
     btn.addEventListener('click', function() {{
       root.querySelectorAll('.hot-tab').forEach(function(b) {{
         b.classList.remove('hot-tab--active');
-        b.style.borderColor = '#2a2d3a';
+        b.style.borderColor = '#1a2540';
         b.style.color = '';
       }});
       root.querySelectorAll('.hot-panel').forEach(function(p) {{
@@ -1907,7 +1906,7 @@ def _hot_articles_html(
       }});
       btn.classList.add('hot-tab--active');
       btn.style.borderColor = btn.dataset.borderColor || '#f4a261';
-      btn.style.color = btn.dataset.textColor || '#888';
+      btn.style.color = btn.dataset.textColor || '#7d8db0';
       var panel = document.getElementById('hot-' + btn.dataset.group);
       if (panel) panel.style.display = 'block';
     }});
@@ -1924,7 +1923,7 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
     """
     stories = _build_story_timelines(articles, stories_lookup)
     if not stories:
-        return "<p style='color:#888;'>Aucune histoire suivie sur plusieurs jours pour le moment.</p>"
+        return "<p style='color:#7d8db0;'>Aucune histoire suivie sur plusieurs jours pour le moment.</p>"
 
     cards = ""
     for s in stories:
@@ -1949,13 +1948,13 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
 
     return f"""
 <style>
-  .story-card {{ background:#1a1d27; border:1px solid #2a2d3a; border-radius:10px; margin-bottom:10px; padding:0 16px; }}
+  .story-card {{ background:#0c1222; border:1px solid #1a2540; border-radius:10px; margin-bottom:10px; padding:0 16px; }}
   .story-card summary {{ cursor:pointer; padding:14px 0; display:flex; align-items:center; gap:12px; flex-wrap:wrap; list-style:none; }}
   .story-card summary::-webkit-details-marker {{ display:none; }}
-  .story-title {{ font-weight:700; font-size:15px; color:#fafafa; }}
-  .story-status {{ font-size:11px; color:#888; border:1px solid #2a2d3a; border-radius:10px; padding:2px 8px; white-space:nowrap; }}
+  .story-title {{ font-weight:700; font-size:15px; color:#e8eef8; }}
+  .story-status {{ font-size:11px; color:#7d8db0; border:1px solid #1a2540; border-radius:10px; padding:2px 8px; white-space:nowrap; }}
   .story-status--live {{ color:#3fb950; border-color:#3fb950; }}
-  .story-meta {{ font-size:12px; color:#888; margin-left:auto; white-space:nowrap; }}
+  .story-meta {{ font-size:12px; color:#7d8db0; margin-left:auto; white-space:nowrap; }}
 </style>
 {_STORY_TIMELINE_CSS}
 <div class="stories-wrap" id="stories-{domain}">{cards}</div>"""
@@ -2127,7 +2126,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0e1117">
+  <meta name="theme-color" content="#060810">
   <title>Cobalt.xyz · Radars</title>
   {FLAG_FONT_LINK}
   {CHART_FONTS_LINK}
@@ -2135,41 +2134,43 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     /* ── Reset & base ───────────────────────────────────── */
     *, *::before, *::after {{ box-sizing: border-box; }}
     body {{
-      background: #0e1117; color: #fafafa;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #060810; color: #e8eef8;
+      font-family: 'DM Mono', ui-monospace, Menlo, Consolas, monospace;
       margin: 0; padding: 12px 12px env(safe-area-inset-bottom, 12px);
       -webkit-text-size-adjust: 100%;
     }}
-    h1 {{ color: #00b4d8; margin: 0 0 4px; font-size: 1.25rem; line-height: 1.3; }}
-    h2 {{ color: #fafafa; margin: 28px 0 12px; font-size: 1.05rem; }}
-    p  {{ color: #888; margin: 0 0 16px; font-size: 0.82rem; }}
-    a  {{ color: #00b4d8; text-decoration: none; }}
+    button, input, select {{ font-family: inherit; }}
+    h1, h2 {{ font-family: 'DM Serif Display', Georgia, serif; font-weight: 400; }}
+    h1 {{ color: #e8eef8; margin: 0 0 4px; font-size: 1.7rem; line-height: 1.3; }}
+    h2 {{ color: #e8eef8; margin: 28px 0 12px; font-size: 1.35rem; }}
+    p  {{ color: #7d8db0; margin: 0 0 16px; font-size: 0.82rem; }}
+    a  {{ color: #4488ff; text-decoration: none; }}
     a:active {{ opacity: 0.7; }}
 
     /* ── Domain toggle ────────────────────────────────────── */
     .domain-toggle {{ display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }}
     .domain-toggle-btn {{
-      background: #1a1d27; color: #adb5bd;
-      border: 2px solid #2a2d3a; border-radius: 20px;
-      padding: 8px 18px; font-size: 14px; font-weight: 600; cursor: pointer;
+      background: #0c1222; color: #c8d4ec;
+      border: 2px solid #1a2540; border-radius: 20px;
+      padding: 8px 18px; font-size: 14px; font-weight: 500; cursor: pointer;
       transition: all 0.15s ease;
     }}
-    .domain-toggle-btn:hover {{ background: #252836; color: #fafafa; }}
-    .domain-toggle-btn.active {{ background: #00b4d8; color: #0e1117; border-color: #00b4d8; }}
-    .domain-headline {{ color: #adb5bd; font-size: 0.9rem; margin-bottom: 12px; }}
+    .domain-toggle-btn:hover {{ background: #141d33; color: #e8eef8; }}
+    .domain-toggle-btn.active {{ background: #4488ff; color: #060810; border-color: #4488ff; }}
+    .domain-headline {{ color: #c8d4ec; font-size: 0.9rem; margin-bottom: 12px; }}
     .subscribe {{
       display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
-      background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 10px;
+      background: #0c1222; border: 1px solid #1a2540; border-radius: 10px;
       padding: 10px 12px; margin-bottom: 14px;
     }}
-    .subscribe label {{ color: #adb5bd; font-size: 0.9rem; flex: 1 1 100%; }}
+    .subscribe label {{ color: #c8d4ec; font-size: 0.9rem; flex: 1 1 100%; }}
     .subscribe input[type=email] {{
-      flex: 1 1 180px; min-width: 0; background: #0e1117; color: #fafafa;
-      border: 1px solid #2a2d3a; border-radius: 6px; padding: 8px 10px; font-size: 14px;
+      flex: 1 1 180px; min-width: 0; background: #060810; color: #e8eef8;
+      border: 1px solid #1a2540; border-radius: 6px; padding: 8px 10px; font-size: 14px;
     }}
     .subscribe button {{
-      background: #00b4d8; color: #0e1117; border: none; border-radius: 6px;
-      padding: 8px 16px; font-size: 14px; font-weight: 600; cursor: pointer;
+      background: #4488ff; color: #060810; border: none; border-radius: 6px;
+      padding: 8px 16px; font-size: 14px; font-weight: 500; cursor: pointer;
     }}
 
     /* ── Charts grid (globe + radar) ────────────────────── */
@@ -2183,18 +2184,18 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       .charts-row {{ grid-template-columns: 3fr 2fr; }}
     }}
     .globe-card, .radar-card {{
-      background: #0e1117; border-radius: 10px;
+      background: #060810; border-radius: 10px;
       overflow: hidden; position: relative;
     }}
     .country-filter-bar {{
       display: none; align-items: center; gap: 10px;
-      background: #1a1d27; border-radius: 8px;
+      background: #0c1222; border-radius: 8px;
       padding: 10px 14px; margin-bottom: 10px; font-size: 13px;
     }}
     .country-filter-bar.visible {{ display: flex; }}
-    .country-filter-label {{ color: #00b4d8; flex: 1; }}
+    .country-filter-label {{ color: #4488ff; flex: 1; }}
     .country-filter-clear {{
-      background: #2a2d3a; color: #adb5bd; border: none;
+      background: #1a2540; color: #c8d4ec; border: none;
       border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px;
     }}
     .country-filter-clear:hover {{ background: #e63946; color: #fff; }}
@@ -2202,50 +2203,50 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     /* ── Country indicator tabs (IA domain) ─────────────── */
     .ind-tabs {{ display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 0; }}
     .ind-tab {{
-      background: #1a1d27; color: #adb5bd; border: none; border-radius: 6px;
+      background: #0c1222; color: #c8d4ec; border: none; border-radius: 6px;
       padding: 6px 10px; cursor: pointer; font-size: 12px;
     }}
-    .ind-tab.active {{ background: #00b4d8; color: #0e1117; font-weight: 600; }}
+    .ind-tab.active {{ background: #4488ff; color: #060810; font-weight: 500; }}
     .ind-panel {{ display: none; }}
     .ind-panel.active {{ display: block; }}
 
     /* ── Hot articles ────────────────────────────────────── */
     .hot-card {{
-      background: #1a1d27; border-left: 4px solid #f4a261;
+      background: #0c1222; border-left: 4px solid #f4a261;
       border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
     }}
     .hot-title {{ font-size: 15px; font-weight: 600; margin-bottom: 6px; line-height: 1.4; }}
-    .hot-title a {{ color: #fafafa; }}
-    .hot-meta   {{ font-size: 12px; color: #888; line-height: 1.6; }}
+    .hot-title a {{ color: #e8eef8; }}
+    .hot-meta   {{ font-size: 12px; color: #7d8db0; line-height: 1.6; }}
 
     /* ── Toolbar — stacks vertically on mobile ───────────── */
     .toolbar {{
       display: flex; flex-direction: column; gap: 8px;
-      background: #1a1d27; padding: 12px; border-radius: 10px; margin-bottom: 10px;
+      background: #0c1222; padding: 12px; border-radius: 10px; margin-bottom: 10px;
     }}
     .toolbar input, .toolbar select {{
-      width: 100%; background: #0e1117; color: #fafafa;
-      border: 1px solid #2a2d3a; border-radius: 8px;
+      width: 100%; background: #060810; color: #e8eef8;
+      border: 1px solid #1a2540; border-radius: 8px;
       padding: 11px 12px; font-size: 15px; outline: none;
       -webkit-appearance: none; appearance: none;
     }}
-    .toolbar input::placeholder {{ color: #555; }}
-    .count {{ color: #888; font-size: 12px; text-align: right; }}
+    .toolbar input::placeholder {{ color: #5a6a8a; }}
+    .count {{ color: #7d8db0; font-size: 12px; text-align: right; }}
 
     /* ── Table — scrolls horizontally on small screens ───── */
     .table-wrap {{
       overflow-x: auto; -webkit-overflow-scrolling: touch;
       max-height: 70vh; overflow-y: auto;
-      border-radius: 10px; background: #0e1117;
+      border-radius: 10px; background: #060810;
     }}
     table {{ width: 100%; border-collapse: collapse; font-size: 13px; min-width: 460px; }}
     th {{
-      background: #1a1d27; color: #00b4d8; text-align: left;
+      background: #0c1222; color: #4488ff; text-align: left;
       padding: 10px 10px; position: sticky; top: 0; z-index: 1; white-space: nowrap;
     }}
-    td {{ padding: 9px 10px; border-bottom: 1px solid #2a2d3a; vertical-align: top; }}
+    td {{ padding: 9px 10px; border-bottom: 1px solid #1a2540; vertical-align: top; }}
     td:first-child {{ white-space: nowrap; }}
-    tr:active td {{ background: #1a1d27; }}
+    tr:active td {{ background: #0c1222; }}
     tr.hot td {{ background: #1f1a10; border-left: 3px solid #f4a261; }}
 
     /* Hide country & source columns on mobile to save space */
@@ -2261,7 +2262,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       .toolbar input  {{ flex: 1; min-width: 180px; width: auto; }}
       .toolbar select {{ min-width: 140px; width: auto; }}
       .count {{ margin-left: auto; }}
-      tr:hover td {{ background: #1a1d27; }}
+      tr:hover td {{ background: #0c1222; }}
       .col-country, .col-source {{ display: table-cell; }}
     }}
   </style>

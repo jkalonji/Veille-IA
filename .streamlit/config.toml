@@ -1,0 +1,12 @@
+# Cobalt theme (https://cobaltgroupe.xyz/) — same tokens as COBALT in dashboard.py
+[theme]
+base = "dark"
+primaryColor = "#4488ff"
+backgroundColor = "#060810"
+secondaryBackgroundColor = "#0c1222"
+textColor = "#e8eef8"
+linkColor = "#4488ff"
+borderColor = "#1a2540"
+font = "DM Mono:https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap, monospace"
+headingFont = "DM Serif Display:https://fonts.googleapis.com/css2?family=DM+Serif+Display&display=swap, serif"
+headingFontWeights = 400
