@@ -85,7 +85,8 @@ def _story_titles(meta: dict) -> tuple[str, str]:
     """(label, headline) of a story: its stable topic name and the summary of
     its latest development, minus the topic prefix older summaries repeat."""
     label = meta.get("label") or "Untitled"
-    headline = " ".join((meta.get("summary") or "").split())
+    # Groq sometimes writes non-breaking hyphens (U+2011), which defeat the prefix match
+    headline = " ".join((meta.get("summary") or "").split()).replace("‑", "-")
     if headline.lower().startswith(label.lower()) and not headline[len(label):len(label) + 1].isalnum():
         headline = headline[len(label):].lstrip(" —–-:|")
     return label, ("" if headline.lower() == label.lower() else headline)
@@ -175,7 +176,8 @@ _SYSTEM_PROMPT = (
     "Some summaries and notes are in French: always write in English.\n"
     "Reply in strict JSON: {\"edito\": str, \"topics\": {\"<id>\": str}}.\n"
     "- edito: 2 to 3 short sentences (60 words max) drawing the common thread of the week.\n"
-    "- topics: for each id, 2 to 3 sentences: what happened and why it matters. A day-by-day "
+    "- topics: for each id, 2 to 3 sentences about the case in the topic's title only: what "
+    "happened and why it matters. A day-by-day "
     "timeline is shown below each paragraph, so do not enumerate every development.\n"
     "If an editor's note is given for a topic, follow it first (angle, emphasis).\n"
     "Clear, direct, factual tone. Do not invent any fact absent from the articles provided. "
@@ -194,6 +196,21 @@ _STOPS_PROMPT = (
     "conducting hacking attacks\" -> \"California subpoenas OpenAI\".\n"
     "Reply in strict JSON: {\"labels\": {\"<key>\": str}} with one entry per key."
 )
+
+
+# A story groups everything on a subject over 30 days: keep only what the picked title is about
+_FOCUS_PROMPT = (
+    "You edit a weekly AI newsletter. For each topic below you get its title and its numbered "
+    "articles (date · source · headline — summary). Some are in French.\n"
+    "For each topic, keep only the articles about the specific case in its title: the event "
+    "itself, what directly led to it and its direct consequences, with the same actors. Drop "
+    "articles that only share a broad theme with the title.\n"
+    "Then remove repeats: when several articles report the same news (same announcement, same "
+    "facts, told by different sources or a day later), keep only the most informative one. A "
+    "reaction, a criticism, a new detail or a next step is a new development: keep it.\n"
+    "Reply in strict JSON: {\"topics\": {\"<id>\": [article numbers]}} with one entry per id."
+)
+_FOCUS_MAX_ARTICLES = 25  # per topic sent to Groq
 
 
 def _topic_context(c: dict, note: str) -> str:
@@ -245,6 +262,56 @@ def generate_stop_labels(picked: list[dict]) -> dict[str, list[str]]:
         ]
         if all(labels):
             out[c["id"]] = labels
+    return out
+
+
+def _with_articles(c: dict, keep: list[dict]) -> dict:
+    """Copy of candidate `c` restricted to `keep`, with counts recomputed."""
+    urls = {a["url"] for a in keep}
+    days = [
+        {"date": d["date"], "articles": [a for a in d["articles"] if a["url"] in urls]}
+        for d in c["days"]
+    ]
+    days = [d for d in days if d["articles"]]
+    return {
+        **c,
+        "days": days,
+        "article_count": sum(len(d["articles"]) for d in days),
+        "span_days": len(days),
+    }
+
+
+def focus_topics(picked: list[dict]) -> list[dict]:
+    """Narrow each topic to the articles about its title, one per distinct fact,
+    then drop articles already shown under an earlier topic. A topic Groq
+    leaves empty (or a failed call) keeps its articles."""
+    numbered = {
+        c["id"]: [a for d in c["days"] for a in d["articles"]][-_FOCUS_MAX_ARTICLES:]
+        for c in picked
+    }
+    got = {}
+    if os.environ.get("GROQ_API_KEY"):
+        user_msg = "\n\n".join(
+            f"[{c['id']}] {c['title']}\n" + "\n".join(
+                f"{k}. {a.get('published', '')} · {a.get('source', '')} · {a.get('title', '')}"
+                + (f" — {_truncate(a.get('summary') or a.get('description') or '', 150)}"
+                   if a.get("summary") or a.get("description") else "")
+                for k, a in enumerate(numbered[c["id"]], 1)
+            )
+            for c in picked
+        )
+        got = ((_groq_json(_FOCUS_PROMPT, user_msg, max_tokens=2000) or {}).get("topics")) or {}
+
+    shown: set[str] = set()
+    out = []
+    for c in picked:
+        arts = numbered[c["id"]]
+        nums = got.get(c["id"]) if isinstance(got.get(c["id"]), list) else []
+        keep = [arts[n - 1] for n in nums if isinstance(n, int) and 1 <= n <= len(arts)] or arts
+        keep = [a for a in keep if a["url"] not in shown] or keep
+        shown.update(a["url"] for a in keep)
+        out.append(_with_articles(c, keep))
+        logging.info(f"Topic {c['id']}: {c['article_count']} -> {out[-1]['article_count']} articles")
     return out
 
 
@@ -378,7 +445,7 @@ def render_markdown(picked: list[dict], prose: dict, week_number: int) -> str:
             _kicker(f"{i} · {c['label']}" if c["headline"] else str(i), color),
             "",
             f"## {c['emoji']} {c['headline'] or c['label']}{badge}",
-            f"*{c['article_count']} articles{span}*",
+            f"*{c['article_count']} article{'s' if c['article_count'] > 1 else ''}{span}*",
             "",
             prose["topics"][c["id"]],
             "",
@@ -402,6 +469,8 @@ ISSUE_LABEL = "newsletter"
 # "- [x] **3.** 🚀 **Title** · 2 jours · 9 articles <!-- id:story-12 -->"
 _ITEM_RE = re.compile(r"^\s*[-*]\s*\[([ xX])\]\s*\*\*(\d+)\.\*\*.*?<!--\s*id:(\S+)\s*-->", re.M)
 # "3: insister sur l'angle prix" (one note per line, in an issue comment)
+# Title as shown in the issue: "**3.** 🚀 **Label — Headline**"
+_ITEM_TITLE_RE = re.compile(r"^\s*[-*]\s*\[[ xX]\]\s*\*\*\d+\.\*\*[^*]*\*\*(.+?)\*\*.*?<!--\s*id:(\S+)\s*-->", re.M)
 _NOTE_RE = re.compile(r"^\s*#?(\d{1,2})\s*[:.)\-–—]\s*(.+?)\s*$", re.M)
 # Only people with write access may steer the prose — on a public repo anyone
 # can comment, and a note goes straight into the Groq prompt.
@@ -471,6 +540,15 @@ def parse_selection(body: str, comments: list[dict]) -> tuple[list[str], dict[st
     return picked, {cid: " ".join(v) for cid, v in notes.items()}
 
 
+def with_issue_title(c: dict, title: str) -> dict:
+    """Candidate `c` titled as it was when picked: Monday's collection may have
+    rewritten the story summary since Sunday's issue."""
+    if not title or title == c["title"]:
+        return c
+    label, _, headline = title.partition(" — ")
+    return {**c, "title": title, "label": label.strip(), "headline": headline.strip()}
+
+
 def propose(dry_run: bool) -> None:
     """Open this week's topic-picker issue and retire any older open one."""
     _, candidates = load_week()
@@ -513,7 +591,8 @@ def build() -> str | None:
     articles, _ = load_week()
     # Re-rank without the cap: Monday's collection may push a Sunday pick out of the top 15
     by_id = {c["id"]: c for c in select_candidates(articles, _fetch_stories_lookup(DOMAIN), limit=None)}
-    picked = [by_id[cid] for cid in picked_ids if cid in by_id]
+    titles = {cid: title.strip() for title, cid in _ITEM_TITLE_RE.findall(issue.get("body") or "")}
+    picked = [with_issue_title(by_id[cid], titles.get(cid, "")) for cid in picked_ids if cid in by_id]
     missing = [cid for cid in picked_ids if cid not in by_id]
     if not picked:
         _close_issue(issue["number"], "⚠️ Aucun des sujets cochés n'a été retrouvé en base — édition annulée.")
@@ -586,6 +665,7 @@ def load_week() -> tuple[list[dict], list[dict]]:
 def build_edition(articles: list[dict], picked: list[dict], notes: dict[str, str]) -> str:
     # ISO week of the period covered (built on Monday, so the previous week)
     start = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
+    picked = focus_topics(picked)
     prose = generate_prose(picked, notes)
     return render_markdown(picked, prose, start.isocalendar().week)
 
