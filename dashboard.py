@@ -776,6 +776,7 @@ def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict]
         stories.append({
             "story_id": sid,
             "label": label,
+            "name": story_label or label,
             "days": [{"date": d, "articles": by_day[d]} for d in dates],
             "article_count": sum(len(by_day[d]) for d in dates),
             "span_days": len(dates),
@@ -876,6 +877,93 @@ def _build_story_timeline_html(story: dict, category_emoji: dict[str, str] | Non
           </details>
         </div>"""
     return f'<div class="story-timeline">{timeline}</div>'
+
+
+def _heat_color(t: float) -> str:
+    """Interpolate COBALT_SCALE at t in [0, 1], then fade to cream at the very top
+    so the hottest story stands out from the blues."""
+    stops = [(p, c) for p, c in COBALT_SCALE] + [(1.15, COBALT["cream"])]
+    t = max(0.0, min(1.0, t)) * 1.15
+    for (p0, c0), (p1, c1) in zip(stops, stops[1:]):
+        if t <= p1:
+            f = (t - p0) / (p1 - p0) if p1 > p0 else 0.0
+            rgb = [round(int(c0[i:i + 2], 16) + f * (int(c1[i:i + 2], 16) - int(c0[i:i + 2], 16))) for i in (1, 3, 5)]
+            return "#" + "".join(f"{v:02x}" for v in rgb)
+    return COBALT["cream"]
+
+
+def _story_cloud_html(stories: list[dict], domain: str = "", link: bool = False) -> str:
+    """Responsive word cloud of the stories with news today (`is_ongoing`).
+
+    Size and color scale with today's article count. The hottest story sits in
+    the middle row, flanked by the next two; the others fill a row above and a
+    row below, each ordered centre-out so heat fades towards the edges. Pure
+    flexbox, so it works in Streamlit markdown (no JS) and re-wraps on mobile.
+    `link=True` (static export) makes each word jump to its timeline card.
+    """
+    live = []
+    for s in stories:
+        if not s["is_ongoing"]:
+            continue
+        today_arts = s["days"][-1]["articles"]
+        live.append((len(today_arts), any(a.get("supa_hot") for a in today_arts), s["article_count"], s))
+    if not live:
+        return ""
+    live.sort(key=lambda x: x[:3], reverse=True)
+    top, low = live[0][0], live[-1][0]
+
+    def word(entry) -> str:
+        n, supra, _, s = entry
+        t = (n - low) / (top - low) if top > low else 1.0
+        size = 14 + t * 30                      # 14px → 44px at full width
+        name = s["name"].replace("<", "&lt;").replace(">", "&gt;")
+        tip = s["label"].replace('"', "&quot;").replace("<", "&lt;")
+        style = (
+            f"font-size:clamp({size * 0.6:.0f}px,{size / 12:.2f}vw,{size:.0f}px);"
+            f"color:{_heat_color(t)};opacity:{0.7 + 0.3 * t:.2f};"
+        )
+        inner = f"{'🌋 ' if supra else ''}{name}<sup>{n}</sup>"
+        if link:
+            return f'<a class="story-cloud__word" href="#story-{domain}-{s["story_id"]}" style="{style}" title="{tip}">{inner}</a>'
+        return f'<span class="story-cloud__word" style="{style}" title="{tip}">{inner}</span>'
+
+    def centre_out(entries: list) -> list:
+        row: list = []
+        for i, e in enumerate(entries):
+            if i % 2:
+                row.insert(0, e)
+            else:
+                row.append(e)
+        return row
+
+    middle, rest = live[:3], live[3:]
+    rows = [centre_out(rest[0::2]), centre_out(middle), centre_out(rest[1::2])]
+    rows_html = "".join(
+        f'<div class="story-cloud__row">{"".join(word(e) for e in row)}</div>' for row in rows if row
+    )
+    return f"""
+<style>
+  .story-cloud {{
+    background:radial-gradient(ellipse at center, rgba(68,136,255,0.10), transparent 70%), #0c1222;
+    border:1px solid #1a2540; border-radius:10px; padding:18px 12px; margin-bottom:14px;
+  }}
+  .story-cloud__row {{
+    display:flex; flex-wrap:wrap; justify-content:center; align-items:center;
+    gap:6px 22px; padding:4px 0;
+  }}
+  .story-cloud__word {{
+    font-family:{CHART_TITLE_FONT.replace('"', "'")}; line-height:1.15; text-align:center;
+    text-decoration:none; transition:transform 0.15s ease; cursor:default;
+  }}
+  a.story-cloud__word {{ cursor:pointer; }}
+  .story-cloud__word:hover {{ transform:scale(1.06); }}
+  .story-cloud__word sup {{ font-family:{CHART_FONT.replace('"', "'")}; font-size:10px; color:#7d8db0; margin-left:3px; }}
+  .story-cloud__caption {{ text-align:center; font-size:11px; color:#5a6a8a; margin-top:8px; }}
+  @media (max-width: 639px) {{ .story-cloud__row {{ gap:4px 14px; }} }}
+</style>
+<div class="story-cloud">{rows_html}
+  <div class="story-cloud__caption">Histoires avec de l'actu aujourd'hui · taille et couleur = articles du jour</div>
+</div>"""
 
 
 # ---------------------------------------------------------------------------
@@ -1409,6 +1497,9 @@ def _render_stories(
     if not stories:
         container.info("Aucune histoire suivie sur plusieurs jours pour le moment.")
         return
+    cloud = _story_cloud_html(stories)
+    if cloud:
+        container.markdown(cloud, unsafe_allow_html=True)
     container.markdown(_STORY_TIMELINE_CSS, unsafe_allow_html=True)
     for s in stories:
         icon = "🌋" if s["has_supra"] else "📖"
@@ -1937,7 +2028,7 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
         timeline_html = _build_story_timeline_html(s)
 
         cards += f"""
-    <details class="story-card" style="border-left:4px solid {s['color']['border']};">
+    <details class="story-card" id="story-{domain}-{s['story_id']}" style="border-left:4px solid {s['color']['border']};">
       <summary>
         <span class="story-title">{icon} {s['label']}</span>
         {status}
@@ -1957,7 +2048,19 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
   .story-meta {{ font-size:12px; color:#7d8db0; margin-left:auto; white-space:nowrap; }}
 </style>
 {_STORY_TIMELINE_CSS}
-<div class="stories-wrap" id="stories-{domain}">{cards}</div>"""
+{_story_cloud_html(stories, domain=domain, link=True)}
+<div class="stories-wrap" id="stories-{domain}">{cards}</div>
+<script>
+  // Clicking a word in the cloud opens the matching story card.
+  document.querySelectorAll('#stories-{domain}').forEach(function (wrap) {{
+    wrap.parentElement.querySelectorAll('a.story-cloud__word').forEach(function (a) {{
+      a.addEventListener('click', function () {{
+        var card = document.querySelector(a.getAttribute('href'));
+        if (card) card.open = true;
+      }});
+    }});
+  }});
+</script>"""
 
 
 def _render_domain_export_section(domain: str, articles: list[dict], active: bool, now: str) -> str:

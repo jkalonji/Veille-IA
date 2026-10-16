@@ -117,7 +117,7 @@ Affiché sous la forme **`"{label} — {summary}"`** :
 ### Dashboard et newsletter
 - `_fetch_stories_lookup(domain)` lit `id, label, summary, status, article_urls` (histoires ouvertes + anciennes histoires sans `topic_key`) et `_story_members` en déduit les articles de chaque histoire.
 - **Hot Articles** (`_extract_hot_topics`) : les histoires avec ≥ 2 articles sur les 2 derniers jours (15 onglets max).
-- **📖 Suivi d'histoires** (`_build_story_timelines`) : les histoires actives sur ≥ 2 jours distincts (40 max), dépliables en timeline jour par jour — Streamlit (`_render_stories`) et export statique (`_stories_html`).
+- **📖 Suivi d'histoires** (`_build_story_timelines`) : les histoires actives sur ≥ 2 jours distincts (40 max), dépliables en timeline jour par jour — Streamlit (`_render_stories`) et export statique (`_stories_html`). Au-dessus de la liste, un **nuage d'histoires** (`_story_cloud_html`) ne montre que celles qui ont de l'actu aujourd'hui : taille et couleur selon le nombre d'articles du jour, la plus active au centre, les autres autour. Dans l'export, un clic sur un nom ouvre la timeline de l'histoire.
 - **Newsletter** (`select_candidates`) : les histoires avec ≥ 2 articles dans la semaine.
 - Tant qu'aucune histoire n'a d'`article_urls` (avant le premier run), tout retombe sur l'ancien regroupement par `story_id`/`hot_reason`.
 
