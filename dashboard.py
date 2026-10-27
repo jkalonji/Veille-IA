@@ -2548,6 +2548,8 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
 
     // Bars grow from zero when a bar chart is shown. The x range is frozen
     // first so the axis does not rescale while the bars are at zero.
+    // Frame-by-frame restyle rather than Plotly.animate: plotly.js 2.35 throws
+    // on hatched (pattern) bars during transitions and stops drawing the rest.
     function growBars(gd) {{
       if (!gd || !gd.data || !gd.data[0] || gd.data[0].type !== 'bar' || !gd._fullLayout) return;
       if (!gd._growX) {{
@@ -2555,10 +2557,17 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
         Plotly.relayout(gd, {{'xaxis.range': gd._fullLayout.xaxis.range.slice(), 'xaxis.autorange': false}});
       }}
       const x = gd._growX;
-      Plotly.restyle(gd, {{x: [x.map(function() {{ return 0; }})]}}, [0]).then(function() {{
-        Plotly.animate(gd, {{data: [{{x: x}}], traces: [0]}},
-          {{transition: {{duration: 700, easing: 'cubic-out'}}, frame: {{duration: 700, redraw: false}}}});
-      }});
+      const run = gd._growRun = (gd._growRun || 0) + 1;  // a newer grow cancels this one
+      const t0 = performance.now();
+      function step(now) {{
+        if (run !== gd._growRun) return;
+        const k = Math.min(1, (now - t0) / 700);
+        const e = 1 - Math.pow(1 - k, 3);  // cubic-out
+        Plotly.restyle(gd, {{x: [x.map(function(v) {{ return v * e; }})]}}, [0]).then(function() {{
+          if (k < 1) requestAnimationFrame(step);
+        }});
+      }}
+      requestAnimationFrame(step);
     }}
 
     window.addEventListener('load', function() {{
