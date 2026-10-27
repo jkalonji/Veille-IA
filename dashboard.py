@@ -1321,6 +1321,7 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
 # (key in data/country_indicators.json, tab label)
 INDICATOR_TABS: list[tuple[str, str]] = [
     ("company_valuations", "🏢 Valuations"),
+    ("company_revenues",   "💵 Revenue"),
     ("hardware_imports",   "📦 Hardware"),
     ("public_compute",     "🖥️ Supercomputers"),
     ("announcements",      "📢 Announcements"),

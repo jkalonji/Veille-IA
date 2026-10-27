@@ -1,10 +1,11 @@
 """
 Country-level AI investment indicators ("Who really invests in AI?").
 
-Builds four rankings. The country ones are normalised by GDP so that small
+Builds five rankings. The country ones are normalised by GDP so that small
 countries that commit heavily stand out as much as large ones:
   - company_valuations : most valuable AI model makers in USD (market caps from
                          companiesmarketcap.com, private rounds hand-entered)
+  - company_revenues   : last-12-month revenue of the same companies (same sources)
   - hardware_imports   : net imports of servers + computer parts (UN Comtrade)
   - public_compute     : GPU-accelerated public supercomputers (TOP500)
   - announcements      : public AI budgets announced per year (hand-entered)
@@ -123,17 +124,25 @@ def _country_label(iso3: str, countries: dict[str, dict]) -> str:
 # 1. Most valuable AI model makers (market caps auto, private rounds hand-entered)
 # ---------------------------------------------------------------------------
 
-_MARKET_CAP_RE = re.compile(r"Market cap: <span[^>]*>\$([\d.,]+) (Trillion|Billion|Million) USD")
-_MARKET_CAP_SCALE = {"Trillion": 1e3, "Billion": 1.0, "Million": 1e-3}
+_CMC_RE = {
+    "marketcap": re.compile(r"Market cap: <span[^>]*>\$([\d.,]+) (Trillion|Billion|Million)"),
+    "revenue": re.compile(r"Revenue in \d{4} \(TTM\): <span[^>]*>\$([\d.,]+) (Trillion|Billion|Million)"),
+}
+_CMC_SCALE = {"Trillion": 1e3, "Billion": 1.0, "Million": 1e-3}
 
 
-def _market_cap_usd_bn(slug: str) -> float:
-    page = _get(f"https://companiesmarketcap.com/{slug}/marketcap/").text
+def _cmc_usd_bn(slug: str, metric: str) -> float:
+    """Market cap or trailing-twelve-month revenue from companiesmarketcap.com."""
+    page = _get(f"https://companiesmarketcap.com/{slug}/{metric}/").text
     time.sleep(1)
-    m = _MARKET_CAP_RE.search(page)
+    m = _CMC_RE[metric].search(page)
     if not m:
-        raise RuntimeError(f"companiesmarketcap layout changed: no market cap for {slug}")
-    return float(m.group(1).replace(",", "")) * _MARKET_CAP_SCALE[m.group(2)]
+        raise RuntimeError(f"companiesmarketcap layout changed: no {metric} for {slug}")
+    return float(m.group(1).replace(",", "")) * _CMC_SCALE[m.group(2)]
+
+
+def _company_label(c: dict, countries: dict) -> str:
+    return f"{_flag(countries.get(c['iso3'], {}).get('iso2', ''))} {c['name']}".strip()
 
 
 def build_company_valuations(manual: dict, countries: dict) -> dict:
@@ -142,17 +151,16 @@ def build_company_valuations(manual: dict, countries: dict) -> dict:
     rows = []
     for c in m["companies"]:
         if c.get("market_cap_slug"):
-            value = _market_cap_usd_bn(c["market_cap_slug"])
+            value = _cmc_usd_bn(c["market_cap_slug"], "marketcap")
             detail = f"Market capitalisation on {today}"
             url = f"https://companiesmarketcap.com/{c['market_cap_slug']}/marketcap/"
         else:
             value = c["valuation_usd_bn"]
             detail = f"Private: {c['round']}"
             url = c["source_url"]
-        flag = _flag(countries.get(c["iso3"], {}).get("iso2", ""))
         rows.append({
             "iso3": c["iso3"],
-            "name": f"{flag} {c['name']}".strip(),
+            "name": _company_label(c, countries),
             "value": value,
             "detail": detail + (f". {c['note']}" if c.get("note") else ""),
             "confidence": c.get("confidence", "high"),
@@ -168,6 +176,46 @@ def build_company_valuations(manual: dict, countries: dict) -> dict:
         "next_review": m["next_review"],
         "auto": False,
         "note": m.get("note", ""),
+        "rows": rows,
+    }
+
+
+def build_company_revenues(manual: dict, countries: dict) -> dict:
+    """Last-twelve-month revenue of the same companies. Companies without a
+    revenue figure (small private labs) are left out."""
+    m = manual["company_valuations"]
+    today = date.today().isoformat()
+    rows = []
+    for c in m["companies"]:
+        if c.get("market_cap_slug"):
+            value = _cmc_usd_bn(c["market_cap_slug"], "revenue")
+            detail = "Revenue over the last 12 reported months"
+            url = f"https://companiesmarketcap.com/{c['market_cap_slug']}/revenue/"
+            confidence = "high"
+        elif c.get("revenue"):
+            r = c["revenue"]
+            value, detail, url = r["usd_bn"], r["period"], r["source_url"]
+            confidence = r.get("confidence", "high")
+        else:
+            continue
+        rows.append({
+            "iso3": c["iso3"],
+            "name": _company_label(c, countries),
+            "value": value,
+            "detail": detail + (f". {c['revenue']['note']}" if c.get("revenue", {}).get("note") else ""),
+            "confidence": confidence,
+            "source_url": url,
+        })
+    return {
+        "title": "Revenue of the most valuable AI model makers",
+        "unit": "USD bn",
+        "source": "companiesmarketcap.com (listed), filings and press reports (private)",
+        "source_url": "https://companiesmarketcap.com/",
+        "as_of": today,
+        "updated": m["updated"],
+        "next_review": m["next_review"],
+        "auto": False,
+        "note": "Last 12 months, whole company. Hatched = press-reported, not audited.",
         "rows": rows,
     }
 
@@ -415,6 +463,7 @@ def refresh() -> dict:
 
     builders = {
         "company_valuations": lambda: build_company_valuations(manual, countries),
+        "company_revenues": lambda: build_company_revenues(manual, countries),
         "hardware_imports": lambda: build_hardware_imports(gdp, countries),
         "public_compute": lambda: build_public_compute(gdp, countries, previous.get("public_compute")),
         "announcements": lambda: build_announcements(manual, gdp, fx, countries),

@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-10-27T20:38:53+00:00",
+ "generated_at": "2026-10-27T20:44:12+00:00",
  "company_valuations": {
   "title": "Most valuable AI model makers",
   "unit": "USD bn",
@@ -98,6 +98,99 @@
     "detail": "Private: EUR 3bn Series D closed Sept 2026 (EUR 21bn)",
     "confidence": "high",
     "source_url": "https://www.orrick.com/en/News/2026/09/Orrick-Advises-Mistral-in-its-3B-Series-D-at-21B-Post-Money-Valuation"
+   }
+  ]
+ },
+ "company_revenues": {
+  "title": "Revenue of the most valuable AI model makers",
+  "unit": "USD bn",
+  "source": "companiesmarketcap.com (listed), filings and press reports (private)",
+  "source_url": "https://companiesmarketcap.com/",
+  "as_of": "2026-10-27",
+  "updated": "2026-10-27",
+  "next_review": "2027-01-27",
+  "auto": false,
+  "note": "Last 12 months, whole company. Hatched = press-reported, not audited.",
+  "rows": [
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Amazon",
+    "value": 742.77,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/amazon/revenue/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Alphabet (Google)",
+    "value": 445.86,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/alphabet-google/revenue/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Microsoft",
+    "value": 331.83,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/microsoft/revenue/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Meta",
+    "value": 228.24,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/meta-platforms/revenue/"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 ByteDance",
+    "value": 200,
+    "detail": "Revenue 2025 (full year). Reported by The Information, not audited",
+    "confidence": "low",
+    "source_url": "https://www.analyticsinsight.net/news/bytedance-revenue-hits-usd-120b-ai-spending-cuts-profit"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 Alibaba",
+    "value": 150.41,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/alibaba/revenue/"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 Tencent",
+    "value": 99.65,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/tencent/revenue/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 OpenAI",
+    "value": 21.2,
+    "detail": "Revenue July 2025 - June 2026, estimated (2025 $13.1bn - H1 2025 $4.3bn + Q1 2026 $5.7bn + Q2 2026 $6.7bn). Press reports, not audited. Annualised run-rate (~$50bn in Sept 2026) not used",
+    "confidence": "low",
+    "source_url": "https://www.theinformation.com/articles/openai-held-1-billion-revenue-lead-anthropic-first-quarter"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 SpaceX (xAI)",
+    "value": 20.64,
+    "detail": "Revenue over the last 12 reported months",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/spacex/revenue/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Anthropic",
+    "value": 19.708,
+    "detail": "Revenue July 2025 - June 2026 (S-1: FY2025 $4,585m - H1 2025 $1,163m + H1 2026 $16,286m)",
+    "confidence": "high",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/2130357/000162828026067168/anthropicpbc-sx1.htm"
    }
   ]
  },
