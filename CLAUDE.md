@@ -149,11 +149,11 @@ Le code est backward-compatible (fallback automatique dans `save_to_supabase` et
 
 ## « Who really invests in AI? » — indicateurs pays (domaine IA)
 
-Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, **pour le domaine IA uniquement**, par 4 onglets (textes en anglais) à droite du globe. Chaque classement est un top 10 ; tous sauf l'investissement privé sont rapportés au PIB, pour voir les pays qui font un effort proportionnel (« put their money where their mouth is ») :
+Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, **pour le domaine IA uniquement**, par 4 onglets (textes en anglais) à droite du globe. Chaque classement est un top 10 ; les trois classements de pays sont rapportés au PIB, pour voir les pays qui font un effort proportionnel (« put their money where their mouth is »). Depuis le 2026-10-27, le premier onglet (ex-« 💰 Investment », investissement privé IA par pays selon le Stanford AI Index) classe des **entreprises** :
 
 | Onglet | Mesure | Source | Mise à jour |
 |---|---|---|---|
-| 💰 Investment | Investissement privé IA, en milliards de $ (valeur absolue) | Stanford AI Index (Quid), top 15 pays publiés | Manuelle, 1×/an (avril) |
+| 🏢 Valuations | Valorisation des entreprises qui développent leurs propres modèles d'IA de pointe, en $ (valeur de toute l'entreprise, y compris les activités hors IA des géants). Nvidia, TSMC et Apple sont exclus. | Cotées : capitalisation boursière (scraping de companiesmarketcap.com, `market_cap_slug`). Non cotées : valorisation post-money de la dernière levée close, avec une URL par chiffre. | Cotées : auto, mensuelle. Non cotées : manuelle, tous les 3 mois et à chaque nouvelle levée ou introduction en bourse. |
 | 📦 Hardware | Importations nettes HS 847150 + 847330 / PIB | UN Comtrade (API publique) | Auto, mensuelle |
 | 🖥️ Supercomputers | Rmax des systèmes TOP500 accélérés (GPU) des sites Research/Academic/Government, PFlop/s par 1 000 Md$ de PIB | TOP500 (scraping) | Auto (listes de juin et novembre) |
 | 📢 Announcements | Budgets IA **publics** annoncés, étalés sur la durée du plan / PIB | Documents officiels, une URL par chiffre | Manuelle, tous les 3 mois |

@@ -1,105 +1,103 @@
 {
- "generated_at": "2026-10-10T23:45:23+00:00",
- "private_investment": {
-  "title": "Private AI investment",
+ "generated_at": "2026-10-27T20:38:53+00:00",
+ "company_valuations": {
+  "title": "Most valuable AI model makers",
   "unit": "USD bn",
-  "source": "Stanford AI Index 2026 (Quid data)",
-  "source_url": "https://hai.stanford.edu/ai-index/2026-ai-index-report/economy",
-  "as_of": "2025",
-  "updated": "2026-10-11",
-  "next_review": "2027-04-30",
+  "source": "companiesmarketcap.com (listed) and last funding rounds (private)",
+  "source_url": "https://companiesmarketcap.com/",
+  "as_of": "2026-10-27",
+  "updated": "2026-10-27",
+  "next_review": "2027-01-27",
   "auto": false,
-  "note": "Only the top 15 countries are published.",
+  "note": "Whole-company value: big tech includes non-AI businesses. Hatched = round reported, not confirmed closed.",
   "rows": [
    {
     "iso3": "USA",
-    "name": "🇺🇸 United States",
-    "value": 285.88,
-    "detail": "Private AI investment in 2025 (0.93% of GDP)"
+    "name": "🇺🇸 Microsoft",
+    "value": 3945.0,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/microsoft/marketcap/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Alphabet (Google)",
+    "value": 3874.0,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/alphabet-google/marketcap/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Amazon",
+    "value": 2730.0,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/amazon/marketcap/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 SpaceX (xAI)",
+    "value": 2017.0,
+    "detail": "Market capitalisation on 2026-10-27. xAI merged into SpaceX in Feb 2026",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/spacex/marketcap/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Meta",
+    "value": 1585.0,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/meta-platforms/marketcap/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 Anthropic",
+    "value": 965,
+    "detail": "Private: $65bn Series H closed May 2026. IPO filed Oct 2026",
+    "confidence": "high",
+    "source_url": "https://news.crunchbase.com/ai/anthropic-nears-1t-valuation-65b-seriesh/"
+   },
+   {
+    "iso3": "USA",
+    "name": "🇺🇸 OpenAI",
+    "value": 852,
+    "detail": "Private: $122bn round closed March 2026",
+    "confidence": "high",
+    "source_url": "https://siliconangle.com/2026/03/31/openai-just-closed-record-breaking-122b-funding-round-brings-value-852b/"
    },
    {
     "iso3": "CHN",
-    "name": "🇨🇳 China",
-    "value": 12.41,
-    "detail": "Private AI investment in 2025 (0.06% of GDP)"
+    "name": "🇨🇳 ByteDance",
+    "value": 550,
+    "detail": "Private: General Atlantic stake sale, Feb 2026. Proposed sale, closing not confirmed",
+    "confidence": "low",
+    "source_url": "https://www.scmp.com/tech/big-tech/article/3344631/bytedance-valuation-said-hit-record-us550-billion-proposed-equity-sale"
    },
    {
-    "iso3": "GBR",
-    "name": "🇬🇧 United Kingdom",
-    "value": 5.9,
-    "detail": "Private AI investment in 2025 (0.15% of GDP)"
+    "iso3": "CHN",
+    "name": "🇨🇳 Tencent",
+    "value": 446.77,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/tencent/marketcap/"
+   },
+   {
+    "iso3": "CHN",
+    "name": "🇨🇳 Alibaba",
+    "value": 249.37,
+    "detail": "Market capitalisation on 2026-10-27",
+    "confidence": "high",
+    "source_url": "https://companiesmarketcap.com/alibaba/marketcap/"
    },
    {
     "iso3": "FRA",
-    "name": "🇫🇷 France",
-    "value": 4.36,
-    "detail": "Private AI investment in 2025 (0.13% of GDP)"
-   },
-   {
-    "iso3": "CAN",
-    "name": "🇨🇦 Canada",
-    "value": 4.28,
-    "detail": "Private AI investment in 2025 (0.18% of GDP)"
-   },
-   {
-    "iso3": "IND",
-    "name": "🇮🇳 India",
-    "value": 4.09,
-    "detail": "Private AI investment in 2025 (0.10% of GDP)"
-   },
-   {
-    "iso3": "DEU",
-    "name": "🇩🇪 Germany",
-    "value": 3.89,
-    "detail": "Private AI investment in 2025 (0.08% of GDP)"
-   },
-   {
-    "iso3": "ISR",
-    "name": "🇮🇱 Israel",
-    "value": 3.58,
-    "detail": "Private AI investment in 2025 (0.59% of GDP)"
-   },
-   {
-    "iso3": "AUS",
-    "name": "🇦🇺 Australia",
-    "value": 2.52,
-    "detail": "Private AI investment in 2025 (0.14% of GDP)"
-   },
-   {
-    "iso3": "SAU",
-    "name": "🇸🇦 Saudi Arabia",
-    "value": 2.03,
-    "detail": "Private AI investment in 2025 (0.16% of GDP)"
-   },
-   {
-    "iso3": "SGP",
-    "name": "🇸🇬 Singapore",
-    "value": 1.82,
-    "detail": "Private AI investment in 2025 (0.30% of GDP)"
-   },
-   {
-    "iso3": "KOR",
-    "name": "🇰🇷 South Korea",
-    "value": 1.78,
-    "detail": "Private AI investment in 2025 (0.10% of GDP)"
-   },
-   {
-    "iso3": "BEL",
-    "name": "🇧🇪 Belgium",
-    "value": 1.2,
-    "detail": "Private AI investment in 2025 (0.17% of GDP)"
-   },
-   {
-    "iso3": "JPN",
-    "name": "🇯🇵 Japan",
-    "value": 1.11,
-    "detail": "Private AI investment in 2025 (0.03% of GDP)"
-   },
-   {
-    "iso3": "SWE",
-    "name": "🇸🇪 Sweden",
-    "value": 0.97,
-    "detail": "Private AI investment in 2025 (0.14% of GDP)"
+    "name": "🇫🇷 Mistral AI",
+    "value": 24.5,
+    "detail": "Private: EUR 3bn Series D closed Sept 2026 (EUR 21bn)",
+    "confidence": "high",
+    "source_url": "https://www.orrick.com/en/News/2026/09/Orrick-Advises-Mistral-in-its-3B-Series-D-at-21B-Post-Money-Valuation"
    }
   ]
  },
@@ -109,7 +107,7 @@
   "source": "UN Comtrade (HS 847150 + 847330, imports minus exports)",
   "source_url": "https://comtradeplus.un.org/",
   "as_of": "2025",
-  "updated": "2026-10-11",
+  "updated": "2026-10-27",
   "auto": true,
   "note": "Includes non-AI servers. Countries that do not report customs data (e.g. UAE) are missing.",
   "rows": [
@@ -511,7 +509,7 @@
   "source": "TOP500 list 2026/06 (GPU-accelerated, research/academic/government sites)",
   "source_url": "https://top500.org/lists/top500/2026/06/",
   "as_of": "2026/06",
-  "updated": "2026-10-11",
+  "updated": "2026-10-27",
   "auto": true,
   "note": "HPL (FP64) performance; private clusters are rarely listed in TOP500.",
   "rows": [

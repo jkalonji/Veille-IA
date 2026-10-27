@@ -1320,7 +1320,7 @@ def fig_country_ranking(articles: list[dict]) -> go.Figure:
 
 # (key in data/country_indicators.json, tab label)
 INDICATOR_TABS: list[tuple[str, str]] = [
-    ("private_investment", "💰 Investment"),
+    ("company_valuations", "🏢 Valuations"),
     ("hardware_imports",   "📦 Hardware"),
     ("public_compute",     "🖥️ Supercomputers"),
     ("announcements",      "📢 Announcements"),
@@ -1337,7 +1337,7 @@ def _fmt_indicator(value: float, unit: str) -> str:
     if unit.startswith("%"):
         return f"{value:.2f}%" if value >= 1 else f"{value:.3f}%"
     if unit == "USD bn":
-        return f"${value:,.1f}bn"
+        return f"${value / 1000:,.2f}tn" if value >= 1000 else f"${value:,.0f}bn"
     return f"{value:,.0f}"
 
 

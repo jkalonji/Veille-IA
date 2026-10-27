@@ -1,9 +1,10 @@
 """
 Country-level AI investment indicators ("Who really invests in AI?").
 
-Builds four rankings. All but private investment are normalised by GDP so
-that small countries that commit heavily stand out as much as large ones:
-  - private_investment : private AI investment in USD (Stanford AI Index, hand-entered)
+Builds four rankings. The country ones are normalised by GDP so that small
+countries that commit heavily stand out as much as large ones:
+  - company_valuations : most valuable AI model makers in USD (market caps from
+                         companiesmarketcap.com, private rounds hand-entered)
   - hardware_imports   : net imports of servers + computer parts (UN Comtrade)
   - public_compute     : GPU-accelerated public supercomputers (TOP500)
   - announcements      : public AI budgets announced per year (hand-entered)
@@ -119,27 +120,50 @@ def _country_label(iso3: str, countries: dict[str, dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 1. Private AI investment (hand-entered)
+# 1. Most valuable AI model makers (market caps auto, private rounds hand-entered)
 # ---------------------------------------------------------------------------
 
-def build_private_investment(manual: dict, gdp: dict, countries: dict) -> dict:
-    m = manual["private_investment"]
+_MARKET_CAP_RE = re.compile(r"Market cap: <span[^>]*>\$([\d.,]+) (Trillion|Billion|Million) USD")
+_MARKET_CAP_SCALE = {"Trillion": 1e3, "Billion": 1.0, "Million": 1e-3}
+
+
+def _market_cap_usd_bn(slug: str) -> float:
+    page = _get(f"https://companiesmarketcap.com/{slug}/marketcap/").text
+    time.sleep(1)
+    m = _MARKET_CAP_RE.search(page)
+    if not m:
+        raise RuntimeError(f"companiesmarketcap layout changed: no market cap for {slug}")
+    return float(m.group(1).replace(",", "")) * _MARKET_CAP_SCALE[m.group(2)]
+
+
+def build_company_valuations(manual: dict, countries: dict) -> dict:
+    m = manual["company_valuations"]
+    today = date.today().isoformat()
     rows = []
-    for iso3, usd_bn in m["values_usd_bn"].items():
-        g = gdp.get(iso3)
-        share = f" ({usd_bn * 1e9 / g['value'] * 100:.2f}% of GDP)" if g else ""
+    for c in m["companies"]:
+        if c.get("market_cap_slug"):
+            value = _market_cap_usd_bn(c["market_cap_slug"])
+            detail = f"Market capitalisation on {today}"
+            url = f"https://companiesmarketcap.com/{c['market_cap_slug']}/marketcap/"
+        else:
+            value = c["valuation_usd_bn"]
+            detail = f"Private: {c['round']}"
+            url = c["source_url"]
+        flag = _flag(countries.get(c["iso3"], {}).get("iso2", ""))
         rows.append({
-            "iso3": iso3,
-            "name": _country_label(iso3, countries),
-            "value": usd_bn,
-            "detail": f"Private AI investment in {m['year']}{share}",
+            "iso3": c["iso3"],
+            "name": f"{flag} {c['name']}".strip(),
+            "value": value,
+            "detail": detail + (f". {c['note']}" if c.get("note") else ""),
+            "confidence": c.get("confidence", "high"),
+            "source_url": url,
         })
     return {
-        "title": "Private AI investment",
+        "title": "Most valuable AI model makers",
         "unit": "USD bn",
         "source": m["source"],
-        "source_url": m["source_url"],
-        "as_of": str(m["year"]),
+        "source_url": "https://companiesmarketcap.com/",
+        "as_of": today,
         "updated": m["updated"],
         "next_review": m["next_review"],
         "auto": False,
@@ -390,7 +414,7 @@ def refresh() -> dict:
     fx = fetch_world_bank("PA.NUS.FCRF")
 
     builders = {
-        "private_investment": lambda: build_private_investment(manual, gdp, countries),
+        "company_valuations": lambda: build_company_valuations(manual, countries),
         "hardware_imports": lambda: build_hardware_imports(gdp, countries),
         "public_compute": lambda: build_public_compute(gdp, countries, previous.get("public_compute")),
         "announcements": lambda: build_announcements(manual, gdp, fx, countries),
