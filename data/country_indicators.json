@@ -1,11 +1,11 @@
 {
- "generated_at": "2026-10-27T20:44:12+00:00",
+ "generated_at": "2026-11-01T11:38:56+00:00",
  "company_valuations": {
   "title": "Most valuable AI model makers",
   "unit": "USD bn",
   "source": "companiesmarketcap.com (listed) and last funding rounds (private)",
   "source_url": "https://companiesmarketcap.com/",
-  "as_of": "2026-10-27",
+  "as_of": "2026-11-01",
   "updated": "2026-10-27",
   "next_review": "2027-01-27",
   "auto": false,
@@ -14,40 +14,40 @@
    {
     "iso3": "USA",
     "name": "🇺🇸 Microsoft",
-    "value": 3945.0,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 3875.0,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/microsoft/marketcap/"
    },
    {
     "iso3": "USA",
     "name": "🇺🇸 Alphabet (Google)",
-    "value": 3874.0,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 3420.0,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/alphabet-google/marketcap/"
    },
    {
     "iso3": "USA",
     "name": "🇺🇸 Amazon",
-    "value": 2730.0,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 2598.0,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/amazon/marketcap/"
    },
    {
     "iso3": "USA",
     "name": "🇺🇸 SpaceX (xAI)",
-    "value": 2017.0,
-    "detail": "Market capitalisation on 2026-10-27. xAI merged into SpaceX in Feb 2026",
+    "value": 1829.0,
+    "detail": "Market capitalisation on 2026-11-01. xAI merged into SpaceX in Feb 2026",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/spacex/marketcap/"
    },
    {
     "iso3": "USA",
     "name": "🇺🇸 Meta",
-    "value": 1585.0,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 1572.0,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/meta-platforms/marketcap/"
    },
@@ -78,16 +78,16 @@
    {
     "iso3": "CHN",
     "name": "🇨🇳 Tencent",
-    "value": 446.77,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 443.06,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/tencent/marketcap/"
    },
    {
     "iso3": "CHN",
     "name": "🇨🇳 Alibaba",
-    "value": 249.37,
-    "detail": "Market capitalisation on 2026-10-27",
+    "value": 243.89,
+    "detail": "Market capitalisation on 2026-11-01",
     "confidence": "high",
     "source_url": "https://companiesmarketcap.com/alibaba/marketcap/"
    },
@@ -106,7 +106,7 @@
   "unit": "USD bn",
   "source": "companiesmarketcap.com (listed), filings and press reports (private)",
   "source_url": "https://companiesmarketcap.com/",
-  "as_of": "2026-10-27",
+  "as_of": "2026-11-01",
   "updated": "2026-10-27",
   "next_review": "2027-01-27",
   "auto": false,
@@ -200,7 +200,7 @@
   "source": "UN Comtrade (HS 847150 + 847330, imports minus exports)",
   "source_url": "https://comtradeplus.un.org/",
   "as_of": "2025",
-  "updated": "2026-10-27",
+  "updated": "2026-11-01",
   "auto": true,
   "note": "Includes non-AI servers. Countries that do not report customs data (e.g. UAE) are missing.",
   "rows": [
@@ -367,16 +367,16 @@
     "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
    },
    {
+    "iso3": "AUT",
+    "name": "🇦🇹 Austria",
+    "value": 0.09109209740068362,
+    "detail": "$0.5bn net imports ($0.8bn in, $0.3bn out) in 2025"
+   },
+   {
     "iso3": "BEL",
     "name": "🇧🇪 Belgium",
     "value": 0.09013563927620304,
     "detail": "$0.7bn net imports ($1.2bn in, $0.5bn out) in 2025"
-   },
-   {
-    "iso3": "AUT",
-    "name": "🇦🇹 Austria",
-    "value": 0.08885039691988153,
-    "detail": "$0.5bn net imports ($0.8bn in, $0.3bn out) in 2025"
    },
    {
     "iso3": "PHL",
@@ -413,6 +413,18 @@
     "name": "🇧🇷 Brazil",
     "value": 0.0765477208498273,
     "detail": "$1.7bn net imports ($1.8bn in, $0.1bn out) in 2025"
+   },
+   {
+    "iso3": "PER",
+    "name": "🇵🇪 Peru",
+    "value": 0.07366235576164204,
+    "detail": "$0.2bn net imports ($0.3bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "CRI",
+    "name": "🇨🇷 Costa Rica",
+    "value": 0.07109140379792593,
+    "detail": "$0.1bn net imports ($0.1bn in, $0.0bn out) in 2025"
    },
    {
     "iso3": "MAR",
@@ -556,6 +568,12 @@
     "iso3": "TZA",
     "name": "🇹🇿 Tanzania",
     "value": 0.03039566012118038,
+    "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
+   },
+   {
+    "iso3": "ZWE",
+    "name": "🇿🇼 Zimbabwe",
+    "value": 0.029541279082403678,
     "detail": "$0.0bn net imports ($0.0bn in, $0.0bn out) in 2025"
    },
    {
@@ -1000,7 +1018,8 @@
    "49702": "Industry",
    "50296": "Research",
    "50819": "Research"
-  }
+  },
+  "error": "404 Client Error: Not Found for url: https://top500.org/lists/top500/list/2026/11/?page=1"
  },
  "announcements": {
   "title": "Announced public AI budgets",
