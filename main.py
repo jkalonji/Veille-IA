@@ -22,6 +22,7 @@ from supabase import create_client
 
 import cake
 import cake_market
+import layer_value
 from country_indicators import load_indicators, stale_reason
 
 # ---------------------------------------------------------------------------
@@ -1522,6 +1523,14 @@ def send_data_reminders(supabase_client=None) -> None:
             "🎂 <b>Acteurs du AI layer cake à relire</b>\n" + "\n".join(actor_lines)
             + "\n\nÉditer <code>data/actors_manual.json</code> (ou la table <code>actors</code> pour les nouveaux).",
         )
+    value_reason = layer_value.stale_reason()
+    if value_reason:
+        _post_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            f"🎂 <b>Valeur du MWh par couche</b> : {value_reason}.\n"
+            "Éditer <code>data/layer_value_manual.json</code> (électricité, GPU-heure, estimations) "
+            "puis lancer <code>python layer_value.py</code>.",
+        )
     indicators = load_indicators()
     lines = []
     for key, ind in indicators.items():
@@ -1590,7 +1599,8 @@ async def main():
     # 4b. AI layer cake: prices, cross-layer moves, scarcity (never blocks the pipeline)
     dashboard_url = os.environ.get("DASHBOARD_URL", "")
     if supabase_client is not None:
-        for step in (cake_market.collect_prices, cake_market.collect_token_prices):
+        for step in (cake_market.collect_prices, cake_market.collect_token_prices,
+                     cake_market.collect_manual_series):
             try:
                 step(supabase_client)
             except Exception as e:

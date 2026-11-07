@@ -10,6 +10,7 @@ import sys
 from collections import Counter
 from datetime import date, timedelta
 from html import escape
+from urllib.parse import urlparse
 
 import plotly.graph_objects as go
 import plotly.io as pio
@@ -230,12 +231,83 @@ def fig_layer_curves(series: dict, daily: list[dict]) -> go.Figure:
     return fig
 
 
+def fig_value_staircase(value: dict) -> go.Figure | None:
+    """§7.1 (5) — price of a MWh at the meter at each floor (log scale), with
+    value added and multiplier above each bar; low-confidence floors lighter
+    and prefixed with ≈, negative value added in red with ▼. A button switches
+    to the monthly value added of each floor."""
+    floors = [f for f in value.get("floors") or [] if f.get("price_usd_mwh")]
+    if not floors:
+        return None
+    meta = cake.layer_meta()
+
+    def money(v):
+        return f"{v:,.0f}".replace(",", " ")
+
+    labels, prices, colors, texts, hovers = [], [], [], [], []
+    for f in floors:
+        low = f["confidence"] == "low"
+        labels.append(f"{meta[f['layer']]['emoji']} {meta[f['layer']]['label']}")
+        prices.append(f["price_usd_mwh"])
+        colors.append("rgba(68,136,255,0.45)" if low else "#4488ff")
+        pre = "≈ " if low else ""
+        line = f"{pre}{money(f['price_usd_mwh'])} $/MWh"
+        hover = f"{pre}{money(f['price_usd_mwh'])} $/MWh au compteur"
+        if f.get("value_added_usd_mwh") is not None:
+            va = f["value_added_usd_mwh"]
+            mult = f"×{f['multiplier']:.1f}".replace(".", ",") if f.get("multiplier") else ""
+            if f["value_added_negative"]:
+                line += f"<br><span style='color:#e63946'>▼ {money(va)} {mult}</span>"
+                hover += "<br>vend sous le coût des couches inférieures"
+            else:
+                line += f"<br>+{money(va)} {mult}"
+            hover += f"<br>valeur ajoutée {money(va)} $/MWh {mult}"
+        texts.append(line)
+        hovers.append(hover + "<br>sources : " + ", ".join(sorted({i['source'] or i['key'] for i in f['inputs'] if i.get('source_url')})))
+    fig = go.Figure(go.Bar(x=labels, y=prices, marker=dict(color=colors, cornerradius=4), text=texts,
+                           textposition="outside", cliponaxis=False, hovertext=hovers, hoverinfo="text"))
+    hist = value.get("history") or []
+    months = [h["month"] for h in hist]
+    for f in floors:
+        fig.add_trace(go.Scatter(x=months, y=[(h["floors"].get(f["layer"]) or {}).get("value_added") for h in hist],
+                                 name=meta[f["layer"]]["label"], mode="lines+markers", visible=False,
+                                 line=dict(color=LAYER_COLORS[f["layer"]])))
+    n = len(floors)
+    urls = sorted({i["source_url"] for f in floors for i in f["inputs"] if i.get("source_url")})
+    domains = list(dict.fromkeys(urlparse(u).netloc.removeprefix("www.") for u in urls))
+    links = [f'<a href="{next(u for u in urls if d in u)}">{d}</a>' for d in domains]
+    links = " · ".join(links[:5]) + ("<br>" + " · ".join(links[5:]) if len(links) > 5 else "")
+    fig.update_layout(
+        template=_template(), height=480, showlegend=False,
+        title=dict(text="Valeur d'un MWh à chaque couche",
+                   subtitle=dict(text="$ par MWh au compteur, échelle log · ≈ = estimation · ▼ = valeur ajoutée négative")),
+        yaxis=dict(type="log", title="$/MWh"),
+        updatemenus=[dict(type="buttons", direction="right", x=0, y=-0.14, xanchor="left", yanchor="top",
+                          bgcolor="#0c1222", bordercolor="#1a2540", font=dict(size=10, color="#c8d4ec"),
+                          buttons=[dict(label="Escalier", method="update",
+                                        args=[{"visible": [True] + [False] * n},
+                                              {"yaxis.type": "log", "showlegend": False, "yaxis.title.text": "$/MWh"}]),
+                                   dict(label="Évolution de la valeur ajoutée", method="update",
+                                        args=[{"visible": [False] + [True] * n},
+                                              {"yaxis.type": "linear", "showlegend": True,
+                                               "yaxis.title.text": "valeur ajoutée $/MWh"}])])],
+        annotations=[dict(text=f"Mise à jour {value.get('as_of', '?')} · {links}", showarrow=False, xref="paper",
+                          yref="paper", x=0.5, y=-0.32, font=dict(size=9, color="#5a6a8a"))],
+        margin=dict(l=10, r=10, t=80, b=120),
+    )
+    return fig
+
+
 def cake_figures(data: dict | None, market: dict | None, today: str | None = None) -> list[go.Figure]:
-    """Plotly figures shown under the cake (matrix, layer curves)."""
+    """Plotly figures shown under the cake (matrix, value staircase, layer curves)."""
+    import layer_value
     today = today or date.today().isoformat()
     figs = []
     if data is not None:
         figs.append(fig_matrix(data["events"], today))
+    staircase = fig_value_staircase(layer_value.load_output())
+    if staircase is not None:
+        figs.append(staircase)
     if market and (market.get("series") or market.get("daily")):
         figs.append(fig_layer_curves(market["series"], market["daily"]))
     return figs

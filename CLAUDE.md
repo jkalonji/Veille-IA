@@ -281,3 +281,11 @@ CREATE TABLE IF NOT EXISTS layer_daily (
 CREATE INDEX IF NOT EXISTS market_data_symbol_time ON market_data(domain, symbol, collected_at);
 ```
 (`tension_count` / `detente_count` en NUMERIC et non INT : le repli sur le vocabulaire compte une tension faible pour 0,5.)
+
+### Phase D — Valeur du MWh à chaque couche (`layer_value.py`)
+- `data/layer_value_manual.json` : entrées sourcées (prix de gros de l'électricité, accélérateur de référence H100 SXM, PUE, durée d'amortissement, taux d'utilisation, GPU-heure, énergie par million de tokens, revenu et usage par abonné), chacune avec `source_url`, `confidence` et `note` ; `level: "chip"` = énergie mesurée sur la puce, multipliée par le PUE au calcul. Le prix des tokens est récupéré automatiquement (indice OpenRouter). Une entrée à `null` rend l'étage absent, jamais estimé à zéro.
+- `python layer_value.py` écrit `data/layer_value.json` (prix au compteur, valeur ajoutée, multiplicateur, `value_added_negative`, historique mensuel). Une valeur ajoutée négative est un signal (couche en compression de marge ou subventionnée), pas une erreur : elle n'est jamais tronquée.
+- Workflow `AI Radar - Layer Value` : le 1er du mois à 05:30 UTC, recalcule, commite le JSON et envoie le rapport Telegram (étage qui crée le plus de valeur, variation sur un mois, étages en valeur ajoutée négative).
+- Électricité et GPU-heure alimentent aussi `market_data` (`ELEC_US`, `ELEC_EU`, `GPU_HOUR_H100`) pour la confirmation des goulots. Relance du lundi quand `next_review` est dépassé.
+- Dashboard : escalier de la valeur (log), bascule « évolution de la valeur ajoutée », sources en pied de graphique.
+- ⚠️ Les étages Modèles et Applications reposent sur des estimations très incertaines (énergie par token, usage par abonné) : toujours affichés avec `≈`. Avec l'énergie par token d'un modèle 405B, la couche Modèles ressort en valeur ajoutée négative ; avec un 70B, elle passerait au-dessus de l'infrastructure.

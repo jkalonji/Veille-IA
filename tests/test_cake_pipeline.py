@@ -129,4 +129,4 @@ def test_scarcity_bottleneck_and_dashboard(monkeypatch):
     data = cake_dashboard.load_cake_data(db) or {"events": [], "actors": [], "articles": []}
     html = cake_dashboard.cake_section_html(data, [], {}, market=market)
     assert "Goulot : Énergie (confirmé)" in html and "goulot confirmé" in html
-    assert len(cake_dashboard.cake_figures(data, market)) == 2
+    assert len(cake_dashboard.cake_figures(data, market)) == 3  # matrix, value staircase, curves

@@ -377,6 +377,16 @@ def collect_token_prices(client) -> None:
     logging.info(f"Cake market: token price index {pin:.2f} / {pout:.2f} $/M tokens ({len(top)} models)")
 
 
+def collect_manual_series(client) -> None:
+    """Monthly hand-entered series (electricity, GPU-hour) from
+    data/layer_value_manual.json, for the bottleneck price confirmation."""
+    import layer_value
+    rows = [_row(sym, label, item["as_of"], float(item["value"]), item.get("unit", ""), None,
+                 item.get("source_url") or "manual") for sym, label, item in layer_value.market_series()]
+    if rows:
+        _insert_market_rows(client, rows)
+
+
 def yf_revenue_usd_bn(ticker: str) -> float | None:
     """Trailing revenue from Yahoo Finance, converted to USD bn — fallback for
     listed actors without a companiesmarketcap slug."""

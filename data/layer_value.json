@@ -1,0 +1,171 @@
+{
+ "generated_at": "2026-11-07T22:03:56+00:00",
+ "as_of": "2026-11-07",
+ "updated": "2026-11-07",
+ "next_review": "2026-12-01",
+ "token_price_usd_per_m": 0.6,
+ "floors": [
+  {
+   "layer": "energie",
+   "price_usd_mwh": 52.0,
+   "value_added_usd_mwh": null,
+   "multiplier": null,
+   "value_added_negative": false,
+   "confidence": "medium",
+   "inputs": [
+    {
+     "key": "electricity_us",
+     "source_url": "https://www.carriermanagement.com/news/2026/10/07/292552.htm",
+     "source": "EIA Short-Term Energy Outlook (via Carrier Management)"
+    }
+   ]
+  },
+  {
+   "layer": "puces",
+   "price_usd_mwh": 866.58,
+   "value_added_usd_mwh": 814.58,
+   "multiplier": 16.67,
+   "value_added_negative": false,
+   "confidence": "low",
+   "inputs": [
+    {
+     "key": "electricity_us",
+     "source_url": "https://www.carriermanagement.com/news/2026/10/07/292552.htm",
+     "source": "EIA Short-Term Energy Outlook (via Carrier Management)"
+    },
+    {
+     "key": "accelerator_price_usd",
+     "source_url": "https://intuitionlabs.ai/articles/nvidia-ai-gpu-pricing-guide",
+     "source": "IntuitionLabs, guide des prix GPU (H100 SXM 25 000 à 40 000 $ au T1 2026)"
+    },
+    {
+     "key": "accelerator_tdp_kw",
+     "source_url": "https://www.nvidia.com/en-us/data-center/h100/",
+     "source": "Fiche produit NVIDIA H100 (Max TDP up to 700W, SXM)"
+    },
+    {
+     "key": "pue",
+     "source_url": "https://intelligence.uptimeinstitute.com/resource/uptime-institute-global-data-center-survey-2025",
+     "source": "Uptime Institute Global Data Center Survey 2025"
+    },
+    {
+     "key": "lifetime_years",
+     "source_url": "https://wccftech.com/coreweave-crwv-depreciates-its-gpus-over-6-years-while-its-competitor-nebius-uses-a-4-year-depreciation-period",
+     "source": "Durée d'amortissement des GPU de CoreWeave (S-1) ; Nebius 4 ans, Lambda 5 ans"
+    },
+    {
+     "key": "utilization",
+     "source_url": "https://wccftech.com/coreweave-crwv-depreciates-its-gpus-over-6-years-while-its-competitor-nebius-uses-a-4-year-depreciation-period",
+     "source": "Taux d'utilisation de 60 à 70 % cité pour les GPU de datacenter IA"
+    }
+   ]
+  },
+  {
+   "layer": "infrastructure",
+   "price_usd_mwh": 2912.8,
+   "value_added_usd_mwh": 2046.22,
+   "multiplier": 3.36,
+   "value_added_negative": false,
+   "confidence": "low",
+   "inputs": [
+    {
+     "key": "gpu_hour_usd",
+     "source_url": "https://tech-insider.org/what-renting-an-nvidia-h100-costs-per-hour-in-2026-and-when-renting-beats-buying/",
+     "source": "GetDeploying, indice cloud GPU juin 2026 (moyenne H100 tous fournisseurs)"
+    },
+    {
+     "key": "accelerator_tdp_kw",
+     "source_url": "https://www.nvidia.com/en-us/data-center/h100/",
+     "source": "Fiche produit NVIDIA H100 (Max TDP up to 700W, SXM)"
+    },
+    {
+     "key": "pue",
+     "source_url": "https://intelligence.uptimeinstitute.com/resource/uptime-institute-global-data-center-survey-2025",
+     "source": "Uptime Institute Global Data Center Survey 2025"
+    }
+   ]
+  },
+  {
+   "layer": "modeles",
+   "price_usd_mwh": 683.53,
+   "value_added_usd_mwh": -2229.27,
+   "multiplier": 0.23,
+   "value_added_negative": true,
+   "confidence": "low",
+   "inputs": [
+    {
+     "key": "token_price_usd_per_m",
+     "source_url": "https://openrouter.ai/rankings",
+     "source": "Indice de prix des tokens (médiane sortie, 20 modèles les plus utilisés sur OpenRouter)"
+    },
+    {
+     "key": "energy_per_m_tokens_mwh",
+     "source_url": "https://arxiv.org/html/2505.06371v2",
+     "source": "ML.ENERGY Benchmark : Llama 3.1 405B FP8 sur H100, 0,21 Wh pour 367 tokens de sortie en moyenne"
+    },
+    {
+     "key": "pue",
+     "source_url": "https://intelligence.uptimeinstitute.com/resource/uptime-institute-global-data-center-survey-2025",
+     "source": "Uptime Institute Global Data Center Survey 2025"
+    }
+   ]
+  },
+  {
+   "layer": "applications",
+   "price_usd_mwh": 92592.59,
+   "value_added_usd_mwh": 91909.07,
+   "multiplier": 135.46,
+   "value_added_negative": false,
+   "confidence": "low",
+   "inputs": [
+    {
+     "key": "app_revenue_per_user_month_usd",
+     "source_url": "https://openai.com/chatgpt/pricing/",
+     "source": "Prix de l'abonnement ChatGPT Plus"
+    },
+    {
+     "key": "energy_per_prompt_wh",
+     "source_url": "https://arxiv.org/html/2508.15734v1",
+     "source": "Google, énergie du prompt texte médian de Gemini Apps (refroidissement et capacité inactive inclus)"
+    },
+    {
+     "key": "prompts_per_user_month",
+     "source_url": null,
+     "source": "Hypothèse : abonné actif, 30 prompts par jour"
+    },
+    {
+     "key": "pue",
+     "source_url": "https://intelligence.uptimeinstitute.com/resource/uptime-institute-global-data-center-survey-2025",
+     "source": "Uptime Institute Global Data Center Survey 2025"
+    }
+   ]
+  }
+ ],
+ "history": [
+  {
+   "month": "2026-11",
+   "floors": {
+    "energie": {
+     "price": 52.0,
+     "value_added": null
+    },
+    "puces": {
+     "price": 866.58,
+     "value_added": 814.58
+    },
+    "infrastructure": {
+     "price": 2912.8,
+     "value_added": 2046.22
+    },
+    "modeles": {
+     "price": 683.53,
+     "value_added": -2229.27
+    },
+    "applications": {
+     "price": 92592.59,
+     "value_added": 91909.07
+    }
+   }
+  }
+ ]
+}
