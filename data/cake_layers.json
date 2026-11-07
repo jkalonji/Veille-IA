@@ -1,0 +1,46 @@
+{
+  "_comment": "Configuration de la dimension AI layer cake (voir SPECS_LAYER_CAKE.md). Ordre des couches = du bas vers le haut. Les mots-clés sont cherchés en début de mot, en minuscules.",
+  "layers": [
+    {"code": "energie",        "label": "Énergie",        "emoji": "⚡", "rank": 1},
+    {"code": "puces",          "label": "Puces",          "emoji": "🔲", "rank": 2},
+    {"code": "infrastructure", "label": "Infrastructure", "emoji": "🏗️", "rank": 3},
+    {"code": "modeles",        "label": "Modèles",        "emoji": "🧠", "rank": 4},
+    {"code": "applications",   "label": "Applications",   "emoji": "📱", "rank": 5}
+  ],
+  "sublayers": {
+    "_comment": "v2, non utilisé en v1. Chaque liste est ordonnée du bas vers le haut.",
+    "energie": ["combustible_matieres", "equipement", "production", "reseau_raccordement"],
+    "puces": ["equipement_fabrication", "fonderie", "memoire", "packaging_avance", "conception", "interconnexion_reseau"],
+    "infrastructure": ["foncier_construction", "alimentation_refroidissement", "systemes_reseau_datacenter", "cloud_hyperscaler", "neocloud_location_gpu"],
+    "modeles": ["donnees", "outillage", "modeles_ouverts", "modeles_frontiere", "modeles_specialises"],
+    "applications": ["outils_developpeurs", "entreprise_horizontales", "verticales_metier", "grand_public", "ia_physique"]
+  },
+  "relevance_keywords": {
+    "energie": [
+      "data center", "datacenter", "data centre", "hyperscaler", "grid", "power demand", "electricity demand",
+      "load growth", "nuclear", "reactor", "smr", "small modular", "ppa", "power purchase", "transformer",
+      "turbine", "uranium", "interconnection", "transmission line", "capacity market", "gigawatt", "megawatt",
+      "wholesale price", "electricity price", "power price", "baseload",
+      "réseau électrique", "raccordement", "nucléaire", "réacteur", "centre de données", "centres de données",
+      "prix de l'électricité", "prix de gros", "consommation électrique", "transformateur", "mégawatt"
+    ],
+    "puces": [
+      "semiconductor", "chipmaker", "chip shortage", "chip export", "foundry", "foundries", "wafer", "hbm",
+      "high bandwidth memory", "dram", "memory chip", "memory price", "euv", "lithography", "advanced packaging",
+      "cowos", "2nm", "3nm", "1.4nm", "tsmc", "asml", "sk hynix", "micron", "samsung foundry", "export control",
+      "semi-conducteur", "semiconducteur", "fonderie", "lithographie", "puce", "mémoire hbm"
+    ],
+    "infrastructure": [
+      "data center", "datacenter", "data centre", "hyperscaler", "neocloud", "colocation", "gpu cloud",
+      "gpu rental", "gpu-hour", "liquid cooling", "cooling", "rack", "server", "campus", "capex",
+      "capital expenditure", "stargate", "coreweave", "nebius", "equinix", "digital realty", "vertiv",
+      "centre de données", "centres de données", "refroidissement", "hébergeur", "serveur"
+    ]
+  },
+  "scarcity_vocabulary": [
+    "shortage", "sold out", "waitlist", "wait list", "allocation", "rationing", "backlog", "bottleneck",
+    "lead time", "supply constraint", "supply crunch", "capacity crunch", "tight supply", "constrained",
+    "pénurie", "rupture", "liste d'attente", "goulot", "délai de livraison", "délais de livraison", "rationnement",
+    "saturé", "saturation"
+  ]
+}

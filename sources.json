@@ -220,7 +220,8 @@
       "type": "rss",
       "url": "https://www.digitimes.com/rss/daily.xml",
       "country": "🇹🇼",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "puces"
     },
     {
       "comment": "=== BUSINESS / INDUSTRIE ===",
@@ -265,35 +266,40 @@
       "type": "rss",
       "url": "https://electrek.co/feed/",
       "country": "🇺🇸",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "name": "Canary Media",
       "type": "rss",
-      "url": "https://www.canarymedia.com/feed.xml",
+      "url": "https://www.canarymedia.com/rss.xml",
       "country": "🇺🇸",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "name": "Energy Monitor",
       "type": "rss",
       "url": "https://www.energymonitor.ai/feed/",
       "country": "🌐",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "name": "Connaissance des Énergies",
       "type": "rss",
-      "url": "https://www.connaissancedesenergies.org/feed",
+      "url": "https://www.connaissancedesenergies.org/rss.xml",
       "country": "🇫🇷",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "name": "Révolution Énergétique",
       "type": "rss",
       "url": "https://www.revolution-energetique.com/feed/",
       "country": "🇫🇷",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "comment": "=== SEMICONDUCTEURS / HARDWARE ===",
@@ -308,21 +314,48 @@
       "type": "rss",
       "url": "https://www.eetimes.com/feed/",
       "country": "🌐",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "puces"
     },
     {
       "name": "Semiconductor Engineering",
       "type": "rss",
       "url": "https://semiengineering.com/feed/",
       "country": "🌐",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "puces"
     },
     {
       "name": "Tom's Hardware",
       "type": "rss",
       "url": "https://www.tomshardware.com/feeds/all",
       "country": "🇺🇸",
-      "enabled": true
+      "enabled": true,
+      "cake_layer": "puces"
+    },
+    {
+      "name": "Data Center Dynamics",
+      "type": "rss",
+      "url": "https://www.datacenterdynamics.com/en/rss/",
+      "country": "🇬🇧",
+      "enabled": true,
+      "cake_layer": "infrastructure"
+    },
+    {
+      "name": "Data Center Knowledge",
+      "type": "rss",
+      "url": "https://www.datacenterknowledge.com/rss.xml",
+      "country": "🇺🇸",
+      "enabled": true,
+      "cake_layer": "infrastructure"
+    },
+    {
+      "name": "Utility Dive",
+      "type": "rss",
+      "url": "https://www.utilitydive.com/feeds/news/",
+      "country": "🇺🇸",
+      "enabled": true,
+      "cake_layer": "energie"
     },
     {
       "name": "The Register",

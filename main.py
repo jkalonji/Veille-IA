@@ -20,6 +20,7 @@ from groq import AsyncGroq
 import requests
 from supabase import create_client
 
+import cake
 from country_indicators import load_indicators, stale_reason
 
 # ---------------------------------------------------------------------------
@@ -46,6 +47,9 @@ class Article:
     story_id: int | None = None  # the article's most active story (it can belong to several)
     topics: list[str] = field(default_factory=list)  # groq-extracted topics, the basis of stories
     published_is_estimated: bool = False  # True if `published` is collection time, not a real source date
+    layers: list[str] = field(default_factory=list)  # AI layer cake layers the article is about ("ia" only)
+    cross_layer: bool = False  # an actor entering a layer it is not active in yet
+    scarcity: str = "aucune"   # "tension" | "detente" | "aucune"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -235,6 +239,7 @@ async def extract_topics(
                 reasoning_effort="low",
                 response_format={"type": "json_object"},
             )
+            _count_tokens("topics", resp)
             data = json.loads(resp.choices[0].message.content)
             for row in data.get("articles", []):
                 i = row.get("id")
@@ -367,6 +372,7 @@ async def review_stories(stories: list[dict], client, model: str, domain: str) -
             reasoning_effort="low",
             response_format={"type": "json_object"},
         )
+        _count_tokens("story_review", resp)
         data = json.loads(resp.choices[0].message.content)
     except Exception as e:
         logging.warning(f"Story review failed ({domain}): {e}")
@@ -989,6 +995,10 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
     # broad tech/AI feeds that need narrowing). Other domains' sources are already
     # on-topic by construction (e.g. an oil-price feed doesn't need an "is this
     # about oil" check) — they pass through untouched.
+    # Sources tagged with a `cake_layer` (energy, chips, data centers) also keep
+    # articles that only match that layer's keywords: the signals of the lower
+    # layers (uranium price, grid queue, transformer shortage) rarely mention AI.
+    source_layer = {s["name"]: s["cake_layer"] for s in sources if s.get("cake_layer")}
     filtered = []
     for a in unique:
         if a.domain != "ia":
@@ -999,6 +1009,8 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
         weak_hits   = sum(1 for kw in AI_WEAK_KEYWORDS   if kw in text)
         # Pass if: 1 strong keyword OR 2+ keyword matches in total
         if strong_hits >= 1 or (strong_hits + weak_hits) >= 2:
+            filtered.append(a)
+        elif a.source in source_layer and cake.matches_layer_keywords(text, source_layer[a.source]):
             filtered.append(a)
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
@@ -1127,17 +1139,30 @@ def _build_groq_prompt(domain: str, with_summary: bool) -> str:
     )
     if with_summary:
         prompt += _GROQ_PROMPT_SUMMARY
+    if domain == "ia":
+        prompt += cake.CAKE_PROMPT
     return prompt + _GROQ_PROMPT_FOOTER
 
 
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
+# Groq tokens spent this run, per step — logged at the end of main() to keep an
+# eye on the 200k tokens/day quota.
+GROQ_TOKENS: Counter = Counter()
+
+
+def _count_tokens(step: str, response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        GROQ_TOKENS[step] += usage.total_tokens or 0
+
 
 async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> bool:
     """Classify a single article in-place, using its domain's taxonomy/prompt.
-    Hot articles use model_full (70b): category + sentiment + country + summary.
-    Non-hot articles use model_fast (8b): category + sentiment + country only.
-    This cuts ~65% of 70b token usage on a typical day.
+    Hot articles use model_full: category + sentiment + country + summary.
+    Non-hot articles use model_fast: category + sentiment + country only —
+    except in the "ia" domain, where every article goes to model_full because
+    it also tags the AI layer cake keys (layers, cross_layer, scarcity).
     Returns False if the Groq call failed and the article fell back to defaults."""
     taxo = DOMAIN_TAXONOMY.get(article.domain, DOMAIN_TAXONOMY["ia"])
     valid_categories = set(taxo["categories"])
@@ -1155,6 +1180,9 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         model         = model_fast
         system_prompt = _build_groq_prompt(article.domain, with_summary=False)
         max_tokens    = 300   # reasoning budget + category + sentiment + country
+    if article.domain == "ia":
+        model       = model_full  # the cake keys need the full model
+        max_tokens += 50          # layers + cross_layer + scarcity
 
     try:
         response = await client.chat.completions.create(
@@ -1169,6 +1197,7 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
                                      # low effort + prior tight budgets caused empty completions
             response_format={"type": "json_object"},
         )
+        _count_tokens("classification", response)
         result = json.loads(response.choices[0].message.content)
         cat    = result.get("category",  default_category)
         sent   = result.get("sentiment", "Neutre")
@@ -1180,6 +1209,8 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
             article.summary = (result.get("summary") or "").strip()
+        if article.domain == "ia":
+            article.layers, article.cross_layer, article.scarcity = cake.parse_cake_fields(result)
         return True
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
@@ -1264,6 +1295,9 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "story_id": a.story_id,
             "published_is_estimated": a.published_is_estimated,
             "topics": a.topics,
+            "layers": a.layers,
+            "cross_layer": a.cross_layer,
+            "scarcity": a.scarcity,
         }
         for a in articles
     ]
@@ -1280,9 +1314,11 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS topics TEXT[] DEFAULT '{}';
     # Migration required for the "Publié" column fallback flag (see CLAUDE.md):
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
+    # Migration required for the AI layer cake (see CLAUDE.md, Phase A):
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}'; (+ cross_layer, scarcity)
     _OPTIONAL_COLS = (
         "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
-        "story_id", "published_is_estimated", "topics",
+        "story_id", "published_is_estimated", "topics", "layers", "cross_layer", "scarcity",
     )
 
     try:
@@ -1536,6 +1572,7 @@ async def main():
     send_telegram(classified, dashboard_url=dashboard_url)
     send_data_reminders()
 
+    logging.info(f"Groq tokens used this run: {dict(GROQ_TOKENS)} (total {sum(GROQ_TOKENS.values())})")
     logging.info("AI Radar pipeline complete.")
 
 

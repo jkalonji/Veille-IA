@@ -164,3 +164,22 @@ Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, 
 - Données à revoir : bandeau orange sous le graphique + message Telegram le lundi (`send_data_reminders` dans `main.py`), dès qu'un `next_review` manuel est dépassé ou qu'une source auto a plus de 45 jours.
 - Les valeurs `confidence: "low"` sont affichées en plus clair avec le préfixe `≈`.
 - Exclus volontairement : Project Transcendence (Arabie saoudite) et MGX (Émirats), qui sont des objectifs rapportés par la presse et non des budgets publics. Les Émirats ne déclarent pas leurs données douanières à Comtrade.
+
+## 🎂 AI layer cake (domaine IA)
+
+Lecture de l'actualité IA par couche — énergie → puces → infrastructure → modèles → applications — pour repérer les **mouvements inter-couches** (un acteur qui entre dans une autre couche). Spécification complète : `SPECS_LAYER_CAKE.md`. Configuration unique : `data/cake_layers.json` (couches, mots-clés, vocabulaire de rareté, paniers, seuils et poids). Logique : `cake.py` ; rendu du dashboard : `cake_dashboard.py`. Tests : `pytest` (dossier `tests/`).
+
+### Phase A — Étiquetage des articles
+- `sources.json` : champ optionnel `"cake_layer"` sur les sources spécialisées d'une couche (énergie, puces, infrastructure). Un article d'une telle source passe le filtre IA de `fetch_all` s'il passe le filtre IA **ou** s'il contient un mot-clé de `relevance_keywords[cake_layer]` (cherché en début de mot).
+- `_classify_one` (domaine `ia` uniquement) demande à Groq trois clés en plus : `layers` (0 à 3 couches), `cross_layer` (un acteur entre dans une couche où il n'est pas encore actif) et `scarcity` (`tension` / `detente` / `aucune`), validées par `cake.parse_cake_fields`. **Tous les articles `ia` passent par le modèle complet `GROQ_MODEL`** (avant : seulement les hot), pour la qualité de `cross_layer`.
+- Quota : la fin de chaque run logue `Groq tokens used this run: {...}` par étape (classification, sujets, revue des histoires). À surveiller sur les premiers runs (200 000 tokens/jour).
+- Dashboard : section « 🎂 AI layer cake » en tête du panneau `ia` (Streamlit et export, ancre `#cake`).
+
+**Migration SQL — Phase A (à exécuter une fois en Supabase) :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS cross_layer BOOLEAN DEFAULT FALSE;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS scarcity TEXT DEFAULT 'aucune';     -- 'tension' | 'detente' | 'aucune'
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS sublayers TEXT[] DEFAULT '{}';      -- v2, vide en v1
+```
+Le code est backward-compatible (fallback dans `save_to_supabase` et `load_articles` si les colonnes sont absentes : la section cake reste alors masquée).

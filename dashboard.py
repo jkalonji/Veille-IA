@@ -32,6 +32,7 @@ import plotly.io as pio
 from plotly.offline import get_plotlyjs
 from supabase import create_client
 
+import cake_dashboard
 from country_indicators import load_indicators, stale_reason
 
 # Load .env (local only, no-op if absent)
@@ -1105,12 +1106,12 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
 _ARTICLE_COLS = (
     "title, source, country, published, category, sentiment, url, hot_topic, "
     "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, "
-    "story_id, published_is_estimated"
+    "story_id, published_is_estimated, layers"
 )
 # Columns that may be absent if a migration hasn't been applied yet — dropped one at a
 # time (in case several are missing on a totally fresh DB) instead of crashing the
 # dashboard. Same spirit as save_to_supabase's optional-columns retry in main.py.
-_OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated")
+_OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated", "layers")
 _PAGE_SIZE = 1000  # Supabase's default API max-rows per response
 
 
@@ -1161,6 +1162,7 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
     for a in articles:
         a.setdefault("story_id", None)
         a.setdefault("published_is_estimated", False)
+        a["layers"] = a.get("layers") or []
         if a.get("published"):
             a["published_raw"] = a["published"]
             a["published"] = _normalize_date(a["published"])
@@ -1680,6 +1682,13 @@ def run_streamlit() -> None:
 
     st.markdown("---")
 
+    # ── AI layer cake (IA only) ───────────────────────────────────────────────
+    if domain == "ia":
+        cake_html = cake_dashboard.cake_counts_html(articles)
+        if cake_html:
+            st.markdown("#### 🎂 AI layer cake")
+            st.markdown(cake_html, unsafe_allow_html=True)
+
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
         st.session_state["globe_country"] = None
@@ -2125,6 +2134,8 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain, stories_lookup=stories_lookup)
     stories_html = _stories_html(articles, stories_lookup, domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
+    cake_html   = cake_dashboard.cake_counts_html(articles) if domain == "ia" else ""
+    cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
 
     def _options(values: list[str]) -> str:
         return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
@@ -2136,6 +2147,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     return f"""
   <section class="domain-panel" data-domain="{domain}" style="display:{display}">
     <p class="domain-headline">{domain_meta['emoji']} {domain_meta['label']} — {total} articles · {date_lbl} · généré le {now}</p>
+    {cake_block}
 
     <div class="charts-row">
       <div class="globe-card">{globe_html}</div>
