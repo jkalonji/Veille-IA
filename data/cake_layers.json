@@ -37,8 +37,20 @@
       "centre de données", "centres de données", "refroidissement", "hébergeur", "serveur"
     ]
   },
+  "baskets": {
+    "_comment": "Paniers équipondérés par couche, générés depuis actors_manual.json (basket non null) + l'ETF IGV. Tickers validés sur Yahoo Finance le 2026-11-07. Benchmark des rendements anormaux : QQQ.",
+    "energie": ["CCJ", "LEU", "GEV", "ENR.DE", "BE", "CEG", "VST", "TLN", "NRG", "OKLO", "SMR", "PWR", "PRY.MI", "NEX.PA"],
+    "puces": ["ASML", "AMAT", "LRCX", "KLAC", "8035.T", "ASM.AS", "TSM", "000660.KS", "MU", "ASX", "AMKR", "BESI.AS", "NVDA", "AMD", "AVGO", "MRVL", "ARM", "CBRS", "688256.SS", "ALAB", "CRDO", "COHR", "LITE"],
+    "infrastructure": ["EQIX", "DLR", "VRT", "SU.PA", "LR.PA", "ETN", "SMCI", "CLS", "6669.TW", "ANET", "ORCL", "CRWV", "NBIS", "IREN", "APLD"],
+    "modeles": ["2513.HK", "0100.HK"],
+    "applications": ["IGV", "PLTR", "NOW", "CRM", "TEM", "RXRX", "DUOL", "APP", "SYM"]
+  },
   "actor_weight_coefficients": {"size": 0.30, "influence": 0.30, "longevity": 0.15, "implantation": 0.25},
   "event_score": {"major_threshold": 7, "strong_signal_threshold": 5, "novelty_window_days": 180, "novelty_bonus": 1.2, "merge_window_days": 90, "home_layer_delay_days": 30},
+  "bottleneck": {
+    "z_threshold": 1.5, "min_days": 3, "migration_days": 7, "baseline_days": 90, "rebuild_days": 30,
+    "price_confirmation": {"window_days": 30, "basket_outperformance_pts": 5, "electricity_rise_pct": 10}
+  },
   "scarcity_vocabulary": [
     "shortage", "sold out", "waitlist", "wait list", "allocation", "rationing", "backlog", "bottleneck",
     "lead time", "supply constraint", "supply crunch", "capacity crunch", "tight supply", "constrained",

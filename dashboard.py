@@ -1709,6 +1709,8 @@ def run_streamlit() -> None:
             st.markdown("#### 🎂 AI layer cake")
             n_cards = len((cake_data or {}).get("events") or [])
             components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
+            for fig in cake_dashboard.cake_figures(cake_data, _cached_cake_market()):
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
@@ -2158,10 +2160,14 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     cake_html   = ""
     if domain == "ia":
         cake_client = _cake_client()
-        cake_html = cake_dashboard.cake_section_html(
-            cake_dashboard.load_cake_data(cake_client), articles, stories_lookup,
-            market=cake_dashboard.load_cake_market(cake_client),
-        )
+        cake_data = cake_dashboard.load_cake_data(cake_client)
+        cake_market = cake_dashboard.load_cake_market(cake_client) or {}
+        cake_market["blocks_html"] = [
+            '<div class="cake-chart">' + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
+                                                     include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
+            for i, fig in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
+        ]
+        cake_html = cake_dashboard.cake_section_html(cake_data, articles, stories_lookup, market=cake_market)
     cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
 
     def _options(values: list[str]) -> str:

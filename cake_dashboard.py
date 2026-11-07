@@ -11,11 +11,24 @@ from collections import Counter
 from datetime import date, timedelta
 from html import escape
 
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
+
 import cake
+import cake_market
 
 PERIODS = (7, 30, 90)
 MAX_ARROWS = 12   # per period view, highest scores first
 COLORS = {"montee": "#f4a261", "descente": "#7eb8f7"}
+LAYER_COLORS = {"energie": "#e9c46a", "puces": "#9b5de5", "infrastructure": "#2a9d8f",
+                "modeles": "#4488ff", "applications": "#e76f51"}
+STALE_PRICE_DAYS = 4
+
+
+def _template() -> str:
+    """dashboard.py registers the "cobalt" chart theme; fall back when used alone."""
+    return "cobalt" if "cobalt" in pio.templates else "plotly_dark"
 
 
 # ---------------------------------------------------------------------------
@@ -58,9 +71,174 @@ def load_cake_data(client, days: int = 180) -> dict | None:
     return {"events": events, "actors": actors, "articles": layer_articles}
 
 
-def load_cake_market(client) -> dict | None:
-    """Market and scarcity data of the section (Phase C); None until then."""
-    return None
+def load_cake_market(client, days: int = 180) -> dict | None:
+    """Baskets, token price index, scarcity z-scores and bottleneck state.
+    None when the Phase C table (layer_daily) is not there yet."""
+    if client is None:
+        return None
+    today = date.today().isoformat()
+    since = (date.today() - timedelta(days=days)).isoformat()
+    try:
+        daily = cake.fetch_all_rows(lambda a, b: client.table("layer_daily").select(
+            "day, layer, scarcity_z, baseline_rebuilding, bottleneck_status").gte("day", since)
+            .order("day").range(a, b).execute())
+        synthetic = client.table("layer_events").select("id, what, first_seen").eq("event_type", "goulot") \
+            .gte("first_seen", (date.today() - timedelta(days=7)).isoformat()).execute().data or []
+    except Exception as e:
+        print(f"Cake: layer_daily absente ({e}) — migration Phase C non appliquée.", file=sys.stderr)
+        return None
+    symbols = [cake_market.basket_symbol(l) for l in cake.layer_codes()] + [
+        cake_market.BENCHMARK, cake_market.TOKEN_IN, cake_market.TOKEN_OUT]
+    try:
+        series = cake_market.load_series(client, symbols, since)
+    except Exception:
+        series = {}
+    return build_market_view(daily, series, synthetic, today)
+
+
+def build_market_view(daily: list[dict], series: dict, synthetic: list[dict], today: str) -> dict:
+    """Shape the stored market and scarcity data for the section (pure, testable)."""
+    by_layer: dict[str, list[dict]] = {}
+    for r in daily:
+        by_layer.setdefault(r["layer"], []).append(r)
+    last_day = max((r["day"] for r in daily), default=None)
+    bottleneck = None
+    if last_day:
+        hit = next((r for r in daily if r["day"] == last_day and r.get("bottleneck_status")), None)
+        bottleneck = ({"layer": hit["layer"], "status": "confirmé" if hit["bottleneck_status"] == "confirme" else "signalé"}
+                      if hit else {"layer": None})
+    extras: dict[int, dict] = {}
+    for p in PERIODS:
+        since = (date.fromisoformat(today) - timedelta(days=p)).isoformat()
+        extras[p] = {}
+        for code in cake.layer_codes():
+            rows = by_layer.get(code) or []
+            latest = rows[-1] if rows else {}
+            basket = [v for d, v in series.get(cake_market.basket_symbol(code), []) if d >= since]
+            ex = {"gauge": cake_market.gauge(latest.get("scarcity_z")),
+                  "rebuilding": bool(latest.get("baseline_rebuilding")),
+                  "spark": basket,
+                  "change_pct": (basket[-1] / basket[0] - 1) * 100 if len(basket) >= 2 and basket[0] else None}
+            if code == "modeles":
+                ex["spark2"] = [v for d, v in series.get(cake_market.TOKEN_OUT, []) if d >= since]
+            extras[p][code] = ex
+    last_price = max((d for d, _ in series.get(cake_market.basket_symbol("puces"), [])), default=None)
+    stale = ""
+    if last_price and (date.fromisoformat(today) - date.fromisoformat(last_price)).days > STALE_PRICE_DAYS:
+        stale = f"⚠️ cours au {last_price}"
+    return {"bottleneck": bottleneck, "layer_extras": extras, "series": series, "daily": daily,
+            "synthetic": synthetic, "stale": stale}
+
+
+def fig_matrix(events: list[dict], today: str) -> go.Figure:
+    """Origin → target heatmap of cross-layer moves over 90 days (diagonal
+    empty), with buttons: count / sum of scores, and the change vs the
+    previous 90 days."""
+    codes = cake.layer_codes()
+    meta = cake.layer_meta()
+    t = date.fromisoformat(today)
+    cur_since, prev_since = (t - timedelta(days=90)).isoformat(), (t - timedelta(days=180)).isoformat()
+    tomorrow = (t + timedelta(days=1)).isoformat()
+
+    def matrix(since, until, weight):
+        m = [[0.0] * len(codes) for _ in codes]
+        for e in events:
+            if e.get("event_type") == "integration" and since <= (e.get("first_seen") or "") < until \
+                    and e.get("origin_layer") in codes and e.get("target_layer") in codes:
+                m[codes.index(e["origin_layer"])][codes.index(e["target_layer"])] += weight(e)
+        for i in range(len(codes)):
+            m[i][i] = None
+        return m
+
+    def diff(a, b):
+        return [[None if x is None else x - y for x, y in zip(ra, rb)] for ra, rb in zip(a, b)]
+
+    def count(e):
+        return 1
+
+    def total(e):
+        return float(e.get("score") or 0)
+
+    cur_n, cur_s = matrix(cur_since, tomorrow, count), matrix(cur_since, tomorrow, total)
+    prev_n, prev_s = matrix(prev_since, cur_since, count), matrix(prev_since, cur_since, total)
+    labels = [meta[c]["label"] for c in codes]
+    seq = [[0, "#0c1222"], [0.4, "#0047ab"], [0.75, "#4488ff"], [1, "#7eb8f7"]]
+    div = [[0, "#7eb8f7"], [0.5, "#0c1222"], [1, "#f4a261"]]
+    fig = go.Figure(go.Heatmap(z=cur_n, x=labels, y=labels, colorscale=seq, zmin=0, xgap=3, ygap=3,
+                               hovertemplate="%{y} → %{x}<br>%{z}<extra></extra>", texttemplate="%{z:.0f}",
+                               colorbar=dict(thickness=10, outlinewidth=0)))
+    views = [("Nombre", cur_n, seq, False), ("Somme des scores", cur_s, seq, False),
+             ("Évolution (nombre)", diff(cur_n, prev_n), div, True),
+             ("Évolution (scores)", diff(cur_s, prev_s), div, True)]
+    buttons = [dict(label=lbl, method="restyle",
+                    args=[{"z": [z], "colorscale": [cs], "zmid": [0 if centred else None],
+                           "zmin": [None if centred else 0]}]) for lbl, z, cs, centred in views]
+    fig.update_layout(
+        template=_template(), height=420,
+        title=dict(text="Mouvements origine → cible",
+                   subtitle=dict(text="90 derniers jours · ligne = origine, colonne = cible")),
+        xaxis=dict(side="bottom"), yaxis=dict(ticklabelstandoff=6),
+        updatemenus=[dict(type="buttons", direction="right", buttons=buttons, x=0, y=-0.22, xanchor="left",
+                          bgcolor="#0c1222", bordercolor="#1a2540", font=dict(size=10, color="#c8d4ec"))],
+        margin=dict(l=10, r=10, t=70, b=80),
+    )
+    return fig
+
+
+def fig_layer_curves(series: dict, daily: list[dict]) -> go.Figure:
+    """The five baskets rebased to 100 and, underneath on the same time axis,
+    each layer's scarcity z-score with the threshold and the confirmed
+    bottleneck periods shaded."""
+    meta = cake.layer_meta()
+    cfg = cake.load_config()["bottleneck"]
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.6, 0.4], vertical_spacing=0.06)
+    for code in cake.layer_codes():
+        pts = series.get(cake_market.basket_symbol(code)) or []
+        if pts:
+            base = pts[0][1] or 1
+            fig.add_trace(go.Scatter(x=[d for d, _ in pts], y=[v / base * 100 for _, v in pts], name=meta[code]["label"],
+                                     line=dict(color=LAYER_COLORS[code], width=1.8), legendgroup=code), row=1, col=1)
+    bench = series.get(cake_market.BENCHMARK) or []
+    if bench:
+        fig.add_trace(go.Scatter(x=[d for d, _ in bench], y=[v / bench[0][1] * 100 for _, v in bench], name="QQQ",
+                                 line=dict(color="#5a6a8a", width=1.2, dash="dot")), row=1, col=1)
+    for code in cake.layer_codes():
+        rows = [r for r in daily if r["layer"] == code and r.get("scarcity_z") is not None]
+        if rows:
+            fig.add_trace(go.Scatter(x=[r["day"] for r in rows], y=[r["scarcity_z"] for r in rows],
+                                     name=f"z {meta[code]['label']}", line=dict(color=LAYER_COLORS[code], width=1.4),
+                                     legendgroup=code, showlegend=False), row=2, col=1)
+    fig.add_hline(y=cfg["z_threshold"], line=dict(color="#e63946", width=1, dash="dash"), row=2, col=1)
+    confirmed = sorted(r["day"] for r in daily if r.get("bottleneck_status") == "confirme")
+    spans, start, prev = [], None, None
+    for d in confirmed:
+        if prev and (date.fromisoformat(d) - date.fromisoformat(prev)).days > 1:
+            spans.append((start, prev))
+            start = None
+        start = start or d
+        prev = d
+    if start:
+        spans.append((start, prev))
+    for a, b in spans:
+        fig.add_vrect(x0=a, x1=b, fillcolor="#f4a261", opacity=0.12, line_width=0)
+    fig.update_layout(template=_template(), height=520,
+                      title=dict(text="Paniers par couche et tensions", subtitle=dict(
+                          text="base 100 · en dessous : z-score du solde de rareté (seuil 1,5), goulots confirmés surlignés")),
+                      legend=dict(orientation="h", y=-0.08), margin=dict(l=10, r=10, t=70, b=40))
+    fig.update_yaxes(title_text="base 100", row=1, col=1)
+    fig.update_yaxes(title_text="z", row=2, col=1)
+    return fig
+
+
+def cake_figures(data: dict | None, market: dict | None, today: str | None = None) -> list[go.Figure]:
+    """Plotly figures shown under the cake (matrix, layer curves)."""
+    today = today or date.today().isoformat()
+    figs = []
+    if data is not None:
+        figs.append(fig_matrix(data["events"], today))
+    if market and (market.get("series") or market.get("daily")):
+        figs.append(fig_layer_curves(market["series"], market["daily"]))
+    return figs
 
 
 def _hot_within(days: list[str], since: str) -> bool:
@@ -180,22 +358,22 @@ def cake_svg(period_events: list[dict], letters: dict, signal_counts: Counter, a
                      f'<text x="14" y="{y + 44}" class="cake-t-sub">{signal_counts.get(c, 0)} signaux forts · '
                      f'{article_counts.get(c, 0)} articles</text>')
         if is_bn:
-            parts.append(f'<text x="190" y="{y + 24}" class="cake-t-bn">goulot {escape(bottleneck["status"])}</text>')
+            parts.append(f'<text x="250" y="{y + 24}" class="cake-t-bn">goulot {escape(bottleneck["status"])}</text>')
         ex = extras.get(c) or {}
         if ex.get("gauge") is not None:
-            gx, gw = 190, 110
+            gx, gw = 250, 80
             dash = ' stroke-dasharray="3 3"' if ex.get("rebuilding") else ""
             parts.append(f'<rect x="{gx}" y="{y + 36}" width="{gw}" height="8" rx="4" fill="#060810" stroke="#1a2540"{dash}/>'
                          f'<rect x="{gx}" y="{y + 36}" width="{gw * ex["gauge"]:.0f}" height="8" rx="4" fill="#e63946" opacity="0.8"/>'
                          f'<title>Rareté (z-score ramené à 0–1){" — normale en reconstruction" if ex.get("rebuilding") else ""}</title>')
         if ex.get("spark"):
-            parts.append(_sparkline(ex["spark"], 320, y + 10, 120, band_h - 22, "#4488ff"))
+            parts.append(_sparkline(ex["spark"], 345, y + 10, 115, band_h - 22, "#4488ff"))
             if ex.get("spark2"):
-                parts.append(_sparkline(ex["spark2"], 320, y + 10, 120, band_h - 22, "#e9c46a"))
+                parts.append(_sparkline(ex["spark2"], 345, y + 10, 115, band_h - 22, "#e9c46a"))
             chg = ex.get("change_pct")
             if chg is not None:
                 color = "#3fb950" if chg >= 0 else "#e63946"
-                parts.append(f'<text x="450" y="{y + 34}" class="cake-t-sub" fill="{color}" style="fill:{color}">'
+                parts.append(f'<text x="470" y="{y + 34}" class="cake-t-sub" fill="{color}" style="fill:{color}">'
                              f'{chg:+.1f}%</text>')
         parts.append("</g>")
     # arrows
@@ -355,6 +533,8 @@ def cake_section_html(data: dict | None, articles: list[dict], stories_lookup: d
     bn_label = ""
     if bn:
         bn_label = f"Goulot : {meta[bn['layer']]['label']} ({bn['status']})" if bn.get("layer") else "Pas de goulot net"
+    if market.get("stale"):
+        bn_label = " · ".join(x for x in (bn_label, market["stale"]) if x)
 
     views, buttons = "", ""
     for p in PERIODS:
@@ -365,8 +545,9 @@ def cake_section_html(data: dict | None, articles: list[dict], stories_lookup: d
         signals = strong_signals(data, stories_lookup, p, today)
         sig_counts = Counter(l for s in signals for l in s["layers"])
         art_counts = layer_counts([a for a in data["articles"] if a["published"] >= since])
+        bn_svg = {"layer": bn["layer"], "status": bn["status"]} if bn and bn.get("layer") else None
         svg = cake_svg(p_events, letters, sig_counts, art_counts,
-                       (market.get("layer_extras") or {}).get(p), bn, uid=f"-{p}")
+                       (market.get("layer_extras") or {}).get(p), bn_svg, uid=f"-{p}")
         items = "".join(
             f'<li data-layers="{" ".join(s["layers"])}"><span class="cake-kind">{"📖" if s["kind"] == "story" else "🎂"} {s["date"]}</span>'
             + (f'<a href="#{s["ref"]}"' + (f' data-ev="{s["ref"]}"' if s["kind"] == "event" else "") + f'>{escape(s["label"])}</a>'

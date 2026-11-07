@@ -626,7 +626,14 @@ async def process_layer_events(articles: list, client, groq_client, model: str, 
     if actors is None:
         return []
     if date.fromisoformat(today).weekday() == 0 or any(a.get("weight") is None for a in actors):
-        refresh_actor_weights(client, actors, refresh_revenue=date.fromisoformat(today).weekday() == 0)
+        try:
+            import cake_market
+            influence = cake_market.influence_values(client, actors)
+        except Exception as e:
+            logging.warning(f"Cake: influence unavailable ({e}) — cold start for every actor")
+            influence = {}
+        refresh_actor_weights(client, actors, refresh_revenue=date.fromisoformat(today).weekday() == 0,
+                              influence=influence)
 
     try:
         by_id = {a["id"]: a for a in actors}
@@ -700,6 +707,13 @@ def refresh_actor_weights(client, actors: list[dict], refresh_revenue: bool = Fa
                 a["revenue_source"] = f"https://companiesmarketcap.com/{a['market_cap_slug']}/revenue/"
             except Exception as e:
                 logging.warning(f"Cake: revenue of {a['name']} unavailable: {e}")
+        elif a.get("ticker") and not a.get("market_cap_slug") and (refresh_revenue or a.get("revenue_usd_bn") is None):
+            try:
+                import cake_market
+                a["revenue_usd_bn"] = cake_market.yf_revenue_usd_bn(a["ticker"])
+                a["revenue_source"] = f"https://finance.yahoo.com/quote/{a['ticker']}/financials"
+            except Exception as e:
+                logging.warning(f"Cake: Yahoo revenue of {a['name']} unavailable: {e}")
 
     index = actor_index(actors)
     # Influence, cold start: percentile of market cap / valuation (country indicators)

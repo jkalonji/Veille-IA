@@ -21,6 +21,7 @@ import requests
 from supabase import create_client
 
 import cake
+import cake_market
 from country_indicators import load_indicators, stale_reason
 
 # ---------------------------------------------------------------------------
@@ -1586,8 +1587,14 @@ async def main():
     # 4. Save to Supabase
     save_to_supabase(classified, client=supabase_client)
 
-    # 4b. AI layer cake: cross-layer moves of this run (never blocks the pipeline)
+    # 4b. AI layer cake: prices, cross-layer moves, scarcity (never blocks the pipeline)
     dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    if supabase_client is not None:
+        for step in (cake_market.collect_prices, cake_market.collect_token_prices):
+            try:
+                step(supabase_client)
+            except Exception as e:
+                logging.error(f"Cake market: {step.__name__} failed: {e}")
     cake_events: list[dict] = []
     try:
         cake_events = await cake.process_layer_events(
@@ -1596,14 +1603,24 @@ async def main():
         )
     except Exception as e:
         logging.error(f"Cake: layer events step failed: {e}")
+    scarcity = {"bottleneck": "", "migration": None}
+    if supabase_client is not None:
+        try:
+            scarcity = cake_market.update_scarcity(supabase_client, sources)
+        except Exception as e:
+            logging.error(f"Cake: scarcity step failed: {e}")
     to_notify = [e for e in cake_events if cake.needs_notification(e)]
+    cake_messages = [cake.major_event_message(e, dashboard_url) for e in to_notify]
+    if scarcity["migration"]:
+        cake_messages.insert(0, cake_market.migration_message(scarcity["migration"]))
+        to_notify.append(scarcity["migration"])
 
     # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
     send_telegram(
         classified, dashboard_url=dashboard_url,
-        cake_messages=[cake.major_event_message(e, dashboard_url) for e in to_notify],
-        cake_line=cake.digest_line(cake_events),
+        cake_messages=cake_messages,
+        cake_line=cake.digest_line(cake_events, scarcity["bottleneck"]),
     )
     if to_notify:
         cake.mark_notified(supabase_client, to_notify)
@@ -1614,7 +1631,10 @@ async def main():
 
 
 if __name__ == "__main__":
-    if "--backfill-topics" in sys.argv:
+    if "--backfill-baskets" in sys.argv:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        cake_market.collect_prices(_get_supabase_client(), backfill=True)
+    elif "--backfill-topics" in sys.argv:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
         asyncio.run(backfill_topics(os.environ.get("TOPIC_BACKFILL_MODEL")))
     else:

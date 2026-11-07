@@ -254,3 +254,30 @@ CREATE TABLE IF NOT EXISTS actor_relations (
 );
 ```
 Sans ces tables, l'étape est sautée avec un avertissement et le dashboard garde le compteur de la Phase A.
+
+### Phase C — Marché et rareté (`cake_market.py`)
+- **Cours** (`collect_prices`, à chaque run) : clôtures yfinance de tous les tickers d'acteurs + `QQQ` → `market_data` (`symbol` = ticker), et l'indice équipondéré de chaque couche, base 100, calculé en rendements → `market_data` (`symbol` = `CAKE_ENERGIE`, `CAKE_PUCES`…). Paniers dans `cake_layers.json` (`baskets`), générés depuis `actors_manual.json` + `IGV` ; les 88 tickers ont été validés sur Yahoo Finance le 2026-11-07 (cours **et** nom de l'entreprise). Un ticker sans cours est logué et sorti de son panier ce jour-là. Un échec yfinance ne bloque rien : les dernières valeurs restent et le bandeau du gâteau affiche « ⚠️ cours au … » au-delà de 4 jours.
+- **Premier lancement, une fois** : `python main.py --backfill-baskets` (un an d'historique, ~5 s), nécessaire pour les courbes et l'influence.
+- **Indice de prix des tokens** (`collect_token_prices`) : médiane des prix entrée / sortie ($/M tokens) des 20 modèles payants les plus utilisés la veille sur OpenRouter (`TOKEN_PRICE_IDX_IN` / `_OUT`). L'API publique ne donne pas la popularité : le classement est lu dans les données embarquées de la page `openrouter.ai/rankings` (fragile ; en cas d'échec, pas de point ce jour-là, warning dans les logs), les prix viennent de `/api/v1/models`.
+- **Influence complète** (§5.2) : médiane des rendements anormaux absolus J0–J+1 (titre de l'acteur vs `QQQ` s'il est coté, et paniers des couches concernées) autour de ses événements et de ses articles hot ; démarrage à froid sous 3 observations. Taille des cotés sans slug companiesmarketcap : chiffre d'affaires Yahoo Finance converti en USD.
+- **Rareté et goulots** (`update_scarcity`, après la sauvegarde des articles) : recalcule `layer_daily` sur les 30 derniers jours à chaque run. Solde 7 jours (tension − détente) / articles, z-score contre les 90 jours précédents **de la même couche** (au moins 30 jours de base requis, donc pas de goulot avant ~1 mois de données après la Phase A, sauf rattrapage Phase E). Goulot signalé = couche au z le plus haut, > 1,5 sur 3 jours ; confirmé par un signal de prix de la couche (§6.4). Migration du goulot confirmé tenue 7 jours → événement `goulot` + message Telegram. Empreinte des sources par couche : un changement met la couche en « normale en reconstruction » 30 jours (jauge pointillée, pas de goulot).
+- Dashboard : jauges de rareté, sparklines des paniers (et de l'indice tokens pour Modèles), étiquette de goulot, matrice origine → cible (nombre / scores / évolution), courbes des paniers et des z-scores.
+
+**Migration SQL — Phase C :**
+```sql
+CREATE TABLE IF NOT EXISTS layer_daily (
+    day DATE NOT NULL,
+    layer TEXT NOT NULL,
+    article_count INT,
+    tension_count NUMERIC,
+    detente_count NUMERIC,
+    scarcity_balance NUMERIC,        -- solde lissé 7 j
+    scarcity_z NUMERIC,
+    sources_fingerprint TEXT,
+    baseline_rebuilding BOOLEAN DEFAULT FALSE,
+    bottleneck_status TEXT,          -- NULL | 'signale' | 'confirme'
+    PRIMARY KEY (day, layer)
+);
+CREATE INDEX IF NOT EXISTS market_data_symbol_time ON market_data(domain, symbol, collected_at);
+```
+(`tension_count` / `detente_count` en NUMERIC et non INT : le repli sur le vocabulaire compte une tension faible pour 0,5.)
