@@ -68,6 +68,23 @@ def chain_index(returns: dict[str, float], start_value: float = 100.0, after: st
     return out
 
 
+def present_days(closes: dict[str, dict[str, float]], tickers: list[str]) -> list[str]:
+    """Sorted days on which at least one of the tickers has a close."""
+    return sorted({d for t in tickers for d in closes.get(t) or {}})
+
+
+def chain_backwards(returns: dict[str, float], first_day: str, first_value: float, days: list[str]) -> dict[str, float]:
+    """Index values for the trading `days` before `first_day`, chained backwards
+    so that the series lands exactly on `first_value` at `first_day`."""
+    out, value = {}, first_value
+    later = first_day
+    for d in reversed([d for d in days if d < first_day]):
+        value /= 1 + returns.get(later, 0.0)
+        out[d] = value
+        later = d
+    return out
+
+
 def value_at(series: list[tuple[str, float]], day: str) -> tuple[str, float] | None:
     """Last (date, value) on or before `day` of a date-sorted series."""
     best = None
@@ -320,6 +337,10 @@ def collect_prices(client, backfill: bool = False) -> None:
         if not stored and rets:
             last_day = min(d for m in present for d in closes[m])  # base 100 on the first day of history
             rows.append(_row(sym, f"Panier {meta[layer]['label']}", last_day, 100.0, "index", None, SOURCE_YF))
+        elif stored and backfill:
+            # Daily runs came first: extend the index backwards from its first stored value
+            for d, v in chain_backwards(rets, stored[0][0], stored[0][1], present_days(closes, present)).items():
+                rows.append(_row(sym, f"Panier {meta[layer]['label']}", d, v, "index", None, SOURCE_YF))
         prev = last_value
         for d, v in chain_index(rets, last_value, after=last_day).items():
             rows.append(_row(sym, f"Panier {meta[layer]['label']}", d, v, "index", (v / prev - 1) * 100, SOURCE_YF))

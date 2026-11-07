@@ -130,3 +130,19 @@ def test_scarcity_bottleneck_and_dashboard(monkeypatch):
     html = cake_dashboard.cake_section_html(data, [], {}, market=market)
     assert "Goulot : Énergie (confirmé)" in html and "goulot confirmé" in html
     assert len(cake_dashboard.cake_figures(data, market)) == 3  # matrix, value staircase, curves
+
+
+def test_backfill_after_daily_runs_extends_baskets_backwards(monkeypatch):
+    db = FakeSupabase()
+    days = [d(k) for k in range(20, 0, -1)]
+    closes = {day: 100 + 2 * i for i, day in enumerate(days)}
+    monkeypatch.setattr(cake_market, "download_closes",
+                        lambda tickers, period: {t: dict(list(closes.items())[-5:] if period == "15d" else closes)
+                                                 for t in tickers})
+    cake_market.collect_prices(db)                  # a daily run first: index starts 5 days ago
+    cake_market.collect_prices(db, backfill=True)   # then the year of history
+    series = dict(cake_market.load_series(db, ["CAKE_PUCES"], d(60))["CAKE_PUCES"])
+    assert sorted(series) == days                   # every day, no gap, no duplicate
+    first_stored = days[-5]
+    for day in days:                                # proportional to the closes all the way back
+        assert abs(series[day] / series[first_stored] - closes[day] / closes[first_stored]) < 1e-6  # values stored with 6 decimals
