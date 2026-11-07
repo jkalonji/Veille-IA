@@ -1115,6 +1115,14 @@ _OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated", "layers")
 _PAGE_SIZE = 1000  # Supabase's default API max-rows per response
 
 
+def _cake_client():
+    """Supabase client for the AI layer cake section, or None when not configured."""
+    try:
+        return _supabase_client()
+    except RuntimeError:
+        return None
+
+
 def load_articles(days: int, domain: str = "ia") -> list[dict]:
     client = _supabase_client()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -1542,6 +1550,14 @@ def run_streamlit() -> None:
     def _cached_stories_lookup(domain: str) -> dict[int, dict]:
         return _fetch_stories_lookup(domain)
 
+    @st.cache_data(ttl=300)
+    def _cached_cake_data() -> dict | None:
+        return cake_dashboard.load_cake_data(_cake_client())
+
+    @st.cache_data(ttl=300)
+    def _cached_cake_market() -> dict | None:
+        return cake_dashboard.load_cake_market(_cake_client())
+
     # ── Domaine — sélecteur en haut de page, avant tout le reste ─────────────
     if "domain" not in st.session_state:
         st.session_state["domain"] = "ia"
@@ -1684,10 +1700,15 @@ def run_streamlit() -> None:
 
     # ── AI layer cake (IA only) ───────────────────────────────────────────────
     if domain == "ia":
-        cake_html = cake_dashboard.cake_counts_html(articles)
+        cake_data = _cached_cake_data()
+        cake_html = cake_dashboard.cake_section_html(
+            cake_data, articles, _cached_stories_lookup(domain), link_stories=False, market=_cached_cake_market(),
+        )
         if cake_html:
+            import streamlit.components.v1 as components
             st.markdown("#### 🎂 AI layer cake")
-            st.markdown(cake_html, unsafe_allow_html=True)
+            n_cards = len((cake_data or {}).get("events") or [])
+            components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
@@ -2134,7 +2155,13 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain, stories_lookup=stories_lookup)
     stories_html = _stories_html(articles, stories_lookup, domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
-    cake_html   = cake_dashboard.cake_counts_html(articles) if domain == "ia" else ""
+    cake_html   = ""
+    if domain == "ia":
+        cake_client = _cake_client()
+        cake_html = cake_dashboard.cake_section_html(
+            cake_dashboard.load_cake_data(cake_client), articles, stories_lookup,
+            market=cake_dashboard.load_cake_market(cake_client),
+        )
     cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
 
     def _options(values: list[str]) -> str:

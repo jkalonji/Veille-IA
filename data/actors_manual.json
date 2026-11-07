@@ -1,0 +1,1801 @@
+{
+ "_comment": "Acteurs du AI layer cake, générés depuis l'Annexe A de SPECS_LAYER_CAKE.md. home_layers = couches où l'acteur opère déjà (conditionne origine et distance des mouvements). basket = couche du panier boursier, null si hors panier. market_cap_slug = companiesmarketcap.com (vérifié). revenue = bloc sourcé pour les non cotés (même règles que country_indicators_manual.json). Passer needs_review à false après relecture.",
+ "updated": "2026-11-07",
+ "next_review": "2027-02-07",
+ "actors": [
+  {
+   "name": "Cameco",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "combustible_matieres"
+   ],
+   "founded_year": 1988,
+   "ticker": "CCJ",
+   "basket": "energie",
+   "market_cap_slug": "cameco",
+   "note": "Uranium",
+   "needs_review": true
+  },
+  {
+   "name": "Centrus Energy",
+   "aliases": [
+    "Centrus"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "combustible_matieres"
+   ],
+   "founded_year": 1998,
+   "ticker": "LEU",
+   "basket": "energie",
+   "market_cap_slug": "centrus-energy",
+   "note": "HALEU",
+   "needs_review": true
+  },
+  {
+   "name": "GE Vernova",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "equipement"
+   ],
+   "founded_year": 2024,
+   "parent": "General Electric",
+   "parent_founded_year": 1892,
+   "ticker": "GEV",
+   "basket": "energie",
+   "market_cap_slug": "ge-vernova",
+   "needs_review": true
+  },
+  {
+   "name": "Siemens Energy",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "equipement"
+   ],
+   "founded_year": 2020,
+   "parent": "Siemens",
+   "parent_founded_year": 1847,
+   "ticker": "ENR.DE",
+   "basket": "energie",
+   "market_cap_slug": "siemens-energy",
+   "needs_review": true
+  },
+  {
+   "name": "Bloom Energy",
+   "aliases": [
+    "Bloom"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "equipement"
+   ],
+   "founded_year": 2001,
+   "ticker": "BE",
+   "basket": "energie",
+   "market_cap_slug": "bloom-energy",
+   "needs_review": true
+  },
+  {
+   "name": "Mitsubishi Heavy Industries",
+   "aliases": [
+    "MHI"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "equipement"
+   ],
+   "founded_year": 1884,
+   "ticker": "7011.T",
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "Conglomérat",
+   "needs_review": true
+  },
+  {
+   "name": "Constellation Energy",
+   "aliases": [
+    "Constellation"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2022,
+   "parent": "Exelon",
+   "parent_founded_year": 2000,
+   "ticker": "CEG",
+   "basket": "energie",
+   "market_cap_slug": "constellation-energy",
+   "needs_review": true
+  },
+  {
+   "name": "Vistra",
+   "aliases": [
+    "Vistra Corp"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2016,
+   "ticker": "VST",
+   "basket": "energie",
+   "market_cap_slug": "vistra",
+   "needs_review": true
+  },
+  {
+   "name": "Talen Energy",
+   "aliases": [
+    "Talen"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2015,
+   "ticker": "TLN",
+   "basket": "energie",
+   "market_cap_slug": "talen-energy",
+   "needs_review": true
+  },
+  {
+   "name": "NRG Energy",
+   "aliases": [
+    "NRG"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 1989,
+   "ticker": "NRG",
+   "basket": "energie",
+   "market_cap_slug": "nrg-energy",
+   "needs_review": true
+  },
+  {
+   "name": "NextEra Energy",
+   "aliases": [
+    "NextEra",
+    "Florida Power & Light"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 1925,
+   "ticker": "NEE",
+   "basket": null,
+   "market_cap_slug": "nextera-energy",
+   "note": "À discuter → non : signal IA dilué",
+   "needs_review": true
+  },
+  {
+   "name": "Engie",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2008,
+   "ticker": "ENGI.PA",
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "À discuter → non : signal IA dilué",
+   "needs_review": true
+  },
+  {
+   "name": "Oklo",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2013,
+   "ticker": "OKLO",
+   "basket": "energie",
+   "market_cap_slug": "oklo",
+   "note": "Pré-revenus",
+   "needs_review": true
+  },
+  {
+   "name": "NuScale Power",
+   "aliases": [
+    "NuScale"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 2007,
+   "ticker": "SMR",
+   "basket": "energie",
+   "market_cap_slug": "nuscale-power",
+   "needs_review": true
+  },
+  {
+   "name": "EDF",
+   "aliases": [
+    "Électricité de France",
+    "Electricite de France"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "production"
+   ],
+   "founded_year": 1946,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "Non cotée",
+   "needs_review": true
+  },
+  {
+   "name": "Quanta Services",
+   "aliases": [
+    "Quanta"
+   ],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "reseau_raccordement"
+   ],
+   "founded_year": 1997,
+   "ticker": "PWR",
+   "basket": "energie",
+   "market_cap_slug": "quanta-services",
+   "needs_review": true
+  },
+  {
+   "name": "Prysmian",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "reseau_raccordement"
+   ],
+   "founded_year": 1879,
+   "ticker": "PRY.MI",
+   "basket": "energie",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Nexans",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "reseau_raccordement"
+   ],
+   "founded_year": 2000,
+   "ticker": "NEX.PA",
+   "basket": "energie",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "National Grid",
+   "aliases": [],
+   "home_layers": [
+    "energie"
+   ],
+   "home_sublayers": [
+    "reseau_raccordement"
+   ],
+   "founded_year": 1990,
+   "ticker": "NG.L",
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "Utility régulée",
+   "needs_review": true
+  },
+  {
+   "name": "ASML",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1984,
+   "ticker": "ASML",
+   "basket": "puces",
+   "market_cap_slug": "asml",
+   "needs_review": true
+  },
+  {
+   "name": "Applied Materials",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1967,
+   "ticker": "AMAT",
+   "basket": "puces",
+   "market_cap_slug": "applied-materials",
+   "needs_review": true
+  },
+  {
+   "name": "Lam Research",
+   "aliases": [
+    "Lam"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1980,
+   "ticker": "LRCX",
+   "basket": "puces",
+   "market_cap_slug": "lam-research",
+   "needs_review": true
+  },
+  {
+   "name": "KLA",
+   "aliases": [
+    "KLA Corp",
+    "KLA Corporation"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1975,
+   "ticker": "KLAC",
+   "basket": "puces",
+   "market_cap_slug": "kla",
+   "needs_review": true
+  },
+  {
+   "name": "Tokyo Electron",
+   "aliases": [
+    "TEL"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1963,
+   "ticker": "8035.T",
+   "basket": "puces",
+   "market_cap_slug": "tokyo-electron",
+   "needs_review": true
+  },
+  {
+   "name": "ASM International",
+   "aliases": [
+    "ASMI"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "equipement_fabrication"
+   ],
+   "founded_year": 1968,
+   "ticker": "ASM.AS",
+   "basket": "puces",
+   "market_cap_slug": "asm-international",
+   "needs_review": true
+  },
+  {
+   "name": "TSMC",
+   "aliases": [
+    "Taiwan Semiconductor",
+    "Taiwan Semiconductor Manufacturing"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "fonderie"
+   ],
+   "founded_year": 1987,
+   "ticker": "TSM",
+   "basket": "puces",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Intel",
+   "aliases": [
+    "Intel Foundry"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "fonderie"
+   ],
+   "founded_year": 1968,
+   "ticker": "INTC",
+   "basket": null,
+   "market_cap_slug": "intel",
+   "note": "À discuter → non : fonderie et conception, signal mixte",
+   "needs_review": true
+  },
+  {
+   "name": "Samsung Electronics",
+   "aliases": [
+    "Samsung"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "memoire"
+   ],
+   "founded_year": 1969,
+   "ticker": "005930.KS",
+   "basket": null,
+   "market_cap_slug": "samsung",
+   "note": "Conglomérat",
+   "needs_review": true
+  },
+  {
+   "name": "SK Hynix",
+   "aliases": [
+    "SK hynix",
+    "Hynix"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "memoire"
+   ],
+   "founded_year": 1983,
+   "ticker": "000660.KS",
+   "basket": "puces",
+   "market_cap_slug": "sk-hynix",
+   "note": "Leader HBM",
+   "needs_review": true
+  },
+  {
+   "name": "Micron",
+   "aliases": [
+    "Micron Technology"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "memoire"
+   ],
+   "founded_year": 1978,
+   "ticker": "MU",
+   "basket": "puces",
+   "market_cap_slug": "micron-technology",
+   "needs_review": true
+  },
+  {
+   "name": "ASE Technology",
+   "aliases": [
+    "ASE"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "packaging_avance"
+   ],
+   "founded_year": 1984,
+   "ticker": "ASX",
+   "basket": "puces",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Amkor",
+   "aliases": [
+    "Amkor Technology"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "packaging_avance"
+   ],
+   "founded_year": 1968,
+   "ticker": "AMKR",
+   "basket": "puces",
+   "market_cap_slug": "amkor-technology",
+   "needs_review": true
+  },
+  {
+   "name": "BE Semiconductor",
+   "aliases": [
+    "Besi"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "packaging_avance"
+   ],
+   "founded_year": 1995,
+   "ticker": "BESI.AS",
+   "basket": "puces",
+   "market_cap_slug": "be-semiconductor",
+   "needs_review": true
+  },
+  {
+   "name": "Nvidia",
+   "aliases": [
+    "NVIDIA"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1993,
+   "ticker": "NVDA",
+   "basket": "puces",
+   "market_cap_slug": "nvidia",
+   "note": "Home layers : puces + infrastructure (DGX Cloud). Une sortie de modèle Nemotron compte comme un mouvement vers les modèles.",
+   "needs_review": true
+  },
+  {
+   "name": "AMD",
+   "aliases": [
+    "Advanced Micro Devices"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1969,
+   "ticker": "AMD",
+   "basket": "puces",
+   "market_cap_slug": "amd",
+   "needs_review": true
+  },
+  {
+   "name": "Broadcom",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1991,
+   "ticker": "AVGO",
+   "basket": "puces",
+   "market_cap_slug": "broadcom",
+   "needs_review": true
+  },
+  {
+   "name": "Marvell",
+   "aliases": [
+    "Marvell Technology"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1995,
+   "ticker": "MRVL",
+   "basket": "puces",
+   "market_cap_slug": "marvell",
+   "needs_review": true
+  },
+  {
+   "name": "Arm",
+   "aliases": [
+    "Arm Holdings"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1990,
+   "ticker": "ARM",
+   "basket": "puces",
+   "market_cap_slug": "arm-holdings",
+   "needs_review": true
+  },
+  {
+   "name": "Cerebras",
+   "aliases": [
+    "Cerebras Systems"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 2016,
+   "ticker": "CBRS",
+   "basket": "puces",
+   "market_cap_slug": "cerebras-systems",
+   "note": "Puces + cloud d'inférence",
+   "needs_review": true
+  },
+  {
+   "name": "Cambricon",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 2016,
+   "ticker": "688256.SS",
+   "basket": "puces",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Qualcomm",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "conception"
+   ],
+   "founded_year": 1985,
+   "ticker": "QCOM",
+   "basket": null,
+   "market_cap_slug": "qualcomm",
+   "note": "Surtout mobile",
+   "needs_review": true
+  },
+  {
+   "name": "Astera Labs",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "interconnexion_reseau"
+   ],
+   "founded_year": 2017,
+   "ticker": "ALAB",
+   "basket": "puces",
+   "market_cap_slug": "astera-labs",
+   "needs_review": true
+  },
+  {
+   "name": "Credo",
+   "aliases": [
+    "Credo Technology"
+   ],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "interconnexion_reseau"
+   ],
+   "founded_year": 2008,
+   "ticker": "CRDO",
+   "basket": "puces",
+   "market_cap_slug": "credo-technology",
+   "needs_review": true
+  },
+  {
+   "name": "Coherent",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "interconnexion_reseau"
+   ],
+   "founded_year": 1971,
+   "ticker": "COHR",
+   "basket": "puces",
+   "market_cap_slug": "coherent",
+   "needs_review": true
+  },
+  {
+   "name": "Lumentum",
+   "aliases": [],
+   "home_layers": [
+    "puces"
+   ],
+   "home_sublayers": [
+    "interconnexion_reseau"
+   ],
+   "founded_year": 2015,
+   "parent": "JDS Uniphase",
+   "parent_founded_year": 1979,
+   "ticker": "LITE",
+   "basket": "puces",
+   "market_cap_slug": "lumentum",
+   "needs_review": true
+  },
+  {
+   "name": "Equinix",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "foncier_construction"
+   ],
+   "founded_year": 1998,
+   "ticker": "EQIX",
+   "basket": "infrastructure",
+   "market_cap_slug": "equinix",
+   "needs_review": true
+  },
+  {
+   "name": "Digital Realty",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "foncier_construction"
+   ],
+   "founded_year": 2004,
+   "ticker": "DLR",
+   "basket": "infrastructure",
+   "market_cap_slug": "digital-realty",
+   "needs_review": true
+  },
+  {
+   "name": "GDS Holdings",
+   "aliases": [
+    "GDS"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "foncier_construction"
+   ],
+   "founded_year": 2001,
+   "ticker": "GDS",
+   "basket": null,
+   "market_cap_slug": "gds-holdings",
+   "note": "À discuter → non : datacenters en Chine",
+   "needs_review": true
+  },
+  {
+   "name": "Vertiv",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "alimentation_refroidissement"
+   ],
+   "founded_year": 2016,
+   "parent": "Emerson Electric",
+   "parent_founded_year": 1890,
+   "ticker": "VRT",
+   "basket": "infrastructure",
+   "market_cap_slug": "vertiv-holdings",
+   "needs_review": true
+  },
+  {
+   "name": "Schneider Electric",
+   "aliases": [
+    "Schneider"
+   ],
+   "home_layers": [
+    "infrastructure",
+    "energie"
+   ],
+   "home_sublayers": [
+    "alimentation_refroidissement"
+   ],
+   "founded_year": 1836,
+   "ticker": "SU.PA",
+   "basket": "infrastructure",
+   "market_cap_slug": null,
+   "note": "Aussi présent sur le réseau électrique",
+   "needs_review": true
+  },
+  {
+   "name": "Legrand",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "alimentation_refroidissement"
+   ],
+   "founded_year": 1865,
+   "ticker": "LR.PA",
+   "basket": "infrastructure",
+   "market_cap_slug": "legrand",
+   "needs_review": true
+  },
+  {
+   "name": "Eaton",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "alimentation_refroidissement"
+   ],
+   "founded_year": 1911,
+   "ticker": "ETN",
+   "basket": "infrastructure",
+   "market_cap_slug": "eaton",
+   "needs_review": true
+  },
+  {
+   "name": "Modine",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "alimentation_refroidissement"
+   ],
+   "founded_year": 1916,
+   "ticker": "MOD",
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "À discuter → non : activité IA minoritaire",
+   "needs_review": true
+  },
+  {
+   "name": "Super Micro",
+   "aliases": [
+    "Supermicro",
+    "Super Micro Computer"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 1993,
+   "ticker": "SMCI",
+   "basket": "infrastructure",
+   "market_cap_slug": "supermicro",
+   "needs_review": true
+  },
+  {
+   "name": "Dell",
+   "aliases": [
+    "Dell Technologies"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 1984,
+   "ticker": "DELL",
+   "basket": null,
+   "market_cap_slug": "dell",
+   "note": "À discuter → non : aussi des PC",
+   "needs_review": true
+  },
+  {
+   "name": "HPE",
+   "aliases": [
+    "Hewlett Packard Enterprise"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 2015,
+   "parent": "Hewlett-Packard",
+   "parent_founded_year": 1939,
+   "ticker": "HPE",
+   "basket": null,
+   "market_cap_slug": "hewlett-packard-enterprise",
+   "note": "À discuter → non",
+   "needs_review": true
+  },
+  {
+   "name": "Celestica",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 1994,
+   "ticker": "CLS",
+   "basket": "infrastructure",
+   "market_cap_slug": "celestica",
+   "needs_review": true
+  },
+  {
+   "name": "Hon Hai (Foxconn)",
+   "aliases": [
+    "Foxconn",
+    "Hon Hai"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 1974,
+   "ticker": "2317.TW",
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "À discuter → non : électronique grand public",
+   "needs_review": true
+  },
+  {
+   "name": "Wiwynn",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 2012,
+   "ticker": "6669.TW",
+   "basket": "infrastructure",
+   "market_cap_slug": "wiwynn",
+   "needs_review": true
+  },
+  {
+   "name": "Arista Networks",
+   "aliases": [
+    "Arista"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "systemes_reseau_datacenter"
+   ],
+   "founded_year": 2004,
+   "ticker": "ANET",
+   "basket": "infrastructure",
+   "market_cap_slug": "arista-networks",
+   "needs_review": true
+  },
+  {
+   "name": "Oracle",
+   "aliases": [
+    "Oracle Cloud",
+    "OCI"
+   ],
+   "home_layers": [
+    "infrastructure",
+    "applications"
+   ],
+   "home_sublayers": [
+    "cloud_hyperscaler"
+   ],
+   "founded_year": 1977,
+   "ticker": "ORCL",
+   "basket": "infrastructure",
+   "market_cap_slug": "oracle",
+   "needs_review": true
+  },
+  {
+   "name": "CoreWeave",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2017,
+   "ticker": "CRWV",
+   "basket": "infrastructure",
+   "market_cap_slug": "coreweave",
+   "needs_review": true
+  },
+  {
+   "name": "Nebius",
+   "aliases": [
+    "Nebius Group"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2024,
+   "parent": "Yandex",
+   "parent_founded_year": 1997,
+   "ticker": "NBIS",
+   "basket": "infrastructure",
+   "market_cap_slug": "nebius-group",
+   "needs_review": true
+  },
+  {
+   "name": "IREN",
+   "aliases": [
+    "Iris Energy"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2018,
+   "ticker": "IREN",
+   "basket": "infrastructure",
+   "market_cap_slug": null,
+   "note": "Ancien mineur de bitcoin",
+   "needs_review": true
+  },
+  {
+   "name": "Applied Digital",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": null,
+   "ticker": "APLD",
+   "basket": "infrastructure",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Nscale",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2024,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "IPO déposée (ticker proposé NSCL) : à ajouter dès la cotation",
+   "needs_review": true
+  },
+  {
+   "name": "Lambda",
+   "aliases": [
+    "Lambda Labs"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2012,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "Non coté",
+   "needs_review": true
+  },
+  {
+   "name": "Crusoe",
+   "aliases": [
+    "Crusoe Energy"
+   ],
+   "home_layers": [
+    "infrastructure"
+   ],
+   "home_sublayers": [
+    "neocloud_location_gpu"
+   ],
+   "founded_year": 2018,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "note": "Non coté",
+   "needs_review": true
+  },
+  {
+   "name": "Zhipu AI",
+   "aliases": [
+    "Knowledge Atlas",
+    "Z.ai",
+    "Zhipu"
+   ],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2019,
+   "ticker": "2513.HK",
+   "basket": "modeles",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "MiniMax",
+   "aliases": [],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2021,
+   "ticker": "0100.HK",
+   "basket": "modeles",
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Anthropic",
+   "aliases": [
+    "Claude"
+   ],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2021,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "revenue": {
+    "usd_bn": 19.708,
+    "period": "Revenue July 2025 - June 2026 (S-1: FY2025 $4,585m - H1 2025 $1,163m + H1 2026 $16,286m)",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/2130357/000162828026067168/anthropicpbc-sx1.htm"
+   },
+   "note": "S-1 public, ticker proposé ANT : panier dès la première cotation",
+   "needs_review": true
+  },
+  {
+   "name": "OpenAI",
+   "aliases": [
+    "ChatGPT"
+   ],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2015,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "revenue": {
+    "usd_bn": 21.2,
+    "period": "Revenue July 2025 - June 2026, estimated (2025 $13.1bn - H1 2025 $4.3bn + Q1 2026 $5.7bn + Q2 2026 $6.7bn)",
+    "confidence": "low",
+    "source_url": "https://www.theinformation.com/articles/openai-held-1-billion-revenue-lead-anthropic-first-quarter",
+    "note": "Press reports, not audited. Annualised run-rate (~$50bn in Sept 2026) not used"
+   },
+   "note": "Stargate = mouvement en cours vers l'infrastructure",
+   "needs_review": true
+  },
+  {
+   "name": "Mistral AI",
+   "aliases": [
+    "Mistral"
+   ],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2023,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "DeepSeek",
+   "aliases": [],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_ouverts"
+   ],
+   "founded_year": 2023,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Moonshot AI",
+   "aliases": [
+    "Moonshot",
+    "Kimi"
+   ],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2023,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Cohere",
+   "aliases": [],
+   "home_layers": [
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [
+    "modeles_frontiere"
+   ],
+   "founded_year": 2019,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Hugging Face",
+   "aliases": [
+    "HuggingFace"
+   ],
+   "home_layers": [
+    "modeles"
+   ],
+   "home_sublayers": [
+    "outillage"
+   ],
+   "founded_year": 2016,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Databricks",
+   "aliases": [],
+   "home_layers": [
+    "modeles"
+   ],
+   "home_sublayers": [
+    "donnees"
+   ],
+   "founded_year": 2013,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Scale AI",
+   "aliases": [
+    "Scale"
+   ],
+   "home_layers": [
+    "modeles"
+   ],
+   "home_sublayers": [
+    "donnees"
+   ],
+   "founded_year": 2016,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Palantir",
+   "aliases": [
+    "Palantir Technologies"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "entreprise_horizontales"
+   ],
+   "founded_year": 2003,
+   "ticker": "PLTR",
+   "basket": "applications",
+   "market_cap_slug": "palantir",
+   "needs_review": true
+  },
+  {
+   "name": "ServiceNow",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "entreprise_horizontales"
+   ],
+   "founded_year": 2004,
+   "ticker": "NOW",
+   "basket": "applications",
+   "market_cap_slug": "servicenow",
+   "needs_review": true
+  },
+  {
+   "name": "Salesforce",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "entreprise_horizontales"
+   ],
+   "founded_year": 1999,
+   "ticker": "CRM",
+   "basket": "applications",
+   "market_cap_slug": "salesforce",
+   "needs_review": true
+  },
+  {
+   "name": "SAP",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "entreprise_horizontales"
+   ],
+   "founded_year": 1972,
+   "ticker": "SAP.DE",
+   "basket": null,
+   "market_cap_slug": "sap",
+   "note": "À discuter → non",
+   "needs_review": true
+  },
+  {
+   "name": "Adobe",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "entreprise_horizontales"
+   ],
+   "founded_year": 1982,
+   "ticker": "ADBE",
+   "basket": null,
+   "market_cap_slug": "adobe",
+   "note": "À discuter → non : signal inverse possible",
+   "needs_review": true
+  },
+  {
+   "name": "Tempus AI",
+   "aliases": [
+    "Tempus"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "verticales_metier"
+   ],
+   "founded_year": 2015,
+   "ticker": "TEM",
+   "basket": "applications",
+   "market_cap_slug": "tempus-ai",
+   "note": "Santé",
+   "needs_review": true
+  },
+  {
+   "name": "Recursion",
+   "aliases": [
+    "Recursion Pharmaceuticals"
+   ],
+   "home_layers": [
+    "applications",
+    "modeles"
+   ],
+   "home_sublayers": [
+    "verticales_metier"
+   ],
+   "founded_year": 2013,
+   "ticker": "RXRX",
+   "basket": "applications",
+   "market_cap_slug": "recursion-pharmaceuticals",
+   "note": "Entraîne aussi ses propres modèles",
+   "needs_review": true
+  },
+  {
+   "name": "Duolingo",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "grand_public"
+   ],
+   "founded_year": 2011,
+   "ticker": "DUOL",
+   "basket": "applications",
+   "market_cap_slug": "duolingo",
+   "needs_review": true
+  },
+  {
+   "name": "AppLovin",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "grand_public"
+   ],
+   "founded_year": 2012,
+   "ticker": "APP",
+   "basket": "applications",
+   "market_cap_slug": "applovin",
+   "needs_review": true
+  },
+  {
+   "name": "Symbotic",
+   "aliases": [],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "ia_physique"
+   ],
+   "founded_year": 2007,
+   "ticker": "SYM",
+   "basket": "applications",
+   "market_cap_slug": "symbotic",
+   "needs_review": true
+  },
+  {
+   "name": "Cursor (Anysphere)",
+   "aliases": [
+    "Cursor",
+    "Anysphere"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "outils_developpeurs"
+   ],
+   "founded_year": 2022,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Perplexity",
+   "aliases": [
+    "Perplexity AI"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "grand_public"
+   ],
+   "founded_year": 2022,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Harvey",
+   "aliases": [
+    "Harvey AI"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "verticales_metier"
+   ],
+   "founded_year": 2022,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Figure AI",
+   "aliases": [
+    "Figure"
+   ],
+   "home_layers": [
+    "applications"
+   ],
+   "home_sublayers": [
+    "ia_physique"
+   ],
+   "founded_year": 2022,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "needs_review": true
+  },
+  {
+   "name": "Microsoft",
+   "aliases": [
+    "Azure"
+   ],
+   "home_layers": [
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1975,
+   "ticker": "MSFT",
+   "basket": null,
+   "market_cap_slug": "microsoft",
+   "needs_review": true
+  },
+  {
+   "name": "Alphabet (Google)",
+   "aliases": [
+    "Google",
+    "Alphabet",
+    "Google DeepMind",
+    "DeepMind",
+    "Gemini"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1998,
+   "ticker": "GOOGL",
+   "basket": null,
+   "market_cap_slug": "alphabet-google",
+   "needs_review": true
+  },
+  {
+   "name": "Amazon",
+   "aliases": [
+    "AWS",
+    "Amazon Web Services"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1994,
+   "ticker": "AMZN",
+   "basket": null,
+   "market_cap_slug": "amazon",
+   "needs_review": true
+  },
+  {
+   "name": "Meta",
+   "aliases": [
+    "Meta Platforms",
+    "Facebook"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 2004,
+   "ticker": "META",
+   "basket": null,
+   "market_cap_slug": "meta-platforms",
+   "note": "Puces MTIA déployées en production : comptées comme home layer",
+   "needs_review": true
+  },
+  {
+   "name": "Apple",
+   "aliases": [],
+   "home_layers": [
+    "puces",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1976,
+   "ticker": "AAPL",
+   "basket": null,
+   "market_cap_slug": "apple",
+   "needs_review": true
+  },
+  {
+   "name": "Tesla",
+   "aliases": [],
+   "home_layers": [
+    "energie",
+    "puces",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 2003,
+   "ticker": "TSLA",
+   "basket": null,
+   "market_cap_slug": "tesla",
+   "note": "Projet de fabrication de puces avec SpaceX à suivre comme mouvement",
+   "needs_review": true
+  },
+  {
+   "name": "SpaceX (xAI)",
+   "aliases": [
+    "SpaceX",
+    "xAI",
+    "Grok"
+   ],
+   "home_layers": [
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 2002,
+   "ticker": "SPCX",
+   "basket": null,
+   "market_cap_slug": "spacex",
+   "note": "xAI absorbé en février 2026",
+   "needs_review": true
+  },
+  {
+   "name": "Alibaba",
+   "aliases": [
+    "Alibaba Cloud",
+    "Qwen",
+    "T-Head"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1999,
+   "ticker": "BABA",
+   "basket": null,
+   "market_cap_slug": "alibaba",
+   "needs_review": true
+  },
+  {
+   "name": "Tencent",
+   "aliases": [],
+   "home_layers": [
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 1998,
+   "ticker": "0700.HK",
+   "basket": null,
+   "market_cap_slug": "tencent",
+   "needs_review": true
+  },
+  {
+   "name": "Baidu",
+   "aliases": [
+    "Kunlunxin",
+    "Ernie"
+   ],
+   "home_layers": [
+    "puces",
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 2000,
+   "ticker": "BIDU",
+   "basket": null,
+   "market_cap_slug": "baidu",
+   "needs_review": true
+  },
+  {
+   "name": "ByteDance",
+   "aliases": [
+    "TikTok",
+    "Doubao"
+   ],
+   "home_layers": [
+    "infrastructure",
+    "modeles",
+    "applications"
+   ],
+   "home_sublayers": [],
+   "founded_year": 2012,
+   "ticker": null,
+   "basket": null,
+   "market_cap_slug": null,
+   "revenue": {
+    "usd_bn": 200,
+    "period": "Revenue 2025 (full year)",
+    "confidence": "low",
+    "source_url": "https://www.analyticsinsight.net/news/bytedance-revenue-hits-usd-120b-ai-spending-cuts-profit",
+    "note": "Reported by The Information, not audited"
+   },
+   "note": "Non coté",
+   "needs_review": true
+  }
+ ]
+}

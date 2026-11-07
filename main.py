@@ -1411,7 +1411,9 @@ def _post_telegram(token: str, chat_id: str, text: str) -> None:
         logging.error(f"Telegram error: {resp.status_code} {resp.text}")
 
 
-def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Article], dashboard_url: str) -> None:
+def _send_domain_digest(
+    token: str, chat_id: str, domain: str, articles: list[Article], dashboard_url: str, extra_line: str = ""
+) -> None:
     """Send one recap + hot-articles digest for a single domain's articles."""
     import time
     today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
@@ -1430,6 +1432,8 @@ def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Ar
         count = stats.get(cat, 0)
         if count:
             header_lines.append(f"{emoji} {cat} : {count}")
+    if extra_line:
+        header_lines.append(f"\n{extra_line}")
     if dashboard_url:
         header_lines.append(f'\n📊 <a href="{dashboard_url}">Voir le Dashboard</a>')
     _post_telegram(token, chat_id, "\n".join(header_lines))
@@ -1479,8 +1483,12 @@ def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Ar
     logging.info(f"Telegram [{domain}]: sent recap + {len(hot_articles)} hot articles")
 
 
-def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
-    """Group articles by domain and send one digest message per domain."""
+def send_telegram(
+    articles: list[Article], dashboard_url: str = "", cake_messages: list[str] | None = None, cake_line: str = ""
+) -> None:
+    """Group articles by domain and send one digest message per domain.
+    The AI layer cake's major-move messages go right before the ia digest,
+    and its one-line summary inside it."""
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
@@ -1493,14 +1501,26 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
         by_domain.setdefault(a.domain, []).append(a)
 
     for domain, domain_articles in by_domain.items():
-        _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url)
+        if domain == "ia":
+            for msg in cake_messages or []:
+                _post_telegram(token, chat_id, msg)
+        _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url,
+                            extra_line=cake_line if domain == "ia" else "")
 
 
-def send_data_reminders() -> None:
+def send_data_reminders(supabase_client=None) -> None:
     """Weekly (Mondays) Telegram nudge when the 'Who really invests in AI?'
-    dashboard data needs a manual update or its monthly refresh broke."""
+    dashboard data needs a manual update or its monthly refresh broke, and
+    when AI layer cake actors wait for review."""
     if datetime.now(timezone.utc).weekday() != 0:
         return
+    actor_lines = cake.review_reminder_lines(supabase_client)
+    if actor_lines:
+        _post_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            "🎂 <b>Acteurs du AI layer cake à relire</b>\n" + "\n".join(actor_lines)
+            + "\n\nÉditer <code>data/actors_manual.json</code> (ou la table <code>actors</code> pour les nouveaux).",
+        )
     indicators = load_indicators()
     lines = []
     for key, ind in indicators.items():
@@ -1566,11 +1586,28 @@ async def main():
     # 4. Save to Supabase
     save_to_supabase(classified, client=supabase_client)
 
+    # 4b. AI layer cake: cross-layer moves of this run (never blocks the pipeline)
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    cake_events: list[dict] = []
+    try:
+        cake_events = await cake.process_layer_events(
+            classified, supabase_client, groq_client_for_topics, model_full,
+            retries=GROQ_RETRIES, on_usage=lambda r: _count_tokens("layer_events", r),
+        )
+    except Exception as e:
+        logging.error(f"Cake: layer events step failed: {e}")
+    to_notify = [e for e in cake_events if cake.needs_notification(e)]
+
     # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
-    dashboard_url = os.environ.get("DASHBOARD_URL", "")
-    send_telegram(classified, dashboard_url=dashboard_url)
-    send_data_reminders()
+    send_telegram(
+        classified, dashboard_url=dashboard_url,
+        cake_messages=[cake.major_event_message(e, dashboard_url) for e in to_notify],
+        cake_line=cake.digest_line(cake_events),
+    )
+    if to_notify:
+        cake.mark_notified(supabase_client, to_notify)
+    send_data_reminders(supabase_client)
 
     logging.info(f"Groq tokens used this run: {dict(GROQ_TOKENS)} (total {sum(GROQ_TOKENS.values())})")
     logging.info("AI Radar pipeline complete.")

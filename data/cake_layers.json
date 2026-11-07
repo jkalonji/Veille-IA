@@ -37,6 +37,8 @@
       "centre de données", "centres de données", "refroidissement", "hébergeur", "serveur"
     ]
   },
+  "actor_weight_coefficients": {"size": 0.30, "influence": 0.30, "longevity": 0.15, "implantation": 0.25},
+  "event_score": {"major_threshold": 7, "strong_signal_threshold": 5, "novelty_window_days": 180, "novelty_bonus": 1.2, "merge_window_days": 90, "home_layer_delay_days": 30},
   "scarcity_vocabulary": [
     "shortage", "sold out", "waitlist", "wait list", "allocation", "rationing", "backlog", "bottleneck",
     "lead time", "supply constraint", "supply crunch", "capacity crunch", "tight supply", "constrained",
