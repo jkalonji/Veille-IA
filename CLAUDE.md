@@ -289,3 +289,13 @@ CREATE INDEX IF NOT EXISTS market_data_symbol_time ON market_data(domain, symbol
 - Électricité et GPU-heure alimentent aussi `market_data` (`ELEC_US`, `ELEC_EU`, `GPU_HOUR_H100`) pour la confirmation des goulots. Relance du lundi quand `next_review` est dépassé.
 - Dashboard : escalier de la valeur (log), bascule « évolution de la valeur ajoutée », sources en pied de graphique.
 - ⚠️ Les étages Modèles et Applications reposent sur des estimations très incertaines (énergie par token, usage par abonné) : toujours affichés avec `≈`. Avec l'énergie par token d'un modèle 405B, la couche Modèles ressort en valeur ajoutée négative ; avec un 70B, elle passerait au-dessus de l'infrastructure.
+
+### Phase E — v1.1
+- **Implantation** : en plus des co-mentions, les relations extraites (`actor_relations`, 180 jours) donnent des arêtes dirigées « qui dépend de qui », pondérées ×3 (`relation_edges`) : A utilise B → A→B ; A fournit B → B→A ; A investit dans B → B→A ; partenaires → dans les deux sens.
+- **Électricité via l'API EIA** : si le secret `EIA_API_KEY` est défini (clé gratuite sur eia.gov/opendata), le prix de gros américain vient du STEO (moyenne simple des 11 hubs `ELWHU_*`, mois écoulés) au lieu de la saisie manuelle, pour `layer_value.py` et la série `ELEC_US` de `market_data` (24 mois d'historique). Sans clé ou en cas d'échec : valeur manuelle.
+- **Rattrapage des couches** (`python main.py --backfill-layers`, ajouté au workflow `AI Radar - Backfill Topics`) : les articles `ia` des 90 derniers jours jamais étiquetés (`layers_tagged = false`) reçoivent `layers` / `cross_layer` / `scarcity` (lots de 20 par appel Groq, 300 articles max par run, arrêt propre si le quota est atteint). Leurs mouvements inter-couches deviennent des événements datés du jour de publication, marqués comme déjà notifiés (pas de Telegram pour l'historique). Permet d'avoir la base de 90 jours du z-score de rareté sans attendre trois mois.
+
+**Migration SQL — Phase E :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers_tagged BOOLEAN DEFAULT FALSE;
+```

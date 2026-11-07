@@ -1300,6 +1300,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "layers": a.layers,
             "cross_layer": a.cross_layer,
             "scarcity": a.scarcity,
+            "layers_tagged": a.domain == "ia",
         }
         for a in articles
     ]
@@ -1320,7 +1321,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}'; (+ cross_layer, scarcity)
     _OPTIONAL_COLS = (
         "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
-        "story_id", "published_is_estimated", "topics", "layers", "cross_layer", "scarcity",
+        "story_id", "published_is_estimated", "topics", "layers", "cross_layer", "scarcity", "layers_tagged",
     )
 
     try:
@@ -1644,6 +1645,12 @@ if __name__ == "__main__":
     if "--backfill-baskets" in sys.argv:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
         cake_market.collect_prices(_get_supabase_client(), backfill=True)
+    elif "--backfill-layers" in sys.argv:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        asyncio.run(cake.backfill_layers(
+            _get_supabase_client(), AsyncGroq(api_key=os.environ["GROQ_API_KEY"]),
+            (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip(), Article,
+        ))
     elif "--backfill-topics" in sys.argv:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
         asyncio.run(backfill_topics(os.environ.get("TOPIC_BACKFILL_MODEL")))

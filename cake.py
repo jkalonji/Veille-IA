@@ -365,6 +365,25 @@ def comention_edges(article_actor_sets: list[set]) -> dict[tuple, float]:
     return edges
 
 
+RELATION_WEIGHT = 3.0  # a directed relation counts 3 times a co-mention
+
+
+def relation_edges(relations: list[dict], index: dict[str, dict]) -> dict[tuple, float]:
+    """Directed "who depends on whom" edges, like citations: A utilise B → A→B,
+    A fournit B → B→A, A investit dans B → B→A, partenaires → both ways."""
+    edges: dict[tuple, float] = defaultdict(float)
+    for r in relations:
+        a, b = resolve_actor(r.get("from_actor") or "", index), resolve_actor(r.get("to_actor") or "", index)
+        if not a or not b or a is b:
+            continue
+        a, b = a["name"], b["name"]
+        pairs = {"utilise": [(a, b)], "fournit": [(b, a)], "investit": [(b, a)],
+                 "partenaire": [(a, b), (b, a)]}.get(r.get("relation"), [])
+        for src, dst in pairs:
+            edges[(src, dst)] += RELATION_WEIGHT
+    return edges
+
+
 def combine_weight(components: dict[str, float | None], cold_start: bool = False) -> tuple[float | None, str]:
     """Weighted mean over the known components (coefficients renormalised).
     Confidence is low when a component is missing or influence is a cold start."""
@@ -615,10 +634,12 @@ async def extract_layer_events(articles: list, groq_client, model: str, actor_na
 
 
 async def process_layer_events(articles: list, client, groq_client, model: str, retries: int = 6,
-                               on_usage=None, today: str | None = None) -> list[dict]:
+                               on_usage=None, today: str | None = None, backfill: bool = False) -> list[dict]:
     """Daily step, after classification: turn this run's cross_layer articles
     into layer events (new, merged or progressed), save them and their
-    relations, promote home layers. Returns the events touched by this run."""
+    relations, promote home layers. Returns the events touched by this run.
+    `backfill`: events are dated by the articles' publication day (oldest
+    first) and marked as already notified, so history never pings Telegram."""
     today = today or date.today().isoformat()
     if client is None:
         return []
@@ -643,6 +664,8 @@ async def process_layer_events(articles: list, client, groq_client, model: str, 
         return []
 
     cross = [a for a in articles if getattr(a, "domain", "ia") == "ia" and getattr(a, "cross_layer", False)]
+    if backfill:
+        cross.sort(key=lambda a: a.published)
     touched: dict[int, dict] = {}
     relations: list[dict] = []
     if cross:
@@ -661,16 +684,20 @@ async def process_layer_events(articles: list, client, groq_client, model: str, 
                 actors.append(actor)
                 index = actor_index(actors)
                 logging.info(f"Cake: new actor {actor['name']!r} (needs review), home layers {actor['home_layers']}")
-            status, event = apply_extraction(ext, art.url, actor, events, today)
+            day = art.published[:10] if backfill else today
+            status, event = apply_extraction(ext, art.url, actor, events, day)
             if event is None:
                 logging.info(f"Cake: not a cross-layer move ({actor['name']} → {ext['target_layer']}, "
                              f"home layers {actor['home_layers']}): {art.title[:80]}")
                 continue
             touched[id(event)] = event
             relations += [{"from_actor": r["from"], "relation": r["relation"], "to_actor": r["to"],
-                           "article_url": art.url, "seen_at": today} for r in ext["relations"]]
+                           "article_url": art.url, "seen_at": day} for r in ext["relations"]]
             logging.info(f"Cake: {status} — {actor['name']}: {event['origin_layer']} → {event['target_layer']} "
                          f"({event['engagement']}, score {event['score']})")
+    if backfill:
+        for e in touched.values():
+            e["notified_at"] = e.get("notified_at") or datetime.now(timezone.utc).isoformat(timespec="seconds")
     save_events(client, list(touched.values()))
     if relations:
         try:
@@ -739,8 +766,17 @@ def refresh_actor_weights(client, actors: list[dict], refresh_revenue: bool = Fa
         names = {act["name"] for t in r.get("topics") or [] if (act := resolve_actor(t, index))}
         if len(names) >= 2:
             sets.append(names)
+    try:
+        relations = fetch_all_rows(lambda a, b: client.table("actor_relations").select("from_actor, relation, to_actor")
+                                   .gte("seen_at", since).order("id").range(a, b).execute())
+    except Exception as e:
+        logging.warning(f"Cake: actor relations unavailable: {e}")
+        relations = []
+    edges = comention_edges(sets)
+    for k, w in relation_edges(relations, index).items():
+        edges[k] += w
     names_all = [a["name"] for a in actors]
-    implantation = percentile_ranks(pagerank(names_all, comention_edges(sets))) if sets else {}
+    implantation = percentile_ranks(pagerank(names_all, edges)) if edges else {}
 
     updates = []
     for a in actors:
@@ -785,3 +821,73 @@ def review_reminder_lines(client) -> list[str]:
         except Exception as e:
             logging.warning(f"Cake: actors reminder unavailable: {e}")
     return lines
+
+
+# ---------------------------------------------------------------------------
+# Backfill of the layer keys on past articles (v1.1)
+# ---------------------------------------------------------------------------
+
+BACKFILL_LAYERS_DAYS = 90
+BACKFILL_LAYERS_MAX = 300   # articles per run (~15 Groq calls): leaves the daily collection its quota
+BACKFILL_LAYERS_BATCH = 20
+
+
+async def tag_layers(items: list[dict], groq_client, model: str, retries: int = 6, on_usage=None) -> list[tuple | None]:
+    """The three cake keys for a batch of {title, description} items in one
+    Groq call; None for an item whose batch failed."""
+    payload = [{"id": i, "title": it["title"], "description": (it.get("description") or "")[:200]}
+               for i, it in enumerate(items)]
+    prompt = ("Pour chaque article, donne les cles suivantes :" + CAKE_PROMPT +
+              '\n\nRenvoie le JSON : {"articles": [{"id": <id>, "layers": [...], "cross_layer": <bool>, '
+              '"scarcity": "..."}]}\n\nARTICLES = ' + json.dumps(payload, ensure_ascii=False))
+    try:
+        resp = await groq_client.with_options(max_retries=retries).chat.completions.create(
+            model=model, messages=[{"role": "user", "content": prompt}], temperature=0.1,
+            max_tokens=4000, reasoning_effort="low", response_format={"type": "json_object"})
+        if on_usage:
+            on_usage(resp)
+        rows = json.loads(resp.choices[0].message.content).get("articles", [])
+    except Exception as e:
+        logging.warning(f"Cake backfill: tagging failed for a batch of {len(items)}: {e}")
+        return [None] * len(items)
+    out: list[tuple | None] = [None] * len(items)
+    for r in rows:
+        i = r.get("id")
+        if isinstance(i, int) and 0 <= i < len(items):
+            out[i] = parse_cake_fields(r)
+    return out
+
+
+async def backfill_layers(client, groq_client, model: str, article_cls, on_usage=None) -> int:
+    """Resumable: tag up to BACKFILL_LAYERS_MAX ia articles of the last 90 days
+    that were never tagged (layers_tagged = false), newest first, then turn
+    their cross-layer moves into dated, silent events. Stops when a whole
+    batch fails (Groq quota). Returns the number of articles tagged."""
+    since = (date.today() - timedelta(days=BACKFILL_LAYERS_DAYS)).isoformat()
+    rows = fetch_all_rows(lambda a, b: client.table("articles").select("url, title, description, source, published")
+                          .eq("domain", "ia").eq("layers_tagged", False).gte("published", since)
+                          .order("published", desc=True).range(a, b).execute())[:BACKFILL_LAYERS_MAX]
+    logging.info(f"Cake backfill: {len(rows)} articles to tag")
+    tagged, cross = 0, []
+    for start in range(0, len(rows), BACKFILL_LAYERS_BATCH):
+        batch = rows[start:start + BACKFILL_LAYERS_BATCH]
+        results = await tag_layers(batch, groq_client, model, on_usage=on_usage)
+        if not any(results):
+            logging.error("Cake backfill: a whole batch failed — stopping (Groq quota?). Re-run later.")
+            break
+        for row, res in zip(batch, results):
+            if res is None:
+                continue
+            layers, is_cross, scarcity = res
+            client.table("articles").update({"layers": layers, "cross_layer": is_cross, "scarcity": scarcity,
+                                             "layers_tagged": True}).eq("url", row["url"]).execute()
+            tagged += 1
+            if is_cross:
+                art = article_cls(title=row["title"], url=row["url"], source=row.get("source") or "", country="",
+                                  published=(row.get("published") or "")[:10], description=row.get("description") or "")
+                art.cross_layer, art.layers = True, layers
+                cross.append(art)
+    if cross:
+        await process_layer_events(cross, client, groq_client, model, on_usage=on_usage, backfill=True)
+    logging.info(f"Cake backfill: {tagged} articles tagged, {len(cross)} cross-layer")
+    return tagged

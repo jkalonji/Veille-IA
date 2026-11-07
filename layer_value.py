@@ -58,6 +58,63 @@ def _at_meter(inputs: dict, key: str, pue: float | None) -> float | None:
     return v
 
 
+EIA_STEO_URL = "https://api.eia.gov/v2/steo/data/"
+EIA_HUBS = ("ELWHU_CA", "ELWHU_FL", "ELWHU_MW", "ELWHU_NE", "ELWHU_NW", "ELWHU_NY", "ELWHU_PJ",
+            "ELWHU_SE", "ELWHU_SP", "ELWHU_SW", "ELWHU_TX")
+
+
+def eia_us_wholesale(api_key: str, months: int = 24) -> list[tuple[str, float]]:
+    """Monthly US wholesale electricity price ($/MWh): simple mean of the
+    EIA STEO hub series (ELWHU_*), completed months only (STEO also carries
+    forecasts). EIA's own national figure is load-weighted; the weights are
+    not in the API, hence the simple mean."""
+    import requests
+    from calendar import monthrange
+    first = date.today().replace(day=1)
+    start = date(first.year - (months // 12 + 1), first.month, 1).strftime("%Y-%m")
+    rows, offset = [], 0
+    while True:
+        resp = requests.get(EIA_STEO_URL, timeout=30, params={
+            "api_key": api_key, "frequency": "monthly", "data[0]": "value", "start": start,
+            "end": first.strftime("%Y-%m"), "offset": offset, "length": 5000, "facets[seriesId][]": list(EIA_HUBS)})
+        resp.raise_for_status()
+        page = resp.json()["response"]["data"]
+        rows += [r for r in page if str(r.get("seriesId", "")).startswith("ELWHU_")]
+        if len(page) < 5000:
+            break
+        offset += 5000
+    by_month: dict[str, list[float]] = {}
+    for r in rows:
+        if r["period"] < first.strftime("%Y-%m") and r.get("value") is not None:
+            by_month.setdefault(r["period"], []).append(float(r["value"]))
+    out = []
+    for m, values in sorted(by_month.items()):
+        y, mo = map(int, m.split("-"))
+        out.append((f"{m}-{monthrange(y, mo)[1]:02d}", sum(values) / len(values)))
+    return out[-months:]
+
+
+def _apply_eia(inputs: dict) -> None:
+    """Replace the hand-entered US electricity price by EIA data when EIA_API_KEY is set."""
+    key = os.environ.get("EIA_API_KEY")
+    if not key:
+        return
+    try:
+        series = eia_us_wholesale(key)
+    except Exception as e:
+        logging.warning(f"EIA unavailable, keeping the manual electricity price: {e}")
+        return
+    if series:
+        day, value = series[-1]
+        inputs["electricity_us"] = {
+            "value": round(value, 2), "unit": "USD/MWh", "as_of": day, "confidence": "high",
+            "source": "EIA STEO, moyenne simple des hubs de gros (ELWHU_*)",
+            "source_url": "https://www.eia.gov/outlooks/steo/",
+            "note": "Mois écoulé le plus récent ; moyenne simple des hubs (la moyenne EIA est pondérée par la charge).",
+            "series": series,
+        }
+
+
 def compute_floors(inputs: dict) -> list[dict]:
     """One dict per floor: layer, price_usd_mwh (None when an input is missing),
     value_added_usd_mwh, multiplier, value_added_negative, confidence, inputs."""
@@ -124,6 +181,7 @@ def refresh(today: str | None = None) -> dict:
     today = today or date.today().isoformat()
     manual = load_manual()
     inputs = {k: dict(v) for k, v in manual["inputs"].items()}
+    _apply_eia(inputs)
     token = inputs.get("token_price_usd_per_m") or {}
     if token.get("auto") == "openrouter":
         try:
@@ -188,8 +246,12 @@ def stale_reason(out: dict | None = None, today: date | None = None) -> str:
 
 def market_series() -> list[tuple[str, str, dict]]:
     """Hand-entered monthly series that also feed market_data (bottleneck price confirmation)."""
-    inputs = load_manual()["inputs"]
+    inputs = {k: dict(v) for k, v in load_manual()["inputs"].items()}
+    _apply_eia(inputs)
     out = []
+    for day, value in (inputs["electricity_us"].get("series") or [])[:-1]:  # history; the last month is added below
+        out.append(("ELEC_US", "Prix de gros électricité États-Unis",
+                    {"value": value, "as_of": day, "unit": "USD/MWh", "source_url": EIA_STEO_URL}))
     for key, sym, label in (("electricity_us", "ELEC_US", "Prix de gros électricité États-Unis"),
                             ("electricity_eu", "ELEC_EU", "Prix de gros électricité Europe"),
                             ("gpu_hour_usd", "GPU_HOUR_H100", "Prix location H100 (GPU-heure)")):

@@ -32,6 +32,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
         run: python layer_value.py --telegram
 
       - name: Commit updated data
