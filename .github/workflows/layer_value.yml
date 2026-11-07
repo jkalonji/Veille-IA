@@ -1,0 +1,44 @@
+name: AI Radar - Layer Value
+
+on:
+  schedule:
+    # 1st of each month, 05:30 UTC — after the country indicators, before the daily collection
+    - cron: '30 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Value of a MWh at each layer of the AI cake (data/layer_value.json) + monthly Telegram report
+      - name: Compute layer value
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          EIA_API_KEY: ${{ secrets.EIA_API_KEY }}
+        run: python layer_value.py --telegram
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/layer_value.json
+          git diff --cached --quiet || git commit -m "chore(data): refresh layer value $(date -u +%F)"
+          git push

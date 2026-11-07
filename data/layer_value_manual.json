@@ -1,0 +1,94 @@
+{
+ "_comment": "Entrées de la valeur du MWh à chaque couche (layer_value.py, SPECS_LAYER_CAKE.md §6.5). Une valeur par entrée, avec unité, source_url, confidence et note. Ne jamais inventer : une entrée à null rend l'étage absent du graphique. level = 'chip' quand la source mesure l'énergie de la puce seule (multipliée par le PUE au calcul), 'meter' quand elle inclut déjà le datacenter.",
+ "updated": "2026-11-07",
+ "next_review": "2026-12-01",
+ "inputs": {
+  "electricity_us": {
+   "value": 52, "unit": "USD/MWh", "as_of": "2026-10-07",
+   "source": "EIA Short-Term Energy Outlook (via Carrier Management)",
+   "source_url": "https://www.carriermanagement.com/news/2026/10/07/292552.htm",
+   "confidence": "medium",
+   "note": "Prévision EIA de prix de gros moyen aux États-Unis pour 2026 (+11 % vs 2025). Sert de P1 : la plupart des datacenters IA sont américains."
+  },
+  "electricity_eu": {
+   "value": 112, "unit": "USD/MWh", "as_of": "2026-03-31",
+   "source": "Moyenne day-ahead Allemagne T1 2026 (102,17 €/MWh)",
+   "source_url": "https://www.pulse.bot/energy/news/germanys-electricity-market-in-q1-2026-more-renewables-lower-wholesale-prices-net-exporter-again-for-03492be1-f3c6-4d41-8411-28a32043d356/",
+   "confidence": "low",
+   "note": "Source secondaire ; à remplacer par la série Ember (European wholesale electricity price data) ou l'API EIA en v1.1."
+  },
+  "accelerator_name": {"value": "NVIDIA H100 SXM", "unit": "", "source_url": "https://www.nvidia.com/en-us/data-center/h100/", "confidence": "high", "note": "Accélérateur de référence partagé par P2 et P3."},
+  "accelerator_price_usd": {
+   "value": 30000, "unit": "USD", "as_of": "2026-03-31",
+   "source": "IntuitionLabs, guide des prix GPU (H100 SXM 25 000 à 40 000 $ au T1 2026)",
+   "source_url": "https://intuitionlabs.ai/articles/nvidia-ai-gpu-pricing-guide",
+   "confidence": "low",
+   "note": "Pas de prix catalogue public NVIDIA ; milieu bas de la fourchette des revendeurs (le marché secondaire est à 25-35 k$)."
+  },
+  "accelerator_tdp_kw": {
+   "value": 0.7, "unit": "kW", "as_of": "2026-11-07",
+   "source": "Fiche produit NVIDIA H100 (Max TDP up to 700W, SXM)",
+   "source_url": "https://www.nvidia.com/en-us/data-center/h100/",
+   "confidence": "high", "note": ""
+  },
+  "pue": {
+   "value": 1.54, "unit": "", "as_of": "2025-07-31",
+   "source": "Uptime Institute Global Data Center Survey 2025",
+   "source_url": "https://intelligence.uptimeinstitute.com/resource/uptime-institute-global-data-center-survey-2025",
+   "confidence": "medium",
+   "note": "Moyenne mondiale tous datacenters ; les hyperscalers annoncent 1,10 à 1,15, donc P2 et P3 sont plutôt sous-estimés pour les datacenters IA récents."
+  },
+  "lifetime_years": {
+   "value": 6, "unit": "années", "as_of": "2025-03-03",
+   "source": "Durée d'amortissement des GPU de CoreWeave (S-1) ; Nebius 4 ans, Lambda 5 ans",
+   "source_url": "https://wccftech.com/coreweave-crwv-depreciates-its-gpus-over-6-years-while-its-competitor-nebius-uses-a-4-year-depreciation-period",
+   "confidence": "low", "note": "Hypothèse comptable contestée : la durée de vie économique réelle peut être bien plus courte."
+  },
+  "utilization": {
+   "value": 0.65, "unit": "", "as_of": "2025-03-03",
+   "source": "Taux d'utilisation de 60 à 70 % cité pour les GPU de datacenter IA",
+   "source_url": "https://wccftech.com/coreweave-crwv-depreciates-its-gpus-over-6-years-while-its-competitor-nebius-uses-a-4-year-depreciation-period",
+   "confidence": "low", "note": "Milieu de la fourchette ; estimation."
+  },
+  "gpu_hour_usd": {
+   "value": 3.14, "unit": "USD/h", "as_of": "2026-06-30",
+   "source": "GetDeploying, indice cloud GPU juin 2026 (moyenne H100 tous fournisseurs)",
+   "source_url": "https://tech-insider.org/what-renting-an-nvidia-h100-costs-per-hour-in-2026-and-when-renting-beats-buying/",
+   "confidence": "low",
+   "note": "Pas d'indice public gratuit officiel : relevé manuel mensuel (SemiAnalysis : 2,83 $/h en février 2026, contrats 1 an 2,35 $/h en mars 2026)."
+  },
+  "token_price_usd_per_m": {
+   "value": null, "unit": "USD/M tokens", "auto": "openrouter",
+   "source": "Indice de prix des tokens (médiane sortie, 20 modèles les plus utilisés sur OpenRouter)",
+   "source_url": "https://openrouter.ai/rankings",
+   "confidence": "medium",
+   "note": "Récupéré automatiquement à chaque calcul (cake_market.fetch_token_price_index)."
+  },
+  "energy_per_m_tokens_mwh": {
+   "value": 0.00057, "unit": "MWh/M tokens", "level": "chip", "as_of": "2025-05-10",
+   "source": "ML.ENERGY Benchmark : Llama 3.1 405B FP8 sur H100, 0,21 Wh pour 367 tokens de sortie en moyenne",
+   "source_url": "https://arxiv.org/html/2505.06371v2",
+   "confidence": "low",
+   "note": "Calcul : 0,21 Wh / 367 tokens ≈ 570 Wh par million de tokens de sortie, mesuré sur les GPU (multiplié par le PUE). Les modèles les plus utilisés sont souvent plus petits (Llama 3.1 70B : ≈ 110 Wh/M) : l'ordre de grandeur est très incertain."
+  },
+  "app_revenue_per_user_month_usd": {
+   "value": 20, "unit": "USD/mois", "as_of": "2026-11-07",
+   "source": "Prix de l'abonnement ChatGPT Plus",
+   "source_url": "https://openai.com/chatgpt/pricing/",
+   "confidence": "low",
+   "note": "Revenu d'un abonné payant de référence ; le revenu moyen réel par payant varie de 60 à 300 $/an selon les estimations (entreprises incluses ou non)."
+  },
+  "energy_per_prompt_wh": {
+   "value": 0.24, "unit": "Wh", "level": "meter", "as_of": "2025-08-21",
+   "source": "Google, énergie du prompt texte médian de Gemini Apps (refroidissement et capacité inactive inclus)",
+   "source_url": "https://arxiv.org/html/2508.15734v1",
+   "confidence": "low", "note": "Médiane Google ; nombre de tokens du prompt médian non publié."
+  },
+  "prompts_per_user_month": {
+   "value": 900, "unit": "prompts/mois", "as_of": "2026-11-07",
+   "source": "Hypothèse : abonné actif, 30 prompts par jour",
+   "source_url": null,
+   "confidence": "low", "note": "Estimation, pas de source publique ; à remplacer dès qu'un éditeur publie un usage moyen par abonné."
+  }
+ }
+}

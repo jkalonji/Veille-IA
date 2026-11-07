@@ -32,6 +32,7 @@ import plotly.io as pio
 from plotly.offline import get_plotlyjs
 from supabase import create_client
 
+import cake_dashboard
 from country_indicators import load_indicators, stale_reason
 
 # Load .env (local only, no-op if absent)
@@ -1105,13 +1106,21 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
 _ARTICLE_COLS = (
     "title, source, country, published, category, sentiment, url, hot_topic, "
     "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, "
-    "story_id, published_is_estimated"
+    "story_id, published_is_estimated, layers"
 )
 # Columns that may be absent if a migration hasn't been applied yet — dropped one at a
 # time (in case several are missing on a totally fresh DB) instead of crashing the
 # dashboard. Same spirit as save_to_supabase's optional-columns retry in main.py.
-_OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated")
+_OPTIONAL_ARTICLE_COLS = ("story_id", "published_is_estimated", "layers")
 _PAGE_SIZE = 1000  # Supabase's default API max-rows per response
+
+
+def _cake_client():
+    """Supabase client for the AI layer cake section, or None when not configured."""
+    try:
+        return _supabase_client()
+    except RuntimeError:
+        return None
 
 
 def load_articles(days: int, domain: str = "ia") -> list[dict]:
@@ -1161,6 +1170,7 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
     for a in articles:
         a.setdefault("story_id", None)
         a.setdefault("published_is_estimated", False)
+        a["layers"] = a.get("layers") or []
         if a.get("published"):
             a["published_raw"] = a["published"]
             a["published"] = _normalize_date(a["published"])
@@ -1540,6 +1550,14 @@ def run_streamlit() -> None:
     def _cached_stories_lookup(domain: str) -> dict[int, dict]:
         return _fetch_stories_lookup(domain)
 
+    @st.cache_data(ttl=300)
+    def _cached_cake_data() -> dict | None:
+        return cake_dashboard.load_cake_data(_cake_client())
+
+    @st.cache_data(ttl=300)
+    def _cached_cake_market() -> dict | None:
+        return cake_dashboard.load_cake_market(_cake_client())
+
     # ── Domaine — sélecteur en haut de page, avant tout le reste ─────────────
     if "domain" not in st.session_state:
         st.session_state["domain"] = "ia"
@@ -1679,6 +1697,20 @@ def run_streamlit() -> None:
                 st.rerun()
 
     st.markdown("---")
+
+    # ── AI layer cake (IA only) ───────────────────────────────────────────────
+    if domain == "ia":
+        cake_data = _cached_cake_data()
+        cake_html = cake_dashboard.cake_section_html(
+            cake_data, articles, _cached_stories_lookup(domain), link_stories=False, market=_cached_cake_market(),
+        )
+        if cake_html:
+            import streamlit.components.v1 as components
+            st.markdown("#### 🎂 AI layer cake")
+            n_cards = len((cake_data or {}).get("events") or [])
+            components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
+            for fig in cake_dashboard.cake_figures(cake_data, _cached_cake_market()):
+                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
@@ -2125,6 +2157,18 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain, stories_lookup=stories_lookup)
     stories_html = _stories_html(articles, stories_lookup, domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
+    cake_html   = ""
+    if domain == "ia":
+        cake_client = _cake_client()
+        cake_data = cake_dashboard.load_cake_data(cake_client)
+        cake_market = cake_dashboard.load_cake_market(cake_client) or {}
+        cake_market["blocks_html"] = [
+            '<div class="cake-chart">' + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
+                                                     include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
+            for i, fig in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
+        ]
+        cake_html = cake_dashboard.cake_section_html(cake_data, articles, stories_lookup, market=cake_market)
+    cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
 
     def _options(values: list[str]) -> str:
         return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
@@ -2136,6 +2180,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     return f"""
   <section class="domain-panel" data-domain="{domain}" style="display:{display}">
     <p class="domain-headline">{domain_meta['emoji']} {domain_meta['label']} — {total} articles · {date_lbl} · généré le {now}</p>
+    {cake_block}
 
     <div class="charts-row">
       <div class="globe-card">{globe_html}</div>

@@ -164,3 +164,138 @@ Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, 
 - Données à revoir : bandeau orange sous le graphique + message Telegram le lundi (`send_data_reminders` dans `main.py`), dès qu'un `next_review` manuel est dépassé ou qu'une source auto a plus de 45 jours.
 - Les valeurs `confidence: "low"` sont affichées en plus clair avec le préfixe `≈`.
 - Exclus volontairement : Project Transcendence (Arabie saoudite) et MGX (Émirats), qui sont des objectifs rapportés par la presse et non des budgets publics. Les Émirats ne déclarent pas leurs données douanières à Comtrade.
+
+## 🎂 AI layer cake (domaine IA)
+
+Lecture de l'actualité IA par couche — énergie → puces → infrastructure → modèles → applications — pour repérer les **mouvements inter-couches** (un acteur qui entre dans une autre couche). Spécification complète : `SPECS_LAYER_CAKE.md`. Configuration unique : `data/cake_layers.json` (couches, mots-clés, vocabulaire de rareté, paniers, seuils et poids). Logique : `cake.py` ; rendu du dashboard : `cake_dashboard.py`. Tests : `pytest` (dossier `tests/`).
+
+### Phase A — Étiquetage des articles
+- `sources.json` : champ optionnel `"cake_layer"` sur les sources spécialisées d'une couche (énergie, puces, infrastructure). Un article d'une telle source passe le filtre IA de `fetch_all` s'il passe le filtre IA **ou** s'il contient un mot-clé de `relevance_keywords[cake_layer]` (cherché en début de mot).
+- `_classify_one` (domaine `ia` uniquement) demande à Groq trois clés en plus : `layers` (0 à 3 couches), `cross_layer` (un acteur entre dans une couche où il n'est pas encore actif) et `scarcity` (`tension` / `detente` / `aucune`), validées par `cake.parse_cake_fields`. **Tous les articles `ia` passent par le modèle complet `GROQ_MODEL`** (avant : seulement les hot), pour la qualité de `cross_layer`.
+- Quota : la fin de chaque run logue `Groq tokens used this run: {...}` par étape (classification, sujets, revue des histoires). À surveiller sur les premiers runs (200 000 tokens/jour).
+- Dashboard : section « 🎂 AI layer cake » en tête du panneau `ia` (Streamlit et export, ancre `#cake`).
+
+**Migration SQL — Phase A (à exécuter une fois en Supabase) :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}';
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS cross_layer BOOLEAN DEFAULT FALSE;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS scarcity TEXT DEFAULT 'aucune';     -- 'tension' | 'detente' | 'aucune'
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS sublayers TEXT[] DEFAULT '{}';      -- v2, vide en v1
+```
+Le code est backward-compatible (fallback dans `save_to_supabase` et `load_articles` si les colonnes sont absentes : la section cake reste alors masquée).
+
+### Phase B — Mouvements inter-couches et acteurs
+- `data/actors_manual.json` : 104 acteurs générés depuis l'Annexe A de la spec (lignes « à discuter » → hors panier), tous `needs_review: true` tant qu'ils ne sont pas relus. `home_layers` conditionne l'origine et la distance des mouvements : c'est la partie à relire en priorité. `market_cap_slug` (companiesmarketcap.com) a été vérifié par ticker ; un acteur coté sans slug n'a pas de taille tant que la Phase C ne la complète pas.
+- À chaque run (`cake.process_layer_events`, après la sauvegarde des articles) : synchronisation du fichier manuel vers la table `actors` → extraction Groq (`extract_layer_events`, modèle complet, lots de 10) sur les articles `cross_layer` du run → origine / direction / distance calculées en Python (`locate_move` : couche d'origine la plus proche de la cible, en dessous en cas d'égalité) → fusion sur 90 jours et progression annonce → contrat → mise en service → score (`event_score`) → sauvegarde dans `layer_events` et `actor_relations`.
+- Un acteur inconnu est créé dans `actors` avec les couches que Groq lui attribue (`actor_home_layers`) et `needs_review = true` ; il apparaît dans le rappel Telegram du lundi.
+- `home_layers` en base = couches du fichier manuel + `auto_home_layers` (cibles ajoutées 30 jours après une mise en service). Éditer le fichier manuel ne perd donc jamais une promotion automatique.
+- Poids de l'acteur (`refresh_actor_weights`) : le lundi, ou dès qu'un acteur n'a pas de poids. Taille = revenus TTM companiesmarketcap (cotés) ou bloc `revenue` (non cotés) ; influence = démarrage à froid (percentile des valorisations de `country_indicators.json`) en attendant la Phase C ; longévité = `founded_year` (filiale : `parent_founded_year` × 0,8) ; implantation = PageRank des co-mentions d'acteurs dans `articles.topics` sur 180 jours.
+- Telegram : un message « 🎂 Mouvement majeur » par événement majeur (score ≥ 7) avant le digest `ia`, puis un par progression (`notified_at`) ; une ligne « 🎂 Cake : … » dans le digest.
+- Dashboard : bandeau des mouvements majeurs sur 7 jours, vue gâteau SVG (7 / 30 / 90 j, flèche pleine = descente, pointillée = montée, clic sur une flèche = fiche, clic sur une bande = filtre des signaux forts), fiches événements. Streamlit l'affiche via `components.html`.
+
+**Migration SQL — Phase B (à exécuter une fois en Supabase) :** celle de la spec (§8), avec deux colonnes en plus dans `actors` : `auto_home_layers` et `parent_founded_year`.
+```sql
+CREATE TABLE IF NOT EXISTS actors (
+    id BIGSERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    aliases TEXT[] DEFAULT '{}',
+    home_layers TEXT[] NOT NULL DEFAULT '{}',
+    auto_home_layers TEXT[] DEFAULT '{}',        -- couches ajoutées après une mise en service
+    home_sublayers TEXT[] DEFAULT '{}',          -- v2
+    parent TEXT,
+    parent_founded_year INT,
+    founded_year INT,
+    ticker TEXT,
+    market_cap_slug TEXT,
+    revenue_usd_bn NUMERIC,
+    revenue_source TEXT,
+    size NUMERIC, influence NUMERIC, longevity NUMERIC, implantation NUMERIC,
+    weight NUMERIC,
+    weight_breakdown JSONB,
+    weight_confidence TEXT DEFAULT 'low',
+    needs_review BOOLEAN DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS layer_events (
+    id BIGSERIAL PRIMARY KEY,
+    event_type TEXT NOT NULL DEFAULT 'integration',  -- 'integration' | 'goulot'
+    actor_id BIGINT REFERENCES actors(id),
+    origin_layer TEXT,
+    target_layer TEXT NOT NULL,
+    origin_sublayer TEXT,
+    target_sublayer TEXT,
+    direction TEXT,
+    distance INT,
+    engagement TEXT,
+    engagement_history JSONB DEFAULT '[]',
+    what TEXT,
+    bypassed TEXT[] DEFAULT '{}',
+    winners TEXT[] DEFAULT '{}',
+    losers TEXT[] DEFAULT '{}',
+    article_urls TEXT[] DEFAULT '{}',
+    score NUMERIC,
+    score_breakdown JSONB,
+    is_major BOOLEAN DEFAULT FALSE,
+    first_seen DATE NOT NULL,
+    last_seen DATE NOT NULL,
+    progressed_at DATE,
+    notified_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS layer_events_actor_target ON layer_events(actor_id, target_layer, last_seen);
+
+CREATE TABLE IF NOT EXISTS actor_relations (
+    id BIGSERIAL PRIMARY KEY,
+    from_actor TEXT NOT NULL,
+    relation TEXT NOT NULL,
+    to_actor TEXT NOT NULL,
+    article_url TEXT,
+    seen_at DATE NOT NULL
+);
+```
+Sans ces tables, l'étape est sautée avec un avertissement et le dashboard garde le compteur de la Phase A.
+
+### Phase C — Marché et rareté (`cake_market.py`)
+- **Cours** (`collect_prices`, à chaque run) : clôtures yfinance de tous les tickers d'acteurs + `QQQ` → `market_data` (`symbol` = ticker), et l'indice équipondéré de chaque couche, base 100, calculé en rendements → `market_data` (`symbol` = `CAKE_ENERGIE`, `CAKE_PUCES`…). Paniers dans `cake_layers.json` (`baskets`), générés depuis `actors_manual.json` + `IGV` ; les 88 tickers ont été validés sur Yahoo Finance le 2026-11-07 (cours **et** nom de l'entreprise). Un ticker sans cours est logué et sorti de son panier ce jour-là. Un échec yfinance ne bloque rien : les dernières valeurs restent et le bandeau du gâteau affiche « ⚠️ cours au … » au-delà de 4 jours.
+- **Premier lancement, une fois** : `python main.py --backfill-baskets` (un an d'historique, ~5 s), nécessaire pour les courbes et l'influence.
+- **Indice de prix des tokens** (`collect_token_prices`) : médiane des prix entrée / sortie ($/M tokens) des 20 modèles payants les plus utilisés la veille sur OpenRouter (`TOKEN_PRICE_IDX_IN` / `_OUT`). L'API publique ne donne pas la popularité : le classement est lu dans les données embarquées de la page `openrouter.ai/rankings` (fragile ; en cas d'échec, pas de point ce jour-là, warning dans les logs), les prix viennent de `/api/v1/models`.
+- **Influence complète** (§5.2) : médiane des rendements anormaux absolus J0–J+1 (titre de l'acteur vs `QQQ` s'il est coté, et paniers des couches concernées) autour de ses événements et de ses articles hot ; démarrage à froid sous 3 observations. Taille des cotés sans slug companiesmarketcap : chiffre d'affaires Yahoo Finance converti en USD.
+- **Rareté et goulots** (`update_scarcity`, après la sauvegarde des articles) : recalcule `layer_daily` sur les 30 derniers jours à chaque run. Solde 7 jours (tension − détente) / articles, z-score contre les 90 jours précédents **de la même couche** (au moins 30 jours de base requis, donc pas de goulot avant ~1 mois de données après la Phase A, sauf rattrapage Phase E). Goulot signalé = couche au z le plus haut, > 1,5 sur 3 jours ; confirmé par un signal de prix de la couche (§6.4). Migration du goulot confirmé tenue 7 jours → événement `goulot` + message Telegram. Empreinte des sources par couche : un changement met la couche en « normale en reconstruction » 30 jours (jauge pointillée, pas de goulot).
+- Dashboard : jauges de rareté, sparklines des paniers (et de l'indice tokens pour Modèles), étiquette de goulot, matrice origine → cible (nombre / scores / évolution), courbes des paniers et des z-scores.
+
+**Migration SQL — Phase C :**
+```sql
+CREATE TABLE IF NOT EXISTS layer_daily (
+    day DATE NOT NULL,
+    layer TEXT NOT NULL,
+    article_count INT,
+    tension_count NUMERIC,
+    detente_count NUMERIC,
+    scarcity_balance NUMERIC,        -- solde lissé 7 j
+    scarcity_z NUMERIC,
+    sources_fingerprint TEXT,
+    baseline_rebuilding BOOLEAN DEFAULT FALSE,
+    bottleneck_status TEXT,          -- NULL | 'signale' | 'confirme'
+    PRIMARY KEY (day, layer)
+);
+CREATE INDEX IF NOT EXISTS market_data_symbol_time ON market_data(domain, symbol, collected_at);
+```
+(`tension_count` / `detente_count` en NUMERIC et non INT : le repli sur le vocabulaire compte une tension faible pour 0,5.)
+
+### Phase D — Valeur du MWh à chaque couche (`layer_value.py`)
+- `data/layer_value_manual.json` : entrées sourcées (prix de gros de l'électricité, accélérateur de référence H100 SXM, PUE, durée d'amortissement, taux d'utilisation, GPU-heure, énergie par million de tokens, revenu et usage par abonné), chacune avec `source_url`, `confidence` et `note` ; `level: "chip"` = énergie mesurée sur la puce, multipliée par le PUE au calcul. Le prix des tokens est récupéré automatiquement (indice OpenRouter). Une entrée à `null` rend l'étage absent, jamais estimé à zéro.
+- `python layer_value.py` écrit `data/layer_value.json` (prix au compteur, valeur ajoutée, multiplicateur, `value_added_negative`, historique mensuel). Une valeur ajoutée négative est un signal (couche en compression de marge ou subventionnée), pas une erreur : elle n'est jamais tronquée.
+- Workflow `AI Radar - Layer Value` : le 1er du mois à 05:30 UTC, recalcule, commite le JSON et envoie le rapport Telegram (étage qui crée le plus de valeur, variation sur un mois, étages en valeur ajoutée négative).
+- Électricité et GPU-heure alimentent aussi `market_data` (`ELEC_US`, `ELEC_EU`, `GPU_HOUR_H100`) pour la confirmation des goulots. Relance du lundi quand `next_review` est dépassé.
+- Dashboard : escalier de la valeur (log), bascule « évolution de la valeur ajoutée », sources en pied de graphique.
+- ⚠️ Les étages Modèles et Applications reposent sur des estimations très incertaines (énergie par token, usage par abonné) : toujours affichés avec `≈`. Avec l'énergie par token d'un modèle 405B, la couche Modèles ressort en valeur ajoutée négative ; avec un 70B, elle passerait au-dessus de l'infrastructure.
+
+### Phase E — v1.1
+- **Implantation** : en plus des co-mentions, les relations extraites (`actor_relations`, 180 jours) donnent des arêtes dirigées « qui dépend de qui », pondérées ×3 (`relation_edges`) : A utilise B → A→B ; A fournit B → B→A ; A investit dans B → B→A ; partenaires → dans les deux sens.
+- **Électricité via l'API EIA** : si le secret `EIA_API_KEY` est défini (clé gratuite sur eia.gov/opendata), le prix de gros américain vient du STEO (moyenne simple des 11 hubs `ELWHU_*`, mois écoulés) au lieu de la saisie manuelle, pour `layer_value.py` et la série `ELEC_US` de `market_data` (24 mois d'historique). Sans clé ou en cas d'échec : valeur manuelle.
+- **Rattrapage des couches** (`python main.py --backfill-layers`, ajouté au workflow `AI Radar - Backfill Topics`) : les articles `ia` des 90 derniers jours jamais étiquetés (`layers_tagged = false`) reçoivent `layers` / `cross_layer` / `scarcity` (lots de 20 par appel Groq, 300 articles max par run, arrêt propre si le quota est atteint). Leurs mouvements inter-couches deviennent des événements datés du jour de publication, marqués comme déjà notifiés (pas de Telegram pour l'historique). Permet d'avoir la base de 90 jours du z-score de rareté sans attendre trois mois.
+
+**Migration SQL — Phase E :**
+```sql
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers_tagged BOOLEAN DEFAULT FALSE;
+```

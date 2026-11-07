@@ -1,0 +1,60 @@
+{
+  "_comment": "Configuration de la dimension AI layer cake (voir SPECS_LAYER_CAKE.md). Ordre des couches = du bas vers le haut. Les mots-clés sont cherchés en début de mot, en minuscules.",
+  "layers": [
+    {"code": "energie",        "label": "Énergie",        "emoji": "⚡", "rank": 1},
+    {"code": "puces",          "label": "Puces",          "emoji": "🔲", "rank": 2},
+    {"code": "infrastructure", "label": "Infrastructure", "emoji": "🏗️", "rank": 3},
+    {"code": "modeles",        "label": "Modèles",        "emoji": "🧠", "rank": 4},
+    {"code": "applications",   "label": "Applications",   "emoji": "📱", "rank": 5}
+  ],
+  "sublayers": {
+    "_comment": "v2, non utilisé en v1. Chaque liste est ordonnée du bas vers le haut.",
+    "energie": ["combustible_matieres", "equipement", "production", "reseau_raccordement"],
+    "puces": ["equipement_fabrication", "fonderie", "memoire", "packaging_avance", "conception", "interconnexion_reseau"],
+    "infrastructure": ["foncier_construction", "alimentation_refroidissement", "systemes_reseau_datacenter", "cloud_hyperscaler", "neocloud_location_gpu"],
+    "modeles": ["donnees", "outillage", "modeles_ouverts", "modeles_frontiere", "modeles_specialises"],
+    "applications": ["outils_developpeurs", "entreprise_horizontales", "verticales_metier", "grand_public", "ia_physique"]
+  },
+  "relevance_keywords": {
+    "energie": [
+      "data center", "datacenter", "data centre", "hyperscaler", "grid", "power demand", "electricity demand",
+      "load growth", "nuclear", "reactor", "smr", "small modular", "ppa", "power purchase", "transformer",
+      "turbine", "uranium", "interconnection", "transmission line", "capacity market", "gigawatt", "megawatt",
+      "wholesale price", "electricity price", "power price", "baseload",
+      "réseau électrique", "raccordement", "nucléaire", "réacteur", "centre de données", "centres de données",
+      "prix de l'électricité", "prix de gros", "consommation électrique", "transformateur", "mégawatt"
+    ],
+    "puces": [
+      "semiconductor", "chipmaker", "chip shortage", "chip export", "foundry", "foundries", "wafer", "hbm",
+      "high bandwidth memory", "dram", "memory chip", "memory price", "euv", "lithography", "advanced packaging",
+      "cowos", "2nm", "3nm", "1.4nm", "tsmc", "asml", "sk hynix", "micron", "samsung foundry", "export control",
+      "semi-conducteur", "semiconducteur", "fonderie", "lithographie", "puce", "mémoire hbm"
+    ],
+    "infrastructure": [
+      "data center", "datacenter", "data centre", "hyperscaler", "neocloud", "colocation", "gpu cloud",
+      "gpu rental", "gpu-hour", "liquid cooling", "cooling", "rack", "server", "campus", "capex",
+      "capital expenditure", "stargate", "coreweave", "nebius", "equinix", "digital realty", "vertiv",
+      "centre de données", "centres de données", "refroidissement", "hébergeur", "serveur"
+    ]
+  },
+  "baskets": {
+    "_comment": "Paniers équipondérés par couche, générés depuis actors_manual.json (basket non null) + l'ETF IGV. Tickers validés sur Yahoo Finance le 2026-11-07. Benchmark des rendements anormaux : QQQ.",
+    "energie": ["CCJ", "LEU", "GEV", "ENR.DE", "BE", "CEG", "VST", "TLN", "NRG", "OKLO", "SMR", "PWR", "PRY.MI", "NEX.PA"],
+    "puces": ["ASML", "AMAT", "LRCX", "KLAC", "8035.T", "ASM.AS", "TSM", "000660.KS", "MU", "ASX", "AMKR", "BESI.AS", "NVDA", "AMD", "AVGO", "MRVL", "ARM", "CBRS", "688256.SS", "ALAB", "CRDO", "COHR", "LITE"],
+    "infrastructure": ["EQIX", "DLR", "VRT", "SU.PA", "LR.PA", "ETN", "SMCI", "CLS", "6669.TW", "ANET", "ORCL", "CRWV", "NBIS", "IREN", "APLD"],
+    "modeles": ["2513.HK", "0100.HK"],
+    "applications": ["IGV", "PLTR", "NOW", "CRM", "TEM", "RXRX", "DUOL", "APP", "SYM"]
+  },
+  "actor_weight_coefficients": {"size": 0.30, "influence": 0.30, "longevity": 0.15, "implantation": 0.25},
+  "event_score": {"major_threshold": 7, "strong_signal_threshold": 5, "novelty_window_days": 180, "novelty_bonus": 1.2, "merge_window_days": 90, "home_layer_delay_days": 30},
+  "bottleneck": {
+    "z_threshold": 1.5, "min_days": 3, "migration_days": 7, "baseline_days": 90, "rebuild_days": 30,
+    "price_confirmation": {"window_days": 30, "basket_outperformance_pts": 5, "electricity_rise_pct": 10}
+  },
+  "scarcity_vocabulary": [
+    "shortage", "sold out", "waitlist", "wait list", "allocation", "rationing", "backlog", "bottleneck",
+    "lead time", "supply constraint", "supply crunch", "capacity crunch", "tight supply", "constrained",
+    "pénurie", "rupture", "liste d'attente", "goulot", "délai de livraison", "délais de livraison", "rationnement",
+    "saturé", "saturation"
+  ]
+}

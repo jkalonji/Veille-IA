@@ -37,3 +37,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python main.py --backfill-topics
+
+      # AI layer cake: tag the last 90 days with layers / cross_layer / scarcity
+      # (at most 300 articles per run, shares the Groq quota with the topics above)
+      - name: Backfill AI layer cake keys
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: ${{ vars.GROQ_MODEL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py --backfill-layers

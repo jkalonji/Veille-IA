@@ -20,6 +20,9 @@ from groq import AsyncGroq
 import requests
 from supabase import create_client
 
+import cake
+import cake_market
+import layer_value
 from country_indicators import load_indicators, stale_reason
 
 # ---------------------------------------------------------------------------
@@ -46,6 +49,9 @@ class Article:
     story_id: int | None = None  # the article's most active story (it can belong to several)
     topics: list[str] = field(default_factory=list)  # groq-extracted topics, the basis of stories
     published_is_estimated: bool = False  # True if `published` is collection time, not a real source date
+    layers: list[str] = field(default_factory=list)  # AI layer cake layers the article is about ("ia" only)
+    cross_layer: bool = False  # an actor entering a layer it is not active in yet
+    scarcity: str = "aucune"   # "tension" | "detente" | "aucune"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -235,6 +241,7 @@ async def extract_topics(
                 reasoning_effort="low",
                 response_format={"type": "json_object"},
             )
+            _count_tokens("topics", resp)
             data = json.loads(resp.choices[0].message.content)
             for row in data.get("articles", []):
                 i = row.get("id")
@@ -367,6 +374,7 @@ async def review_stories(stories: list[dict], client, model: str, domain: str) -
             reasoning_effort="low",
             response_format={"type": "json_object"},
         )
+        _count_tokens("story_review", resp)
         data = json.loads(resp.choices[0].message.content)
     except Exception as e:
         logging.warning(f"Story review failed ({domain}): {e}")
@@ -989,6 +997,10 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
     # broad tech/AI feeds that need narrowing). Other domains' sources are already
     # on-topic by construction (e.g. an oil-price feed doesn't need an "is this
     # about oil" check) — they pass through untouched.
+    # Sources tagged with a `cake_layer` (energy, chips, data centers) also keep
+    # articles that only match that layer's keywords: the signals of the lower
+    # layers (uranium price, grid queue, transformer shortage) rarely mention AI.
+    source_layer = {s["name"]: s["cake_layer"] for s in sources if s.get("cake_layer")}
     filtered = []
     for a in unique:
         if a.domain != "ia":
@@ -999,6 +1011,8 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
         weak_hits   = sum(1 for kw in AI_WEAK_KEYWORDS   if kw in text)
         # Pass if: 1 strong keyword OR 2+ keyword matches in total
         if strong_hits >= 1 or (strong_hits + weak_hits) >= 2:
+            filtered.append(a)
+        elif a.source in source_layer and cake.matches_layer_keywords(text, source_layer[a.source]):
             filtered.append(a)
 
     logging.info(f"{len(filtered)}/{len(unique)} articles kept after AI filter")
@@ -1127,17 +1141,30 @@ def _build_groq_prompt(domain: str, with_summary: bool) -> str:
     )
     if with_summary:
         prompt += _GROQ_PROMPT_SUMMARY
+    if domain == "ia":
+        prompt += cake.CAKE_PROMPT
     return prompt + _GROQ_PROMPT_FOOTER
 
 
 VALID_SENTIMENTS = {"Positif", "Negatif", "Neutre"}
 
+# Groq tokens spent this run, per step — logged at the end of main() to keep an
+# eye on the 200k tokens/day quota.
+GROQ_TOKENS: Counter = Counter()
+
+
+def _count_tokens(step: str, response) -> None:
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        GROQ_TOKENS[step] += usage.total_tokens or 0
+
 
 async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> bool:
     """Classify a single article in-place, using its domain's taxonomy/prompt.
-    Hot articles use model_full (70b): category + sentiment + country + summary.
-    Non-hot articles use model_fast (8b): category + sentiment + country only.
-    This cuts ~65% of 70b token usage on a typical day.
+    Hot articles use model_full: category + sentiment + country + summary.
+    Non-hot articles use model_fast: category + sentiment + country only —
+    except in the "ia" domain, where every article goes to model_full because
+    it also tags the AI layer cake keys (layers, cross_layer, scarcity).
     Returns False if the Groq call failed and the article fell back to defaults."""
     taxo = DOMAIN_TAXONOMY.get(article.domain, DOMAIN_TAXONOMY["ia"])
     valid_categories = set(taxo["categories"])
@@ -1155,6 +1182,9 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         model         = model_fast
         system_prompt = _build_groq_prompt(article.domain, with_summary=False)
         max_tokens    = 300   # reasoning budget + category + sentiment + country
+    if article.domain == "ia":
+        model       = model_full  # the cake keys need the full model
+        max_tokens += 50          # layers + cross_layer + scarcity
 
     try:
         response = await client.chat.completions.create(
@@ -1169,6 +1199,7 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
                                      # low effort + prior tight budgets caused empty completions
             response_format={"type": "json_object"},
         )
+        _count_tokens("classification", response)
         result = json.loads(response.choices[0].message.content)
         cat    = result.get("category",  default_category)
         sent   = result.get("sentiment", "Neutre")
@@ -1180,6 +1211,8 @@ async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, art
         article.country   = result.get("country", "Global") or "Global"
         if article.hot_topic:
             article.summary = (result.get("summary") or "").strip()
+        if article.domain == "ia":
+            article.layers, article.cross_layer, article.scarcity = cake.parse_cake_fields(result)
         return True
     except Exception as e:
         logging.warning(f"Groq error for '{article.title[:60]}': {e}")
@@ -1264,6 +1297,10 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "story_id": a.story_id,
             "published_is_estimated": a.published_is_estimated,
             "topics": a.topics,
+            "layers": a.layers,
+            "cross_layer": a.cross_layer,
+            "scarcity": a.scarcity,
+            "layers_tagged": a.domain == "ia",
         }
         for a in articles
     ]
@@ -1280,9 +1317,11 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS topics TEXT[] DEFAULT '{}';
     # Migration required for the "Publié" column fallback flag (see CLAUDE.md):
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_is_estimated BOOLEAN DEFAULT FALSE;
+    # Migration required for the AI layer cake (see CLAUDE.md, Phase A):
+    #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}'; (+ cross_layer, scarcity)
     _OPTIONAL_COLS = (
         "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
-        "story_id", "published_is_estimated", "topics",
+        "story_id", "published_is_estimated", "topics", "layers", "cross_layer", "scarcity", "layers_tagged",
     )
 
     try:
@@ -1375,7 +1414,9 @@ def _post_telegram(token: str, chat_id: str, text: str) -> None:
         logging.error(f"Telegram error: {resp.status_code} {resp.text}")
 
 
-def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Article], dashboard_url: str) -> None:
+def _send_domain_digest(
+    token: str, chat_id: str, domain: str, articles: list[Article], dashboard_url: str, extra_line: str = ""
+) -> None:
     """Send one recap + hot-articles digest for a single domain's articles."""
     import time
     today = datetime.now(timezone.utc).strftime("%d/%m/%Y")
@@ -1394,6 +1435,8 @@ def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Ar
         count = stats.get(cat, 0)
         if count:
             header_lines.append(f"{emoji} {cat} : {count}")
+    if extra_line:
+        header_lines.append(f"\n{extra_line}")
     if dashboard_url:
         header_lines.append(f'\n📊 <a href="{dashboard_url}">Voir le Dashboard</a>')
     _post_telegram(token, chat_id, "\n".join(header_lines))
@@ -1443,8 +1486,12 @@ def _send_domain_digest(token: str, chat_id: str, domain: str, articles: list[Ar
     logging.info(f"Telegram [{domain}]: sent recap + {len(hot_articles)} hot articles")
 
 
-def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
-    """Group articles by domain and send one digest message per domain."""
+def send_telegram(
+    articles: list[Article], dashboard_url: str = "", cake_messages: list[str] | None = None, cake_line: str = ""
+) -> None:
+    """Group articles by domain and send one digest message per domain.
+    The AI layer cake's major-move messages go right before the ia digest,
+    and its one-line summary inside it."""
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
 
@@ -1457,14 +1504,34 @@ def send_telegram(articles: list[Article], dashboard_url: str = "") -> None:
         by_domain.setdefault(a.domain, []).append(a)
 
     for domain, domain_articles in by_domain.items():
-        _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url)
+        if domain == "ia":
+            for msg in cake_messages or []:
+                _post_telegram(token, chat_id, msg)
+        _send_domain_digest(token, chat_id, domain, domain_articles, dashboard_url,
+                            extra_line=cake_line if domain == "ia" else "")
 
 
-def send_data_reminders() -> None:
+def send_data_reminders(supabase_client=None) -> None:
     """Weekly (Mondays) Telegram nudge when the 'Who really invests in AI?'
-    dashboard data needs a manual update or its monthly refresh broke."""
+    dashboard data needs a manual update or its monthly refresh broke, and
+    when AI layer cake actors wait for review."""
     if datetime.now(timezone.utc).weekday() != 0:
         return
+    actor_lines = cake.review_reminder_lines(supabase_client)
+    if actor_lines:
+        _post_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            "🎂 <b>Acteurs du AI layer cake à relire</b>\n" + "\n".join(actor_lines)
+            + "\n\nÉditer <code>data/actors_manual.json</code> (ou la table <code>actors</code> pour les nouveaux).",
+        )
+    value_reason = layer_value.stale_reason()
+    if value_reason:
+        _post_telegram(
+            os.environ["TELEGRAM_BOT_TOKEN"], os.environ["TELEGRAM_CHAT_ID"],
+            f"🎂 <b>Valeur du MWh par couche</b> : {value_reason}.\n"
+            "Éditer <code>data/layer_value_manual.json</code> (électricité, GPU-heure, estimations) "
+            "puis lancer <code>python layer_value.py</code>.",
+        )
     indicators = load_indicators()
     lines = []
     for key, ind in indicators.items():
@@ -1530,17 +1597,61 @@ async def main():
     # 4. Save to Supabase
     save_to_supabase(classified, client=supabase_client)
 
+    # 4b. AI layer cake: prices, cross-layer moves, scarcity (never blocks the pipeline)
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    if supabase_client is not None:
+        for step in (cake_market.collect_prices, cake_market.collect_token_prices,
+                     cake_market.collect_manual_series):
+            try:
+                step(supabase_client)
+            except Exception as e:
+                logging.error(f"Cake market: {step.__name__} failed: {e}")
+    cake_events: list[dict] = []
+    try:
+        cake_events = await cake.process_layer_events(
+            classified, supabase_client, groq_client_for_topics, model_full,
+            retries=GROQ_RETRIES, on_usage=lambda r: _count_tokens("layer_events", r),
+        )
+    except Exception as e:
+        logging.error(f"Cake: layer events step failed: {e}")
+    scarcity = {"bottleneck": "", "migration": None}
+    if supabase_client is not None:
+        try:
+            scarcity = cake_market.update_scarcity(supabase_client, sources)
+        except Exception as e:
+            logging.error(f"Cake: scarcity step failed: {e}")
+    to_notify = [e for e in cake_events if cake.needs_notification(e)]
+    cake_messages = [cake.major_event_message(e, dashboard_url) for e in to_notify]
+    if scarcity["migration"]:
+        cake_messages.insert(0, cake_market.migration_message(scarcity["migration"]))
+        to_notify.append(scarcity["migration"])
+
     # 5. Send to Telegram
     logging.info("Sending articles to Telegram...")
-    dashboard_url = os.environ.get("DASHBOARD_URL", "")
-    send_telegram(classified, dashboard_url=dashboard_url)
-    send_data_reminders()
+    send_telegram(
+        classified, dashboard_url=dashboard_url,
+        cake_messages=cake_messages,
+        cake_line=cake.digest_line(cake_events, scarcity["bottleneck"]),
+    )
+    if to_notify:
+        cake.mark_notified(supabase_client, to_notify)
+    send_data_reminders(supabase_client)
 
+    logging.info(f"Groq tokens used this run: {dict(GROQ_TOKENS)} (total {sum(GROQ_TOKENS.values())})")
     logging.info("AI Radar pipeline complete.")
 
 
 if __name__ == "__main__":
-    if "--backfill-topics" in sys.argv:
+    if "--backfill-baskets" in sys.argv:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        cake_market.collect_prices(_get_supabase_client(), backfill=True)
+    elif "--backfill-layers" in sys.argv:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+        asyncio.run(cake.backfill_layers(
+            _get_supabase_client(), AsyncGroq(api_key=os.environ["GROQ_API_KEY"]),
+            (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip(), Article,
+        ))
+    elif "--backfill-topics" in sys.argv:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
         asyncio.run(backfill_topics(os.environ.get("TOPIC_BACKFILL_MODEL")))
     else:
