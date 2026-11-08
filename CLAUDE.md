@@ -165,6 +165,10 @@ Depuis le 2026-10-11, le radar « Répartition par catégorie » est remplacé, 
 - Les valeurs `confidence: "low"` sont affichées en plus clair avec le préfixe `≈`.
 - Exclus volontairement : Project Transcendence (Arabie saoudite) et MGX (Émirats), qui sont des objectifs rapportés par la presse et non des budgets publics. Les Émirats ne déclarent pas leurs données douanières à Comtrade.
 
+## Boutons « ℹ️ Infos » des graphiques
+
+Chaque graphique du dashboard (Streamlit et export statique) a un bouton « ℹ️ Infos » : méthode utilisée et interprétation des scores. Tous les textes sont dans le dictionnaire `INFO` de `chart_info.py`. **Tout nouveau graphique doit y avoir son entrée, et tout changement de méthode ou de seuil doit y être reporté** (`tests/test_chart_info.py` vérifie les seuils cités par rapport à `data/cake_layers.json`).
+
 ## 🎂 AI layer cake (domaine IA)
 
 Lecture de l'actualité IA par couche — énergie → puces → infrastructure → modèles → applications — pour repérer les **mouvements inter-couches** (un acteur qui entre dans une autre couche). Spécification complète : `SPECS_LAYER_CAKE.md`. Configuration unique : `data/cake_layers.json` (couches, mots-clés, vocabulaire de rareté, paniers, seuils et poids). Logique : `cake.py` ; rendu du dashboard : `cake_dashboard.py`. Tests : `pytest` (dossier `tests/`).
