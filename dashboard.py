@@ -33,6 +33,7 @@ from plotly.offline import get_plotlyjs
 from supabase import create_client
 
 import cake_dashboard
+import chart_info
 from country_indicators import load_indicators, stale_reason
 
 # Load .env (local only, no-op if absent)
@@ -1510,6 +1511,7 @@ def _render_stories(
         return
     cloud = _story_cloud_html(stories)
     if cloud:
+        chart_info.st_info("story_cloud")
         container.markdown(cloud, unsafe_allow_html=True)
     container.markdown(_STORY_TIMELINE_CSS, unsafe_allow_html=True)
     for s in stories:
@@ -1709,7 +1711,8 @@ def run_streamlit() -> None:
             st.markdown("#### 🎂 AI layer cake")
             n_cards = len((cake_data or {}).get("events") or [])
             components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
-            for fig in cake_dashboard.cake_figures(cake_data, _cached_cake_market()):
+            for info_key, fig in cake_dashboard.cake_figures(cake_data, _cached_cake_market()):
+                chart_info.st_info(info_key)
                 st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
@@ -1727,15 +1730,18 @@ def run_streamlit() -> None:
             for tab, (key, _) in zip(tabs, INDICATOR_TABS):
                 with tab:
                     ind = indicators.get(key) or {}
+                    chart_info.st_info(key)
                     st.plotly_chart(fig_country_indicator(ind), use_container_width=True, config=PLOTLY_CONFIG)
                     st.markdown(_indicator_footer_html(ind), unsafe_allow_html=True)
         else:
             st.markdown(FLAG_FONT_LINK + CHART_FONTS_LINK, unsafe_allow_html=True)
+            chart_info.st_info("categories")
             st.plotly_chart(
                 fig_category_bars(filtered, category_order=cat_order, category_emoji=cat_emoji_map),
                 use_container_width=True, config=PLOTLY_CONFIG,
             )
     with col_globe:
+        chart_info.st_info("globe")
         # Build iso_counts for the Globe.gl component
         _iso_counts: dict[str, int] = {}
         for _a in filtered:
@@ -2081,6 +2087,7 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
   .story-meta {{ font-size:12px; color:#7d8db0; margin-left:auto; white-space:nowrap; }}
 </style>
 {_STORY_TIMELINE_CSS}
+{chart_info.info_html('story_cloud') if any(s['is_ongoing'] for s in stories) else ''}
 {_story_cloud_html(stories, domain=domain, link=True)}
 <div class="stories-wrap" id="stories-{domain}">{cards}</div>
 <script>
@@ -2139,7 +2146,8 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
             active_cls = " active" if i == 0 else ""
             buttons.append(f'<button class="ind-tab{active_cls}" data-target="ind-panel-{domain}-{key}">{label}</button>')
             panels.append(
-                f'<div class="ind-panel{active_cls}" id="ind-panel-{domain}-{key}">{plot}{_indicator_footer_html(ind)}</div>'
+                f'<div class="ind-panel{active_cls}" id="ind-panel-{domain}-{key}">'
+                f'{chart_info.info_html(key)}{plot}{_indicator_footer_html(ind)}</div>'
             )
         right_card = f'<div class="ind-tabs">{"".join(buttons)}</div>{"".join(panels)}'
     else:
@@ -2150,7 +2158,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
             include_plotlyjs=False,
             config=PLOTLY_CONFIG,
         )
-        right_card = radar_html
+        right_card = chart_info.info_html("categories") + radar_html
 
     deduped     = _deduplicate_articles(articles)
     stories_lookup = _fetch_stories_lookup(domain)
@@ -2163,9 +2171,10 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
         cake_data = cake_dashboard.load_cake_data(cake_client)
         cake_market = cake_dashboard.load_cake_market(cake_client) or {}
         cake_market["blocks_html"] = [
-            '<div class="cake-chart">' + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
-                                                     include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
-            for i, fig in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
+            '<div class="cake-chart">' + chart_info.info_html(info_key)
+            + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
+                          include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
+            for i, (info_key, fig) in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
         ]
         cake_html = cake_dashboard.cake_section_html(cake_data, articles, stories_lookup, market=cake_market)
     cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
@@ -2183,7 +2192,7 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     {cake_block}
 
     <div class="charts-row">
-      <div class="globe-card">{globe_html}</div>
+      <div class="globe-card">{chart_info.info_html('globe')}{globe_html}</div>
       <div class="radar-card">
         {right_card}
       </div>
@@ -2415,6 +2424,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       .col-country, .col-source {{ display: table-cell; }}
     }}
   </style>
+  {chart_info.INFO_CSS}
 </head>
 <body>
   <h1>Cobalt.xyz</h1>

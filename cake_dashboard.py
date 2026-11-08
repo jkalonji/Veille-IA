@@ -18,6 +18,7 @@ from plotly.subplots import make_subplots
 
 import cake
 import cake_market
+import chart_info
 
 PERIODS = (7, 30, 90)
 MAX_ARROWS = 12   # per period view, highest scores first
@@ -298,18 +299,18 @@ def fig_value_staircase(value: dict) -> go.Figure | None:
     return fig
 
 
-def cake_figures(data: dict | None, market: dict | None, today: str | None = None) -> list[go.Figure]:
-    """Plotly figures shown under the cake (matrix, value staircase, layer curves)."""
+def cake_figures(data: dict | None, market: dict | None, today: str | None = None) -> list[tuple[str, go.Figure]]:
+    """(chart_info key, Plotly figure) shown under the cake: matrix, value staircase, layer curves."""
     import layer_value
     today = today or date.today().isoformat()
     figs = []
     if data is not None:
-        figs.append(fig_matrix(data["events"], today))
+        figs.append(("matrix", fig_matrix(data["events"], today)))
     staircase = fig_value_staircase(layer_value.load_output())
     if staircase is not None:
-        figs.append(staircase)
+        figs.append(("value_staircase", staircase))
     if market and (market.get("series") or market.get("daily")):
-        figs.append(fig_layer_curves(market["series"], market["daily"]))
+        figs.append(("layer_curves", fig_layer_curves(market["series"], market["daily"])))
     return figs
 
 
@@ -641,10 +642,11 @@ def cake_section_html(data: dict | None, articles: list[dict], stories_lookup: d
                 for u in s.get("article_urls") or []:
                     story_refs.setdefault(u, f"story-ia-{sid}")
     cards = "".join(_event_card(e, letters[e["id"]], story_refs, link_stories) for e in listed)
-    cards_html = (f'<div class="cake-h3">Fiches événements</div>{cards}' if cards
+    cards_html = (f'<div class="cake-h3">Fiches événements</div>{chart_info.info_html("cake_events")}{cards}' if cards
                   else '<p class="cake-muted">Aucun mouvement inter-couches sur 90 jours.</p>')
-    return (CSS + '<div class="cake-wrap">'
+    return (CSS + chart_info.INFO_CSS + '<div class="cake-wrap">'
             + banner_html(data["events"], today, bn_label, market.get("synthetic"))
+            + chart_info.info_html("cake")
             + f'<div class="cake-periods">{buttons}</div>{views}{cards_html}'
             + "".join(market.get("blocks_html") or [])
             + "</div>" + JS)
@@ -667,7 +669,7 @@ def cake_counts_html(articles: list[dict]) -> str:
       <span class="cake-band__bar"><span style="width:{width:.0f}%"></span></span>
       <span class="cake-band__count">{n}</span>
     </div>"""
-    return f"""
+    return chart_info.INFO_CSS + chart_info.info_html("cake_counts") + f"""
 <style>
   .cake {{ background:#0c1222; border:1px solid #1a2540; border-radius:10px; padding:12px 14px; margin-bottom:14px; }}
   .cake-band {{ display:flex; align-items:center; gap:10px; padding:5px 0; font-size:13px; color:#c8d4ec; }}
