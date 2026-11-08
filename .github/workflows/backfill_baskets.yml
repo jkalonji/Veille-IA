@@ -1,0 +1,35 @@
+name: AI Radar - Backfill Baskets
+
+# One-off: loads a year of closes for every AI layer cake ticker and builds the
+# layer basket indexes (python main.py --backfill-baskets). Safe to re-run:
+# only missing days are inserted, and the indexes extend backwards from what
+# the daily runs already stored.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Backfill layer baskets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python main.py --backfill-baskets
