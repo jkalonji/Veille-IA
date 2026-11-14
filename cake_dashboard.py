@@ -378,11 +378,31 @@ def _fmt_move(e: dict) -> str:
             f"{cake.fmt_score(e['score'] or 0)}")
 
 
+def recent_majors(events: list[dict], today: str) -> list[dict]:
+    """Major integration moves seen over the last 7 days, newest first."""
+    since = (date.fromisoformat(today) - timedelta(days=7)).isoformat()
+    return sorted((e for e in events if e.get("event_type") == "integration" and e.get("is_major")
+                   and (e.get("last_seen") or "") >= since), key=lambda e: e["last_seen"], reverse=True)
+
+
+def teaser_text(data: dict | None, market: dict | None = None, today: str | None = None) -> str:
+    """One line for the IA panel pointing to the cake tab: major moves of the
+    week and the bottleneck state. Empty without the Phase B tables."""
+    if data is None:
+        return ""
+    today = today or date.today().isoformat()
+    n = len(recent_majors(data["events"], today))
+    parts = [f"{n} mouvement{'s' if n > 1 else ''} majeur{'s' if n > 1 else ''} cette semaine" if n
+             else "Aucun mouvement majeur cette semaine"]
+    bn = (market or {}).get("bottleneck") or {}
+    if bn.get("layer") in cake.layer_meta():
+        parts.append(f"goulot : {cake.layer_meta()[bn['layer']]['label']} ({bn['status']})")
+    return "🎂 " + " · ".join(parts)
+
+
 def banner_html(events: list[dict], today: str, bottleneck: str = "", synthetic: list[dict] | None = None) -> str:
     """Major moves of the last 7 days (and confirmed bottleneck migrations), plus the bottleneck state."""
-    since = (date.fromisoformat(today) - timedelta(days=7)).isoformat()
-    majors = sorted((e for e in events if e.get("event_type") == "integration" and e.get("is_major")
-                     and (e.get("last_seen") or "") >= since), key=lambda e: e["last_seen"], reverse=True)
+    majors = recent_majors(events, today)
     items = [f'<a class="cake-banner__item" href="#cake-ev-{e["id"]}" data-ev="cake-ev-{e["id"]}">{_fmt_move(e)}</a>'
              for e in majors]
     items += [f'<span class="cake-banner__item">🎂 {escape(s["what"])}</span>' for s in synthetic or []]
