@@ -12,6 +12,7 @@ import re
 import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from html import escape
 
 # ---------------------------------------------------------------------------
 # Globe.gl custom Streamlit component (lazy-init, only used in Streamlit mode)
@@ -1560,19 +1561,49 @@ def run_streamlit() -> None:
     def _cached_cake_market() -> dict | None:
         return cake_dashboard.load_cake_market(_cake_client())
 
+    def _render_streamlit_cake() -> None:
+        """The 🎂 AI layer cake tab: the whole cake section, on its own page."""
+        import streamlit.components.v1 as components
+        with st.sidebar:
+            st.title("🎂 Cobalt.xyz · AI layer cake")
+            st.caption("Énergie → puces → infrastructure → modèles → applications")
+            if st.button("🔄 Rafraîchir", use_container_width=True):
+                _cached_cake_data.clear()
+                _cached_cake_market.clear()
+                st.rerun()
+        st.markdown("### 🎂 AI layer cake")
+        cake_data = _cached_cake_data()
+        cake_market = _cached_cake_market()
+        # Without the Phase B tables, the section falls back to the per-layer article counter.
+        fallback_articles = _cached_load(30, "ia") if cake_data is None else []
+        cake_html = cake_dashboard.cake_section_html(
+            cake_data, fallback_articles, _cached_stories_lookup("ia"), link_stories=False, market=cake_market,
+        )
+        if not cake_html:
+            st.info("Pas encore de données pour le layer cake.")
+            return
+        n_cards = len((cake_data or {}).get("events") or [])
+        components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
+        for info_key, fig in cake_dashboard.cake_figures(cake_data, cake_market):
+            chart_info.st_info(info_key)
+            st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+
     # ── Domaine — sélecteur en haut de page, avant tout le reste ─────────────
     if "domain" not in st.session_state:
         st.session_state["domain"] = "ia"
 
-    domain_options = list(DOMAIN_META)
+    domain_options = list(DOMAIN_META) + ["cake"]
     st.selectbox(
         "Domaine",
         domain_options,
         key="domain",
-        format_func=lambda d: f"{DOMAIN_META[d]['emoji']} {DOMAIN_META[d]['label']}",
+        format_func=lambda d: "🎂 AI layer cake" if d == "cake" else f"{DOMAIN_META[d]['emoji']} {DOMAIN_META[d]['label']}",
         label_visibility="collapsed",
     )
     domain = st.session_state["domain"]
+    if domain == "cake":
+        _render_streamlit_cake()
+        return
     domain_meta   = DOMAIN_META.get(domain, DOMAIN_META["ia"])
     cat_emoji_map = DOMAIN_CATEGORY_EMOJI.get(domain, {})
     cat_order     = DOMAIN_CATEGORY_ORDER.get(domain, DOMAIN_CATEGORY_ORDER["ia"])
@@ -1700,20 +1731,14 @@ def run_streamlit() -> None:
 
     st.markdown("---")
 
-    # ── AI layer cake (IA only) ───────────────────────────────────────────────
+    # ── AI layer cake teaser (IA only — the cake has its own tab) ─────────────
     if domain == "ia":
-        cake_data = _cached_cake_data()
-        cake_html = cake_dashboard.cake_section_html(
-            cake_data, articles, _cached_stories_lookup(domain), link_stories=False, market=_cached_cake_market(),
-        )
-        if cake_html:
-            import streamlit.components.v1 as components
-            st.markdown("#### 🎂 AI layer cake")
-            n_cards = len((cake_data or {}).get("events") or [])
-            components.html(CHART_FONTS_LINK + cake_html, height=min(1800, 900 + 44 * n_cards), scrolling=True)
-            for info_key, fig in cake_dashboard.cake_figures(cake_data, _cached_cake_market()):
-                chart_info.st_info(info_key)
-                st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG)
+        teaser = cake_dashboard.teaser_text(_cached_cake_data(), _cached_cake_market())
+        if teaser:
+            t_col, b_col = st.columns([4, 1])
+            t_col.markdown(f"**{teaser}**")
+            b_col.button("→ Voir le layer cake", use_container_width=True,
+                         on_click=lambda: st.session_state.update(domain="cake"))
 
     # ── Charts : Globe 3D + Radar d'influence ────────────────────────────────
     if "globe_country" not in st.session_state:
@@ -2103,7 +2128,8 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
 </script>"""
 
 
-def _render_domain_export_section(domain: str, articles: list[dict], active: bool, now: str) -> str:
+def _render_domain_export_section(domain: str, articles: list[dict], active: bool, now: str,
+                                  cake_teaser: str = "") -> str:
     """Build one domain's full self-contained section for the static export —
     charts, hot topics, filter toolbar and table — with every element id/class
     scoped to `domain` so several of these can live in the same page and be
@@ -2165,19 +2191,8 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
     hot_cards   = _hot_articles_html(articles, category_emoji=cat_emoji_map, domain=domain, stories_lookup=stories_lookup)
     stories_html = _stories_html(articles, stories_lookup, domain=domain)
     table_rows  = _articles_to_html_table(deduped, category_emoji=cat_emoji_map)
-    cake_html   = ""
-    if domain == "ia":
-        cake_client = _cake_client()
-        cake_data = cake_dashboard.load_cake_data(cake_client)
-        cake_market = cake_dashboard.load_cake_market(cake_client) or {}
-        cake_market["blocks_html"] = [
-            '<div class="cake-chart">' + chart_info.info_html(info_key)
-            + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
-                          include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
-            for i, (info_key, fig) in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
-        ]
-        cake_html = cake_dashboard.cake_section_html(cake_data, articles, stories_lookup, market=cake_market)
-    cake_block  = f'<h2 id="cake">🎂 AI layer cake</h2>{cake_html}' if cake_html else ""
+    cake_block  = (f'<a class="cake-teaser" href="#cake">{escape(cake_teaser)} '
+                   f'<span class="cake-teaser__go">→ Voir l’onglet 🎂 AI layer cake</span></a>' if cake_teaser else "")
 
     def _options(values: list[str]) -> str:
         return "\n".join(f'<option value="{v}">{v}</option>' for v in sorted(set(values)))
@@ -2236,6 +2251,31 @@ def _render_domain_export_section(domain: str, articles: list[dict], active: boo
   </section>"""
 
 
+def _render_cake_export_section(articles: list[dict], active: bool, now: str) -> tuple[str, str]:
+    """The 🎂 AI layer cake tab of the static export (IA articles only), and
+    the one-line teaser shown in the IA panel. Both empty when there is
+    nothing to show."""
+    cake_client = _cake_client()
+    cake_data = cake_dashboard.load_cake_data(cake_client)
+    cake_market = cake_dashboard.load_cake_market(cake_client) or {}
+    cake_market["blocks_html"] = [
+        '<div class="cake-chart">' + chart_info.info_html(info_key)
+        + pio.to_html(fig, div_id=f"cake-fig-{i}", full_html=False,
+                      include_plotlyjs=False, config=PLOTLY_CONFIG) + "</div>"
+        for i, (info_key, fig) in enumerate(cake_dashboard.cake_figures(cake_data, cake_market))
+    ]
+    cake_html = cake_dashboard.cake_section_html(cake_data, articles, _fetch_stories_lookup("ia"), market=cake_market)
+    if not cake_html:
+        return "", ""
+    display = "block" if active else "none"
+    section = f"""
+  <section class="domain-panel" data-domain="cake" style="display:{display}">
+    <p class="domain-headline" id="cake">🎂 AI layer cake — énergie → puces → infrastructure → modèles → applications · généré le {now}</p>
+    {cake_html}
+  </section>"""
+    return section, cake_dashboard.teaser_text(cake_data, cake_market)
+
+
 def _subscribe_form_html(buttondown_username: str) -> str:
     """Newsletter signup form posting straight to Buttondown (email only, double
     opt-in and unsubscribe handled there). Empty until BUTTONDOWN_USERNAME is set."""
@@ -2269,15 +2309,24 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     default_domain = "ia" if articles_by_domain.get("ia") else domains[0]
     subscribe_html = _subscribe_form_html(os.environ.get("BUTTONDOWN_USERNAME", ""))
 
+    cake_section, cake_teaser = ("", "")
+    if articles_by_domain.get("ia"):
+        cake_section, cake_teaser = _render_cake_export_section(articles_by_domain["ia"], active=False, now=now)
+    panels = domains + (["cake"] if cake_section else [])
+
+    def _panel_label(d: str) -> str:
+        return "🎂 AI layer cake" if d == "cake" else f'{DOMAIN_META[d]["emoji"]} {DOMAIN_META[d]["label"]}'
+
     toggle_buttons = "".join(
         f'<button class="domain-toggle-btn{" active" if d == default_domain else ""}" data-domain="{d}">'
-        f'{DOMAIN_META[d]["emoji"]} {DOMAIN_META[d]["label"]}</button>'
-        for d in domains
+        f'{_panel_label(d)}</button>'
+        for d in panels
     )
     domain_sections = "".join(
-        _render_domain_export_section(d, articles_by_domain[d], active=(d == default_domain), now=now)
+        _render_domain_export_section(d, articles_by_domain[d], active=(d == default_domain), now=now,
+                                      cake_teaser=cake_teaser if d == "ia" else "")
         for d in domains
-    )
+    ) + cake_section
 
     full_html = f"""<!DOCTYPE html>
 <html lang="fr">
@@ -2316,6 +2365,10 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
     .domain-toggle-btn:hover {{ background: #141d33; color: #e8eef8; }}
     .domain-toggle-btn.active {{ background: #4488ff; color: #060810; border-color: #4488ff; }}
     .domain-headline {{ color: #c8d4ec; font-size: 0.9rem; margin-bottom: 12px; }}
+    .cake-teaser {{ display: block; background: #1f1a10; border: 1px solid #f4a261; border-radius: 10px;
+      padding: 10px 14px; margin-bottom: 14px; color: #e8eef8; text-decoration: none; font-size: 0.9rem; }}
+    .cake-teaser:hover {{ background: #2a2316; }}
+    .cake-teaser__go {{ color: #f4a261; white-space: nowrap; }}
     .subscribe {{
       display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
       background: #0c1222; border: 1px solid #1a2540; border-radius: 10px;
@@ -2437,7 +2490,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
   <script>
     // ── ISO-3 → display name (mirrored from Python) ─────────────────────────
     const ISO3_NAME = {json.dumps(ISO3_TO_NAME)};
-    const DOMAINS   = {json.dumps(domains)};
+    const DOMAINS   = {json.dumps(panels)};  // domain panels + the 🎂 cake tab
     let activeDomain = {json.dumps(default_domain)};
 
     // Per-domain state: selected country filter, globe element, rotation timer/angle.
@@ -2579,7 +2632,31 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       visibleBarCharts(domain).forEach(function(el) {{
         Plotly.Plots.resize(el).then(function() {{ growBars(el); }});
       }});
+      // Charts drawn while their tab was hidden have no width yet.
+      panelRoot(domain).querySelectorAll('.cake-chart .js-plotly-plot').forEach(function(el) {{
+        Plotly.Plots.resize(el);
+      }});
     }}
+
+    // In-page links can point into another tab (Telegram's #cake, the cake's
+    // links to stories, the IA teaser): show that tab, then open and scroll.
+    function revealTarget(id) {{
+      const el = id && document.getElementById(id);
+      if (!el) return false;
+      const panel = el.closest('.domain-panel');
+      if (panel) showDomain(panel.dataset.domain);
+      if (el.tagName === 'DETAILS') el.open = true;
+      el.scrollIntoView({{behavior: 'smooth', block: el.tagName === 'DETAILS' ? 'center' : 'start'}});
+      return true;
+    }}
+    document.addEventListener('click', function(ev) {{
+      const a = ev.target.closest('a[href^="#"]');
+      if (!a || a.dataset.ev) return;  // cake event links are handled by the cake itself
+      if (revealTarget(decodeURIComponent(a.getAttribute('href').slice(1)))) {{
+        ev.preventDefault();
+        history.replaceState(null, '', a.getAttribute('href'));
+      }}
+    }});
 
     // Country indicator tabs: a chart rendered while hidden has no width,
     // so resize it when its tab is shown.
@@ -2637,6 +2714,7 @@ def run_export(days: int, output: str = "dashboard.html") -> None:
       document.querySelectorAll('.domain-toggle-btn').forEach(function(btn) {{
         btn.addEventListener('click', function() {{ showDomain(btn.dataset.domain); }});
       }});
+      if (location.hash) revealTarget(decodeURIComponent(location.hash.slice(1)));
     }});
   </script>
 </body>
