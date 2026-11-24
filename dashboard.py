@@ -864,7 +864,7 @@ def _build_story_timeline_html(story: dict, category_emoji: dict[str, str] | Non
         # Day list is already sorted by _hot_sort_key (supa_hot / mentions first),
         # so the headline is simply the most notable article of that day.
         headline_a = day["articles"][0]
-        headline   = headline_a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+        headline   = escape(headline_a.get("title", ""))
         day_supra  = "🌋 " if any(a.get("supa_hot") for a in day["articles"]) else ""
         open_attr  = " open" if is_today else ""
         timeline += f"""
@@ -919,8 +919,8 @@ def _story_cloud_html(stories: list[dict], domain: str = "", link: bool = False)
         n, supra, _, s = entry
         t = (n - low) / (top - low) if top > low else 1.0
         size = 14 + t * 30                      # 14px → 44px at full width
-        name = s["name"].replace("<", "&lt;").replace(">", "&gt;")
-        tip = s["label"].replace('"', "&quot;").replace("<", "&lt;")
+        name = escape(s["name"])
+        tip = escape(s["label"])
         style = (
             f"font-size:clamp({size * 0.6:.0f}px,{size / 12:.2f}vw,{size:.0f}px);"
             f"color:{_heat_color(t)};opacity:{0.7 + 0.3 * t:.2f};"
@@ -1910,10 +1910,10 @@ def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str]
     for a in articles:
         cat   = a.get("category", "")
         emoji = cat_emoji_map.get(cat, "📌")
-        title = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
-        url   = a.get("url", "#")
-        sent  = a.get("sentiment", "")
-        src   = a.get("source", "")
+        title = escape(a.get("title", ""))
+        url   = escape(a.get("url", "#"))
+        sent  = escape(a.get("sentiment", ""))
+        src   = escape(a.get("source", ""))
         hot      = a.get("hot_topic", False)
         hot_badge = "🔥 " if hot else ""
         hot_class = ' class="hot"' if hot else ""
@@ -1925,13 +1925,13 @@ def _articles_to_html_table(articles: list[dict], category_emoji: dict[str, str]
         iso = _country_to_iso3(a.get("country", "")) or ""
         rows.append(
             f'<tr data-title="{title.lower()}" data-sentiment="{sent}" '
-            f'data-category="{cat}" data-source="{src}" data-iso="{iso}"{hot_class}>'
+            f'data-category="{escape(cat)}" data-source="{src}" data-iso="{iso}"{hot_class}>'
             f"<td{age_attr}>{age}</td>"
             f"<td>{sent}</td>"
             f'<td><a href="{url}" target="_blank">{hot_badge}{title}</a></td>'
             f'<td class="col-source">{src_display}</td>'
-            f'<td class="col-country">{a.get("country", "")}</td>'
-            f"<td>{emoji} {cat}</td>"
+            f'<td class="col-country">{escape(a.get("country", ""))}</td>'
+            f"<td>{emoji} {escape(cat)}</td>"
             f"</tr>"
         )
     return "\n".join(rows)
@@ -1941,11 +1941,11 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
     """Build one hot article card HTML for a given source group."""
     cat_emoji  = (category_emoji or CATEGORY_EMOJI).get(a.get("category", ""), "📌")
     sent_color = SENTIMENT_COLORS.get(a.get("sentiment", ""), "#c8d4ec")
-    title      = a.get("title", "").replace("<", "&lt;").replace(">", "&gt;")
+    title      = escape(a.get("title", ""))
     mentions   = a.get("mention_count", 0)
     is_supra   = a.get("supa_hot", False)
     n_src      = a.get("source_count", 1)
-    src_label  = ", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", "")
+    src_label  = escape(", ".join(a.get("merged_sources", [a.get("source", "")])) if n_src > 1 else a.get("source", ""))
     src_badge  = (f'<span style="background:#1a2540;color:#c8d4ec;font-size:10px;padding:1px 5px;'
                   f'border-radius:3px;margin-left:4px;">{n_src} sources</span>') if n_src > 1 else ""
     if is_supra:
@@ -1967,13 +1967,13 @@ def _render_hot_card_html(a: dict, meta: dict, category_emoji: dict[str, str] | 
     return f"""
     <div data-iso="{iso}" style="border-radius:8px;padding:12px 14px;margin-bottom:8px;{card_style}">
       <div style="font-size:15px;font-weight:600;margin-bottom:6px;line-height:1.4;">
-        {badge_html}<a href="{a.get('url','#')}" target="_blank"
+        {badge_html}<a href="{escape(a.get('url','#'))}" target="_blank"
            style="color:{title_color};text-decoration:none;">{title}</a>
       </div>
       <div style="font-size:12px;color:#7d8db0;line-height:1.6;">
-        {a.get('country','')} {src_label}{src_badge} &nbsp;·&nbsp; <span{age_attr}>{age}</span>
-        &nbsp;·&nbsp; {cat_emoji} {a.get('category','')}
-        &nbsp;·&nbsp; <span style="color:{sent_color};">{a.get('sentiment','')}</span>
+        {escape(a.get('country',''))} {src_label}{src_badge} &nbsp;·&nbsp; <span{age_attr}>{age}</span>
+        &nbsp;·&nbsp; {cat_emoji} {escape(a.get('category',''))}
+        &nbsp;·&nbsp; <span style="color:{sent_color};">{escape(a.get('sentiment',''))}</span>
       </div>
     </div>"""
 
@@ -2010,7 +2010,7 @@ def _hot_articles_html(
             f'<button class="hot-tab{active_cls}" data-group="{key}" '
             f'data-border-color="{color["border"]}" data-text-color="{color["color"]}" '
             f'style="{btn_style}">'
-            f'{icon} {t["label"]}'
+            f'{icon} {escape(t["label"])}'
             f'<span class="hot-tab__count">{t["count"]}</span>'
             f'</button>'
         )
@@ -2094,7 +2094,7 @@ def _stories_html(articles: list[dict], stories_lookup: dict[int, dict] | None =
         cards += f"""
     <details class="story-card" id="story-{domain}-{s['story_id']}" style="border-left:4px solid {s['color']['border']};">
       <summary>
-        <span class="story-title">{icon} {s['label']}</span>
+        <span class="story-title">{icon} {escape(s['label'])}</span>
         {status}
         <span class="story-meta">{span_lbl}</span>
       </summary>
