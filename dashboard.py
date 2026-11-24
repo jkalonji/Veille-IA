@@ -550,19 +550,24 @@ def _compute_mention_counts(articles: list[dict]) -> dict[str, int]:
 
 
 def _deduplicate_articles(articles: list[dict]) -> list[dict]:
-    """Merge articles sharing ≥ 2 title keywords into one card with source_count."""
+    """Merge articles of the same publication day sharing ≥ 2 title keywords
+    into one card with source_count. Never across days: "OpenAI model…" on
+    day 1 and on day 40 are two different articles."""
     tokens = {a["url"]: _tokenize(a.get("title", "")) for a in articles}
+    by_day: dict[str, list[dict]] = {}
+    for a in articles:
+        by_day.setdefault((a.get("published") or "")[:10], []).append(a)
     used: set[str] = set()
     result = []
-    for i, a in enumerate(articles):
+    for a in articles:
         url = a["url"]
         if url in used:
             continue
         mine = tokens[url]
         group = [a]
         if mine:
-            for j, other in enumerate(articles):
-                if i == j or other["url"] in used:
+            for other in by_day[(a.get("published") or "")[:10]]:
+                if other is a or other["url"] in used:
                     continue
                 if len(mine & tokens[other["url"]]) >= 2:
                     group.append(other)
@@ -760,10 +765,7 @@ def _build_story_timelines(articles: list[dict], stories_lookup: dict[int, dict]
         dates = sorted(by_day)
         if len(dates) < 2:
             continue
-        # Dedup within each day only — _deduplicate_articles has no date restriction,
-        # so running it across the whole (multi-day) list first would merge same-story
-        # articles from different days into one card and silently drop a day from
-        # the timeline, which is exactly what this view exists to avoid.
+        # Dedup within each day (_deduplicate_articles never merges across days anyway)
         for d in dates:
             by_day[d] = sorted(_deduplicate_articles(by_day[d]), key=_hot_sort_key)
         meta = (stories_lookup or {}).get(sid, {})
