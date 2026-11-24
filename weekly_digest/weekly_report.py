@@ -23,7 +23,11 @@ from datetime import datetime, timedelta, timezone
 
 import requests
 from groq import Groq
-from supabase import create_client
+
+# dashboard.py lives at the repo root — reuse its paginated, per-domain loader
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from dashboard import load_articles  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -48,44 +52,7 @@ CATEGORY_EMOJI = {
     "Recherche Academique":   "🎓",
     "Drama / Controverses":   "💥",
 }
-# Legacy alias
-_CATEGORY_ALIAS = {"Geopolitique": "Politique / Regulation"}
-
-HOT_REASON_LABEL = {
-    "debat":    "💬 Débat",
-    "tech":     "⭐ Tech",
-    "societe":  "📡 Société",
-    "tendance": "🔮 Tendance",
-}
-
 GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
-
-# ---------------------------------------------------------------------------
-# Supabase helpers
-# ---------------------------------------------------------------------------
-
-def fetch_week_articles() -> list[dict]:
-    """Return all articles from the past 7 days from Supabase."""
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-    if not url or not key:
-        logging.error("SUPABASE_URL or SUPABASE_KEY not set.")
-        sys.exit(1)
-
-    client = create_client(url, key)
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
-    resp = (
-        client.table("articles")
-        .select("title,url,source,country,published,category,sentiment,hot_topic,supa_hot,mention_count,hot_reason,summary,description")
-        .gte("published", cutoff)
-        .execute()
-    )
-    articles = resp.data or []
-    # Apply category alias
-    for a in articles:
-        a["category"] = _CATEGORY_ALIAS.get(a.get("category", ""), a.get("category", ""))
-    logging.info(f"Fetched {len(articles)} articles from the past 7 days")
-    return articles
 
 # ---------------------------------------------------------------------------
 # Stats
@@ -214,13 +181,10 @@ def send_weekly_report(articles: list[dict], stats: dict, synthesis: str) -> Non
         hot_lines = ["🔥 <b>TOP 10 SUJETS DE LA SEMAINE</b>", ""]
         for i, a in enumerate(top_hot, 1):
             badge = "🌋" if a.get("supa_hot") else "🔥"
-            reason_label = HOT_REASON_LABEL.get(a.get("hot_reason", ""), "")
             blurb = (a.get("summary") or a.get("description") or "")[:120].strip()
             if blurb and not blurb.endswith((".", "!", "?")):
                 blurb += "…"
             entry = f"{i}. {badge} <b>{html.escape(a['title'])}</b>"
-            if reason_label:
-                entry += f" <i>({reason_label})</i>"
             if blurb:
                 entry += f"\n   <i>{html.escape(blurb)}</i>"
             entry += f"\n   <a href=\"{html.escape(a['url'])}\">🔗 Lire</a>"
@@ -251,7 +215,7 @@ def main():
         logging.error(f"Missing env vars: {', '.join(missing)}")
         sys.exit(1)
 
-    articles  = fetch_week_articles()
+    articles  = load_articles(7, domain="ia")
     if not articles:
         _post_telegram(
             os.environ["TELEGRAM_BOT_TOKEN"],
