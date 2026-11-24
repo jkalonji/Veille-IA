@@ -53,6 +53,7 @@ class Article:
     layers: list[str] = field(default_factory=list)  # AI layer cake layers the article is about ("ia" only)
     cross_layer: bool = False  # an actor entering a layer it is not active in yet
     scarcity: str = "aucune"   # "tension" | "detente" | "aucune"
+    layers_tagged: bool = False  # Groq really returned the cake keys; False leaves it to the layers backfill
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1240,6 +1241,7 @@ async def _classify_batch(client: AsyncGroq, model: str, domain: str, batch: lis
         article.summary   = (result.get("summary") or "").strip()
         if domain == "ia":
             article.layers, article.cross_layer, article.scarcity = cake.parse_cake_fields(result)
+            article.layers_tagged = True
         oks.append(True)
     return oks
 
@@ -1326,7 +1328,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "layers": a.layers,
             "cross_layer": a.cross_layer,
             "scarcity": a.scarcity,
-            "layers_tagged": a.domain == "ia",
+            "layers_tagged": a.layers_tagged,
         }
         for a in articles
     ]
