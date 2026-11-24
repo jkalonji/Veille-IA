@@ -44,7 +44,6 @@ class Article:
     hot_topic: bool = False
     mention_count: int = 0
     supa_hot: bool = False
-    hot_source: str = ""    # pipe-separated detection signals: "trends|hn|github|db"
     hot_reason: str = ""    # label of the article's most active story, when it's hot
     summary: str = ""       # groq-generated 1-sentence summary in French
     story_id: int | None = None  # the article's most active story (it can belong to several)
@@ -58,6 +57,12 @@ class Article:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def groq_model(fast: bool = False) -> str:
+    """GROQ_MODEL (or GROQ_MODEL_FAST), quotes stripped: a repo Actions variable may carry them."""
+    name, default = ("GROQ_MODEL_FAST", "openai/gpt-oss-20b") if fast else ("GROQ_MODEL", "openai/gpt-oss-120b")
+    return (os.environ.get(name) or default).strip("'\"").strip()
+
 
 def clean_html(text: str) -> str:
     """Strip HTML tags from a string."""
@@ -79,35 +84,6 @@ def compute_stats(articles: list[Article]) -> dict[str, int]:
     for a in articles:
         stats[a.category] = stats.get(a.category, 0) + 1
     return stats
-
-
-_MENTION_STOPWORDS = {
-    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
-    "of", "with", "as", "by", "from", "is", "are", "was", "were", "be",
-    "been", "have", "has", "had", "will", "would", "could", "should",
-    "that", "this", "these", "those", "its", "not", "new", "how", "why",
-    "what", "when", "where", "who", "which", "more", "can", "all", "out",
-    "over", "about", "into", "than", "their", "they", "there", "says",
-    "said", "just", "also", "after", "amid",
-}
-
-
-def _compute_article_mentions(articles: list[Article]) -> None:
-    """Set mention_count and supa_hot on each article in-place."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    tokens: dict[str, set[str]] = {}
-    for a in articles:
-        words = re.findall(r"[a-zA-Z]{4,}", a.title.lower())
-        tokens[a.url] = {w for w in words if w not in _MENTION_STOPWORDS}
-
-    for i, a in enumerate(articles):
-        mine = tokens[a.url]
-        count = sum(
-            1 for j, other in enumerate(articles)
-            if i != j and other.published == today and len(mine & tokens[other.url]) >= 2
-        ) if mine else 0
-        a.mention_count = count
-        a.supa_hot = a.hot_topic and count > 5 and a.published == today
 
 
 # ---------------------------------------------------------------------------
@@ -578,7 +554,7 @@ async def backfill_topics(model: str | None = None) -> None:
     if client is None:
         sys.exit("SUPABASE_URL and SUPABASE_KEY must be set.")
     groq_client = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model = model or (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+    model = model or groq_model()
 
     budget = BACKFILL_MAX_ARTICLES
     for domain in DOMAIN_META:
@@ -1249,8 +1225,8 @@ async def _classify_batch(client: AsyncGroq, model: str, domain: str, batch: lis
 async def classify_articles(articles: list[Article], batch_size: int = CLASSIFY_BATCH_SIZE) -> list[Article]:
     # Calls run one after another; a 429 (tokens-per-minute limit) is retried with backoff by the SDK
     client     = AsyncGroq(api_key=os.environ["GROQ_API_KEY"], max_retries=6)
-    model_full = (os.environ.get("GROQ_MODEL")      or "openai/gpt-oss-120b").strip("'\"").strip()
-    model_fast = (os.environ.get("GROQ_MODEL_FAST") or "openai/gpt-oss-20b").strip("'\"").strip()
+    model_full = groq_model()
+    model_fast = groq_model(fast=True)
 
     # "ia" articles need the full model for the cake keys; hot articles for a good summary
     groups: dict[tuple[str, str], list[Article]] = {}
@@ -1317,7 +1293,6 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
             "category": a.category,
             "sentiment": a.sentiment,
             "hot_topic": a.hot_topic,
-            "hot_source": a.hot_source,
             "hot_reason": a.hot_reason,
             "summary": a.summary,
             "mention_count": a.mention_count,
@@ -1348,7 +1323,7 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     # Migration required for the AI layer cake (see CLAUDE.md, Phase A):
     #   ALTER TABLE articles ADD COLUMN IF NOT EXISTS layers TEXT[] DEFAULT '{}'; (+ cross_layer, scarcity)
     _OPTIONAL_COLS = (
-        "hot_source", "hot_reason", "summary", "mention_count", "supa_hot", "domain",
+        "hot_reason", "summary", "mention_count", "supa_hot", "domain",
         "story_id", "published_is_estimated", "topics", "layers", "cross_layer", "scarcity", "layers_tagged",
     )
 
@@ -1613,7 +1588,7 @@ async def main():
         by_domain.setdefault(a.domain, []).append(a)
 
     groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
-    model_full = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+    model_full = groq_model()
     supabase_client = _get_supabase_client()
     articles = []
     for domain, domain_articles in by_domain.items():
@@ -1679,7 +1654,7 @@ if __name__ == "__main__":
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
         asyncio.run(cake.backfill_layers(
             _get_supabase_client(), AsyncGroq(api_key=os.environ["GROQ_API_KEY"]),
-            (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip(), Article,
+            groq_model(), Article,
         ))
     elif "--backfill-topics" in sys.argv:
         logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

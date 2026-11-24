@@ -50,11 +50,5 @@
   "bottleneck": {
     "z_threshold": 1.5, "min_days": 3, "migration_days": 7, "baseline_days": 90, "rebuild_days": 30,
     "price_confirmation": {"window_days": 30, "basket_outperformance_pts": 5, "electricity_rise_pct": 10}
-  },
-  "scarcity_vocabulary": [
-    "shortage", "sold out", "waitlist", "wait list", "allocation", "rationing", "backlog", "bottleneck",
-    "lead time", "supply constraint", "supply crunch", "capacity crunch", "tight supply", "constrained",
-    "pénurie", "rupture", "liste d'attente", "goulot", "délai de livraison", "délais de livraison", "rationnement",
-    "saturé", "saturation"
-  ]
+  }
 }

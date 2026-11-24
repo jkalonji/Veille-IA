@@ -284,7 +284,6 @@ CREATE TABLE IF NOT EXISTS layer_daily (
 );
 CREATE INDEX IF NOT EXISTS market_data_symbol_time ON market_data(domain, symbol, collected_at);
 ```
-(`tension_count` / `detente_count` en NUMERIC et non INT : le repli sur le vocabulaire compte une tension faible pour 0,5.)
 
 ### Phase D — Valeur du MWh à chaque couche (`layer_value.py`)
 - `data/layer_value_manual.json` : entrées sourcées (prix de gros de l'électricité, accélérateur de référence H100 SXM, PUE, durée d'amortissement, taux d'utilisation, GPU-heure, énergie par million de tokens, revenu et usage par abonné), chacune avec `source_url`, `confidence` et `note` ; `level: "chip"` = énergie mesurée sur la puce, multipliée par le PUE au calcul. Le prix des tokens est récupéré automatiquement (indice OpenRouter). Une entrée à `null` rend l'étage absent, jamais estimé à zéro.
