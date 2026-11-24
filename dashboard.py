@@ -529,26 +529,6 @@ def _tokenize(title: str) -> set[str]:
     return {w for w in words if w not in _STOPWORDS}
 
 
-def _compute_mention_counts(articles: list[dict]) -> dict[str, int]:
-    """For each article, count how many other articles today share ≥ 2 title keywords."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    tokens = {a["url"]: _tokenize(a.get("title", "")) for a in articles}
-    counts: dict[str, int] = {}
-    for i, a in enumerate(articles):
-        url = a["url"]
-        mine = tokens[url]
-        if not mine:
-            counts[url] = 0
-            continue
-        counts[url] = sum(
-            1 for j, other in enumerate(articles)
-            if i != j
-            and other.get("published", "") == today
-            and len(mine & tokens[other["url"]]) >= 2
-        )
-    return counts
-
-
 def _deduplicate_articles(articles: list[dict]) -> list[dict]:
     """Merge articles of the same publication day sharing ≥ 2 title keywords
     into one card with source_count. Never across days: "OpenAI model…" on
@@ -1028,7 +1008,8 @@ def _generate_weekly_text(articles: list[dict]) -> str:
     if groq_key and top_hot:
         try:
             from groq import Groq as _Groq
-            groq_model = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+            from main import groq_model as _groq_model
+            groq_model = _groq_model()
             client = _Groq(api_key=groq_key)
             articles_text = "\n".join(
                 f"- {a['title']}"
@@ -1064,7 +1045,8 @@ def _expand_query_groq(query: str) -> list[str]:
         return [t.lower() for t in query.split() if len(t) > 2]
     try:
         from groq import Groq as _Groq
-        groq_model = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+        from main import groq_model as _groq_model
+        groq_model = _groq_model()
         client = _Groq(api_key=groq_key)
         resp = client.chat.completions.create(
             model=groq_model,
@@ -1109,7 +1091,7 @@ def _semantic_search(articles: list[dict], keywords: list[str]) -> list[dict]:
 
 _ARTICLE_COLS = (
     "title, source, country, published, category, sentiment, url, hot_topic, "
-    "hot_source, hot_reason, summary, description, mention_count, supa_hot, domain, "
+    "hot_reason, summary, description, mention_count, supa_hot, domain, "
     "story_id, published_is_estimated, layers"
 )
 # Columns that may be absent if a migration hasn't been applied yet — dropped one at a
@@ -1182,21 +1164,7 @@ def load_articles(days: int, domain: str = "ia") -> list[dict]:
         if a.get("category") in _CATEGORY_ALIAS:
             a["category"] = _CATEGORY_ALIAS[a["category"]]
 
-    # mention_count and supa_hot are pre-computed by main.py and stored in Supabase.
-    # Fall back to local recalculation only for articles that pre-date the migration
-    # (i.e. mention_count is NULL in the DB — returned as None by supabase-py).
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    legacy = [a for a in articles if a.get("mention_count") is None]
-    if legacy:
-        legacy_counts = _compute_mention_counts(legacy)
-        for a in legacy:
-            a["mention_count"] = legacy_counts.get(a.get("url", ""), 0)
-            a["supa_hot"] = (
-                bool(a.get("hot_topic"))
-                and a["mention_count"] > 5
-                and a.get("published", "") == today
-            )
-    # Ensure correct types for articles already in DB
+    # mention_count and supa_hot are computed by main.py and stored in Supabase
     for a in articles:
         if a.get("mention_count") is None:
             a["mention_count"] = 0

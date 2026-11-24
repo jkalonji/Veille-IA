@@ -42,6 +42,7 @@ from dashboard import (  # noqa: E402
     _story_members,
     load_articles,
 )
+from main import groq_model  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
@@ -49,7 +50,7 @@ DOMAIN = "ia"
 WINDOW_DAYS = 7
 CATEGORY_EMOJI = DOMAIN_CATEGORY_EMOJI[DOMAIN]
 CATEGORY_COLOR = DOMAIN_CATEGORY_COLORS[DOMAIN]
-GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+GROQ_MODEL = groq_model()
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "")
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "output")
 

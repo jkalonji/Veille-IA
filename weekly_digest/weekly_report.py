@@ -18,16 +18,16 @@ import json
 import logging
 import os
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 
-import requests
 from groq import Groq
 
 # dashboard.py lives at the repo root — reuse its paginated, per-domain loader
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dashboard import load_articles  # noqa: E402
+from main import _post_telegram, groq_model  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -52,7 +52,7 @@ CATEGORY_EMOJI = {
     "Recherche Academique":   "🎓",
     "Drama / Controverses":   "💥",
 }
-GROQ_MODEL = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
+GROQ_MODEL = groq_model()
 
 # ---------------------------------------------------------------------------
 # Stats
@@ -131,21 +131,6 @@ def generate_groq_synthesis(top_articles: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 # Telegram
 # ---------------------------------------------------------------------------
-
-def _post_telegram(token: str, chat_id: str, text: str) -> None:
-    resp = requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        },
-        timeout=10,
-    )
-    if not resp.ok:
-        logging.error(f"Telegram error: {resp.status_code} {resp.text}")
-
 
 def send_weekly_report(articles: list[dict], stats: dict, synthesis: str) -> None:
     token   = os.environ["TELEGRAM_BOT_TOKEN"]

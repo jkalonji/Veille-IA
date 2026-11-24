@@ -120,19 +120,12 @@ def abnormal_return(series: list[tuple[str, float]], bench: list[tuple[str, floa
 
 
 def daily_layer_counts(articles: list[dict]) -> dict[str, dict[str, list[float]]]:
-    """layer -> day -> [articles, tension, detente]. Articles classified before
-    the `scarcity` key (None) fall back on the scarcity vocabulary, counted as a
-    weak tension (0.5)."""
-    vocab = [w.lower() for w in cake.load_config().get("scarcity_vocabulary") or []]
+    """layer -> day -> [articles, tension, detente]."""
     out: dict[str, dict[str, list[float]]] = {}
     for a in articles:
         day = (a.get("published") or "")[:10]
         scarcity = a.get("scarcity")
-        if scarcity is None:
-            text = f"{a.get('title') or ''} {a.get('description') or ''}".lower()
-            tension, detente = (0.5 if any(w in text for w in vocab) else 0.0), 0.0
-        else:
-            tension, detente = float(scarcity == "tension"), float(scarcity == "detente")
+        tension, detente = float(scarcity == "tension"), float(scarcity == "detente")
         for layer in a.get("layers") or []:
             row = out.setdefault(layer, {}).setdefault(day, [0.0, 0.0, 0.0])
             row[0] += 1

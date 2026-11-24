@@ -42,11 +42,9 @@ def test_scarcity_counts_detente_separately_from_tension():
         {"published": "2026-01-01", "layers": ["puces"], "scarcity": "tension"},
         {"published": "2026-01-01", "layers": ["puces", "infrastructure"], "scarcity": "detente"},
         {"published": "2026-01-01", "layers": ["puces"], "scarcity": "aucune"},
-        {"published": "2026-01-01", "layers": ["energie"], "scarcity": None, "title": "Transformer shortage worsens"},
     ]
     c = cm.daily_layer_counts(arts)
     assert c["puces"]["2026-01-01"] == [3, 1, 1]
-    assert c["energie"]["2026-01-01"] == [1, 0.5, 0]  # vocabulary fallback, weak tension
 
 
 def test_z_score_against_the_layer_own_baseline():
