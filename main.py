@@ -4,6 +4,7 @@ Collecte, classifie et envoie quotidiennement l'actualite IA sur Telegram.
 """
 
 import asyncio
+import html
 import json
 import logging
 import os
@@ -1462,13 +1463,14 @@ def _send_domain_digest(
         if blurb and not blurb.endswith((".", "!", "?")):
             blurb += "…"
 
+        esc = html.escape
         entry_lines = [
-            f"{badge}{sent_emoji} <b>{article.title}</b>",
-            f"{cat_emoji} {article.category} | {article.country} {article.source}",
+            f"{badge}{sent_emoji} <b>{esc(article.title)}</b>",
+            f"{cat_emoji} {esc(article.category)} | {esc(article.country)} {esc(article.source)}",
         ]
         if blurb:
-            entry_lines.append(f"<i>{blurb}</i>")
-        entry_lines.append(f'<a href="{article.url}">🔗 Lire l\'article</a>')
+            entry_lines.append(f"<i>{esc(blurb)}</i>")
+        entry_lines.append(f'<a href="{esc(article.url)}">🔗 Lire l\'article</a>')
         entry = "\n".join(entry_lines)
 
         if batch and batch_chars + len(entry) + 2 > 4000:

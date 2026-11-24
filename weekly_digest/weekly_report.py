@@ -13,6 +13,7 @@ Env vars required (same as main pipeline):
     TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 """
 
+import html
 import json
 import logging
 import os
@@ -217,19 +218,19 @@ def send_weekly_report(articles: list[dict], stats: dict, synthesis: str) -> Non
             blurb = (a.get("summary") or a.get("description") or "")[:120].strip()
             if blurb and not blurb.endswith((".", "!", "?")):
                 blurb += "…"
-            entry = f"{i}. {badge} <b>{a['title']}</b>"
+            entry = f"{i}. {badge} <b>{html.escape(a['title'])}</b>"
             if reason_label:
                 entry += f" <i>({reason_label})</i>"
             if blurb:
-                entry += f"\n   <i>{blurb}</i>"
-            entry += f"\n   <a href=\"{a['url']}\">🔗 Lire</a>"
+                entry += f"\n   <i>{html.escape(blurb)}</i>"
+            entry += f"\n   <a href=\"{html.escape(a['url'])}\">🔗 Lire</a>"
             hot_lines.append(entry)
 
         _post_telegram(token, chat_id, "\n\n".join(hot_lines))
 
     # ── 3. Groq synthesis ─────────────────────────────────────────────────
     # Telegram HTML mode doesn't render Markdown bullets — convert them
-    synthesis_html = synthesis.replace("**", "<b>").replace("* ", "• ")
+    synthesis_html = html.escape(synthesis, quote=False).replace("**", "<b>").replace("* ", "• ")
     # Wrap bold close tags: naive approach (pairs)
     import re
     synthesis_html = re.sub(r"<b>(.*?)<b>", r"<b>\1</b>", synthesis_html)
