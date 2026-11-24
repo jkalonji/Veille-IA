@@ -399,10 +399,10 @@ async def review_stories(stories: list[dict], client, model: str, domain: str) -
     return [s for i, s in enumerate(top) if i not in incoherent] + stories[STORY_NAMING_LIMIT:]
 
 
-def _fetch_window_articles(client, domain: str, days: int = STORY_WINDOW_DAYS, extra_cols: str = "") -> list[dict]:
+def _fetch_window_articles(client, domain: str, days: int = STORY_WINDOW_DAYS, extra_cols: str = "") -> list[dict] | None:
     """The domain's articles of the last `days` days, paginated past Supabase's
-    1000-row cap. Returns [] (stories then built from this run's articles only)
-    if the `topics` column isn't there yet."""
+    1000-row cap. Returns None if the read fails: a partial window must never
+    be used to rebuild (and close) the stories."""
     if client is None:
         return []
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
@@ -422,8 +422,8 @@ def _fetch_window_articles(client, domain: str, days: int = STORY_WINDOW_DAYS, e
                 return rows
             rows.extend(page)
     except Exception as e:
-        logging.warning(f"Window fetch failed ({domain}): {e} — stories built from this run only")
-        return []
+        logging.error(f"Window fetch failed ({domain}): {e} — stories left unchanged this run")
+        return None
 
 
 def _fetch_existing_stories(client, domain: str) -> dict[str, dict]:
@@ -532,8 +532,9 @@ def _save_topics(client, rows: list[dict]) -> None:
 async def refresh_stories(domain: str, new_articles: list["Article"], client, groq_client, model: str) -> None:
     """Tag this run's articles with topics, rebuild the domain's stories over the
     window, save them, and flag the run's articles hot from them."""
-    rows = sorted(_fetch_window_articles(client, domain), key=_published_day, reverse=True)
-    window = {r["url"]: r for r in rows}
+    rows = _fetch_window_articles(client, domain)
+    window_ok = rows is not None
+    window = {r["url"]: r for r in sorted(rows or [], key=_published_day, reverse=True)}
     known = Counter(t for r in window.values() for t in (r.get("topics") or []))
 
     # An article fetched again keeps the topics an earlier run gave it
@@ -552,7 +553,8 @@ async def refresh_stories(domain: str, new_articles: list["Article"], client, gr
             a.topics = topics
     for a in new_articles:
         window[a.url] = {"url": a.url, "title": a.title, "source": a.source, "published": a.published, "topics": a.topics}
-
+    if not window_ok:
+        return  # topics are tagged; stories wait for a run that can read the whole window
 
     existing = _fetch_existing_stories(client, domain)
     stories = build_story_candidates(list(window.values()), set(existing))
@@ -580,9 +582,10 @@ async def backfill_topics(model: str | None = None) -> None:
     for domain in DOMAIN_META:
         if budget <= 0:
             break
-        window = sorted(
-            _fetch_window_articles(client, domain, extra_cols=", description"), key=_published_day, reverse=True
-        )
+        window = _fetch_window_articles(client, domain, extra_cols=", description")
+        if window is None:
+            continue
+        window.sort(key=_published_day, reverse=True)
         todo = [r for r in window if not r.get("topics")]
         logging.info(f"Backfill [{domain}]: {len(todo)}/{len(window)} articles without topics")
         if not todo:
