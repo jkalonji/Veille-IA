@@ -787,11 +787,88 @@ GDELT_WEAK_KEYWORDS = {
 }
 
 
+def _keyword_re(keywords) -> re.Pattern:
+    """Whole-word match of any keyword, plural "s" allowed ("llms", "protests").
+    Longest first, so "ai agent" wins over "ai"."""
+    alts = "|".join(re.escape(k) for k in sorted(keywords, key=len, reverse=True))
+    return re.compile(r"(?<!\w)(" + alts + r")s?(?!\w)")
+
+
+def _keyword_hits(pattern: re.Pattern, text: str) -> int:
+    """Number of distinct keywords of `pattern` found in `text`."""
+    return len(set(pattern.findall(text.lower())))
+
+
+_GDELT_STRONG_RE = _keyword_re(GDELT_STRONG_KEYWORDS)
+_GDELT_WEAK_RE = _keyword_re(GDELT_WEAK_KEYWORDS)
+
+
 def _is_relevant_gdelt_article(title: str) -> bool:
     """Check a GDELT hit's title against curated political-event keywords."""
-    text = title.lower()
-    strong_hits = sum(1 for kw in GDELT_STRONG_KEYWORDS if kw in text)
-    weak_hits = sum(1 for kw in GDELT_WEAK_KEYWORDS if kw in text)
+    strong_hits = _keyword_hits(_GDELT_STRONG_RE, title)
+    weak_hits = _keyword_hits(_GDELT_WEAK_RE, title)
+    return strong_hits >= 1 or (strong_hits + weak_hits) >= 2
+
+
+# AI relevance filter for the "ia" domain (see fetch_all).
+# Strong keywords are AI-specific enough to qualify an article on their own.
+# Weak keywords are generic tech terms that require at least one companion match.
+AI_STRONG_KEYWORDS = {
+    # Core concepts
+    "artificial intelligence", "machine learning", "deep learning",
+    "llm", "large language model", "neural network", "chatgpt", "gpt",
+    "generative ai", "chatbot", "agi", "artificial general intelligence",
+    "intelligence artificielle", "apprentissage automatique",
+    # Architectures & techniques
+    "transformer", "mixture of experts", "moe", "diffusion model",
+    "multimodal", "vision language model", "vlm", "reasoning model",
+    "context window", "sparse model", "embedding", "vector database",
+    "retrieval augmented generation", "rag", "fine-tuning", "rlhf",
+    "test-time compute", "inference scaling",
+    # Prompt & context engineering
+    "prompt engineering", "context engineering", "system prompt",
+    "few-shot", "zero-shot", "chain of thought", "prompt optimization",
+    "prompt injection", "jailbreak",
+    # AI-assisted dev
+    "vibe coding", "ai coding", "code generation", "github copilot",
+    "devin", "cursor ai",
+    # Model optimization
+    "quantization", "knowledge distillation", "lora", "qlora", "peft",
+    "model compression", "speculative decoding", "flash attention",
+    "inference optimization", "efficient inference",
+    # AI hardware
+    "tpu", "cerebras", "graphcore", "tenstorrent", "h100", "h200", "b200",
+    "blackwell", "hopper",
+    # Established AI companies
+    "openai", "anthropic", "deepmind", "meta ai", "hugging face",
+    "stability ai", "runway", "cohere", "mistral", "xai",
+    # Emerging players
+    "deepseek", "qwen", "perplexity", "together ai",
+    # Agents & autonomy
+    "ai agent", "agentic", "model context protocol", "autonomous agent",
+    # Safety, ethics & regulation
+    "ai safety", "alignment", "hallucination", "ai regulation", "eu ai act",
+    "responsible ai", "interpretability", "explainability", "deepfake",
+    "ai governance",
+    # Performance
+    "open source model", "open weights", "edge ai", "on-device ai", "evals",
+}
+# Weak: generic terms that need a companion keyword to be AI-relevant
+AI_WEAK_KEYWORDS = {
+    "ai", "grok", "gemini", "copilot", "cursor",
+    "nvidia", "amd", "intel", "qualcomm", "tsmc", "gaudi", "arm chip",
+    "chip", "semiconductor", "data center", "robot", "automation",
+    "benchmark", "bias", "pruning", "distillation",
+}
+
+_AI_STRONG_RE = _keyword_re(AI_STRONG_KEYWORDS)
+_AI_WEAK_RE = _keyword_re(AI_WEAK_KEYWORDS)
+
+
+def _is_relevant_ai_article(text: str) -> bool:
+    """1 strong AI keyword, or 2+ keyword matches in total."""
+    strong_hits = _keyword_hits(_AI_STRONG_RE, text)
+    weak_hits = _keyword_hits(_AI_WEAK_RE, text)
     return strong_hits >= 1 or (strong_hits + weak_hits) >= 2
 
 
@@ -947,56 +1024,6 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             seen.add(a.url)
             unique.append(a)
 
-    # Filter: keep only AI-related articles.
-    # Strong keywords are AI-specific enough to qualify an article on their own.
-    # Weak keywords are generic tech terms that require at least one companion match.
-    AI_STRONG_KEYWORDS = {
-        # Core concepts
-        "artificial intelligence", "machine learning", "deep learning",
-        "llm", "large language model", "neural network", "chatgpt", "gpt",
-        "generative ai", "chatbot", "agi", "artificial general intelligence",
-        "intelligence artificielle", "apprentissage automatique",
-        # Architectures & techniques
-        "transformer", "mixture of experts", "moe", "diffusion model",
-        "multimodal", "vision language model", "vlm", "reasoning model",
-        "context window", "sparse model", "embedding", "vector database",
-        "retrieval augmented generation", "rag", "fine-tuning", "rlhf",
-        "test-time compute", "inference scaling",
-        # Prompt & context engineering
-        "prompt engineering", "context engineering", "system prompt",
-        "few-shot", "zero-shot", "chain of thought", "prompt optimization",
-        "prompt injection", "jailbreak",
-        # AI-assisted dev
-        "vibe coding", "ai coding", "code generation", "github copilot",
-        "devin", "cursor ai",
-        # Model optimization
-        "quantization", "knowledge distillation", "lora", "qlora", "peft",
-        "model compression", "speculative decoding", "flash attention",
-        "inference optimization", "efficient inference",
-        # AI hardware
-        "tpu", "cerebras", "graphcore", "tenstorrent", "h100", "h200", "b200",
-        "blackwell", "hopper",
-        # Established AI companies
-        "openai", "anthropic", "deepmind", "meta ai", "hugging face",
-        "stability ai", "runway", "cohere", "mistral", "xai",
-        # Emerging players
-        "deepseek", "qwen", "perplexity", "together ai",
-        # Agents & autonomy
-        "ai agent", "agentic", "model context protocol", "autonomous agent",
-        # Safety, ethics & regulation
-        "ai safety", "alignment", "hallucination", "ai regulation", "eu ai act",
-        "responsible ai", "interpretability", "explainability", "deepfake",
-        "ai governance",
-        # Performance
-        "open source model", "open weights", "edge ai", "on-device ai", "evals",
-    }
-    # Weak: generic terms that need a companion keyword to be AI-relevant
-    AI_WEAK_KEYWORDS = {
-        "ai", "grok", "gemini", "copilot", "cursor",
-        "nvidia", "amd", "intel", "qualcomm", "tsmc", "gaudi", "arm chip",
-        "chip", "semiconductor", "data center", "robot", "automation",
-        "benchmark", "bias", "pruning", "distillation",
-    }
     # This relevance filter only makes sense for the "ia" domain (its sources are
     # broad tech/AI feeds that need narrowing). Other domains' sources are already
     # on-topic by construction (e.g. an oil-price feed doesn't need an "is this
@@ -1011,10 +1038,7 @@ async def fetch_all(sources: list[dict]) -> list[Article]:
             filtered.append(a)
             continue
         text = (a.title + " " + a.description).lower()
-        strong_hits = sum(1 for kw in AI_STRONG_KEYWORDS if kw in text)
-        weak_hits   = sum(1 for kw in AI_WEAK_KEYWORDS   if kw in text)
-        # Pass if: 1 strong keyword OR 2+ keyword matches in total
-        if strong_hits >= 1 or (strong_hits + weak_hits) >= 2:
+        if _is_relevant_ai_article(text):
             filtered.append(a)
         elif a.source in source_layer and cake.matches_layer_keywords(text, source_layer[a.source]):
             filtered.append(a)
