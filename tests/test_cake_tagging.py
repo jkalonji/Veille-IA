@@ -134,3 +134,14 @@ def test_cake_counts_html_lists_layers_top_down():
     html = cake_dashboard.cake_counts_html([{"layers": ["energie", "puces"]}, {"layers": ["energie"]}, {}])
     assert html.index("Applications") < html.index("Énergie")  # energy band at the bottom
     assert cake_dashboard.cake_counts_html([{"layers": []}]) == ""
+
+
+def test_layers_tagged_only_when_groq_answered():
+    from tests.fake_supabase import FakeSupabase
+    ok, failed = _article("A", "S"), _article("B", "S")
+    groq = _FakeGroq({"articles": [{"id": 0, "layers": ["puces"]}]})  # nothing for "B"
+    asyncio.run(main._classify_batch(groq, "full", "ia", [ok, failed]))
+    db = FakeSupabase()
+    main.save_to_supabase([ok, failed], client=db)
+    saved = {r["title"]: r["layers_tagged"] for r in db.tables["articles"]}
+    assert saved == {"A": True, "B": False}  # "B" is left for the layers backfill
