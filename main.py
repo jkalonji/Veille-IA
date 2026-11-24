@@ -1148,27 +1148,28 @@ _GROQ_PROMPT_COMMON_TAIL = """
 
 - "country": le pays principalement concerne(e) par l'evenement (ex: "USA", "Chine", "France", "Japon"). N'utilise pas de region contenant plus d'un pays. Le pays que tu donneras fait reference a l'endroit ou se passe l'action, ou l'origine de l'entreprise concernee. Priorise l'endroit geographique ou se passe l'action. Si tu ne trouves rien de pertinent, utilise le label "Global". N'utilise jamais la nationalite du media qui relaie la news, car un media francais peut parler d'une news americaine par exemple."""
 
-# Only requested for hot articles (full model) — saves tokens on non-hot majority
 _GROQ_PROMPT_SUMMARY = """
 
 - "summary": une phrase de synthese en francais (20-30 mots max) qui explique l'essentiel de l'article. Commence directement par le fait principal, sans tourner autour du pot."""
 
-_GROQ_PROMPT_FOOTER = "\n\nNe renvoie AUCUN texte supplementaire. Uniquement l'objet JSON."
+_GROQ_PROMPT_FOOTER = (
+    '\n\nRenvoie UNIQUEMENT le JSON {"articles": [{"id": <id>, "category": ..., ...}]}, '
+    "un objet par article de ARTICLES, sans texte supplementaire."
+)
 
 
-def _build_groq_prompt(domain: str, with_summary: bool) -> str:
+def _build_groq_prompt(domain: str) -> str:
     """Assemble the Groq classification system prompt for a given domain."""
     taxo = DOMAIN_TAXONOMY.get(domain, DOMAIN_TAXONOMY["ia"])
     categories_json = json.dumps(taxo["categories"], ensure_ascii=False)
     notes = f"\n  Notes de classification :\n{taxo['notes']}" if taxo.get("notes") else ""
     prompt = (
-        "Tu es un classificateur d'actualites. Pour chaque article, renvoie UNIQUEMENT un objet "
-        "JSON avec les cles suivantes :\n\n"
+        "Tu es un classificateur d'actualites. Pour chaque article de la liste ARTICLES, "
+        "donne les cles suivantes :\n\n"
         f'- "category": une valeur parmi {categories_json}{notes}'
         + _GROQ_PROMPT_COMMON_TAIL
+        + _GROQ_PROMPT_SUMMARY
     )
-    if with_summary:
-        prompt += _GROQ_PROMPT_SUMMARY
     if domain == "ia":
         prompt += cake.CAKE_PROMPT
     return prompt + _GROQ_PROMPT_FOOTER
@@ -1187,86 +1188,80 @@ def _count_tokens(step: str, response) -> None:
         GROQ_TOKENS[step] += usage.total_tokens or 0
 
 
-async def _classify_one(client: AsyncGroq, model_fast: str, model_full: str, article: Article) -> bool:
-    """Classify a single article in-place, using its domain's taxonomy/prompt.
-    Hot articles use model_full: category + sentiment + country + summary.
-    Non-hot articles use model_fast: category + sentiment + country only —
-    except in the "ia" domain, where every article goes to model_full because
-    it also tags the AI layer cake keys (layers, cross_layer, scarcity).
-    Returns False if the Groq call failed and the article fell back to defaults."""
-    taxo = DOMAIN_TAXONOMY.get(article.domain, DOMAIN_TAXONOMY["ia"])
+CLASSIFY_BATCH_SIZE = 20    # articles per Groq call: the ~900-token prompt is paid once per batch
+CLASSIFY_MAX_TOKENS = 4000  # reasoning + ~110 tokens of JSON per article
+
+
+async def _classify_batch(client: AsyncGroq, model: str, domain: str, batch: list[Article]) -> list[bool]:
+    """Classify a batch of same-domain articles in place with one Groq call:
+    category, sentiment, country, summary, plus the AI layer cake keys (layers,
+    cross_layer, scarcity) in the "ia" domain. Returns, per article, False if
+    Groq gave nothing usable for it and it fell back to defaults."""
+    taxo = DOMAIN_TAXONOMY.get(domain, DOMAIN_TAXONOMY["ia"])
     valid_categories = set(taxo["categories"])
     default_category = taxo["default_category"]
-
-    user_msg = f"Titre: {article.title}\nSource: {article.source}"
-    if article.description:
-        user_msg += f"\nDescription: {article.description}"
-
-    if article.hot_topic:
-        model         = model_full
-        system_prompt = _build_groq_prompt(article.domain, with_summary=True)
-        max_tokens    = 500   # reasoning budget + category + sentiment + country + summary
-    else:
-        model         = model_fast
-        system_prompt = _build_groq_prompt(article.domain, with_summary=False)
-        max_tokens    = 300   # reasoning budget + category + sentiment + country
-    if article.domain == "ia":
-        model       = model_full  # the cake keys need the full model
-        max_tokens += 50          # layers + cross_layer + scarcity
-
+    payload = [{"id": i, "title": a.title, "source": a.source, "description": (a.description or "")[:300]}
+               for i, a in enumerate(batch)]
     try:
         response = await client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user",   "content": user_msg},
+                {"role": "system", "content": _build_groq_prompt(domain)},
+                {"role": "user",   "content": "ARTICLES = " + json.dumps(payload, ensure_ascii=False)},
             ],
             temperature=0.1,
-            max_tokens=max_tokens,
-            reasoning_effort="low",  # gpt-oss models spend tokens "thinking" before the JSON;
-                                     # low effort + prior tight budgets caused empty completions
+            max_tokens=CLASSIFY_MAX_TOKENS,
+            reasoning_effort="low",  # gpt-oss models spend tokens "thinking" before the JSON
             response_format={"type": "json_object"},
         )
         _count_tokens("classification", response)
-        result = json.loads(response.choices[0].message.content)
-        cat    = result.get("category",  default_category)
-        sent   = result.get("sentiment", "Neutre")
-        article.category  = cat  if cat  in valid_categories else default_category
-        # arXiv sources are always academic — override Groq's guess (ia domain only)
-        if article.domain == "ia" and article.source.startswith("ArXiv"):
-            article.category = "Recherche Academique"
-        article.sentiment = sent if sent in VALID_SENTIMENTS  else "Neutre"
-        article.country   = result.get("country", "Global") or "Global"
-        if article.hot_topic:
-            article.summary = (result.get("summary") or "").strip()
-        if article.domain == "ia":
-            article.layers, article.cross_layer, article.scarcity = cake.parse_cake_fields(result)
-        return True
+        rows = json.loads(response.choices[0].message.content).get("articles", [])
     except Exception as e:
-        logging.warning(f"Groq error for '{article.title[:60]}': {e}")
-        article.category  = default_category
-        article.sentiment = "Neutre"
-        article.country   = "Global"
-        return False
+        logging.warning(f"Groq error for a batch of {len(batch)} {domain} articles: {e}")
+        rows = []
+    by_id = {r.get("id"): r for r in rows if isinstance(r, dict)}
+
+    oks = []
+    for i, article in enumerate(batch):
+        result = by_id.get(i)
+        if result is None:
+            article.category, article.sentiment, article.country = default_category, "Neutre", "Global"
+            oks.append(False)
+            continue
+        cat  = result.get("category")
+        sent = result.get("sentiment")
+        article.category  = cat if cat in valid_categories else default_category
+        # arXiv sources are always academic — override Groq's guess (ia domain only)
+        if domain == "ia" and article.source.startswith("ArXiv"):
+            article.category = "Recherche Academique"
+        article.sentiment = sent if sent in VALID_SENTIMENTS else "Neutre"
+        article.country   = result.get("country") or "Global"
+        article.summary   = (result.get("summary") or "").strip()
+        if domain == "ia":
+            article.layers, article.cross_layer, article.scarcity = cake.parse_cake_fields(result)
+        oks.append(True)
+    return oks
 
 
-async def classify_articles(articles: list[Article], batch_size: int = 15, batch_pause: float = 10.0) -> list[Article]:
-    client     = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
+async def classify_articles(articles: list[Article], batch_size: int = CLASSIFY_BATCH_SIZE) -> list[Article]:
+    # Calls run one after another; a 429 (tokens-per-minute limit) is retried with backoff by the SDK
+    client     = AsyncGroq(api_key=os.environ["GROQ_API_KEY"], max_retries=6)
     model_full = (os.environ.get("GROQ_MODEL")      or "openai/gpt-oss-120b").strip("'\"").strip()
     model_fast = (os.environ.get("GROQ_MODEL_FAST") or "openai/gpt-oss-20b").strip("'\"").strip()
 
-    hot_count  = sum(1 for a in articles if a.hot_topic)
-    logging.info(f"Groq: {len(articles)} articles — {hot_count} hot ({model_full}) + {len(articles)-hot_count} non-hot ({model_fast})")
+    # "ia" articles need the full model for the cake keys; hot articles for a good summary
+    groups: dict[tuple[str, str], list[Article]] = {}
+    for a in articles:
+        model = model_full if a.domain == "ia" or a.hot_topic else model_fast
+        groups.setdefault((a.domain, model), []).append(a)
+    logging.info(f"Groq: {len(articles)} articles in " + ", ".join(
+        f"{d}/{m}: {len(arts)}" for (d, m), arts in groups.items()))
 
     failures = 0
-    batches  = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
-    for batch_idx, batch in enumerate(batches):
-        logging.info(f"Groq: classifying batch {batch_idx + 1}/{len(batches)} ({len(batch)} articles)")
-        results = await asyncio.gather(*[_classify_one(client, model_fast, model_full, a) for a in batch])
-        failures += sum(1 for ok in results if not ok)
-        if batch_idx < len(batches) - 1:
-            logging.info(f"Groq: sleeping {batch_pause}s before next batch")
-            await asyncio.sleep(batch_pause)
+    for (domain, model), arts in groups.items():
+        for i in range(0, len(arts), batch_size):
+            oks = await _classify_batch(client, model, domain, arts[i:i + batch_size])
+            failures += oks.count(False)
 
     # A silent 100%-fallback run (e.g. a stale/decommissioned GROQ_MODEL env var shadowing
     # the code default) previously went unnoticed for weeks — every article quietly got
