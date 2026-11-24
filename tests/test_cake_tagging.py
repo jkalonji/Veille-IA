@@ -63,8 +63,8 @@ def test_fetch_all_keeps_layer_articles_from_cake_sources(monkeypatch):
 
 
 def test_cake_keys_only_in_the_ia_prompt():
-    assert '"layers"' in main._build_groq_prompt("ia", with_summary=False)
-    assert '"layers"' not in main._build_groq_prompt("politique_evenements", with_summary=False)
+    assert '"layers"' in main._build_groq_prompt("ia")
+    assert '"layers"' not in main._build_groq_prompt("politique_evenements")
 
 
 class _FakeGroq:
@@ -81,24 +81,52 @@ class _FakeGroq:
         )
 
 
-def test_classify_one_tags_ia_articles_with_the_full_model():
-    groq = _FakeGroq({"category": "Business / Industrie", "sentiment": "Neutre", "country": "France",
-                      "layers": ["energie", "modeles"], "cross_layer": True, "scarcity": "aucune"})
+def _classify(articles, payload, monkeypatch):
+    groq = _FakeGroq(payload)
+    monkeypatch.setenv("GROQ_API_KEY", "k")
+    monkeypatch.setenv("GROQ_MODEL", "full")
+    monkeypatch.setenv("GROQ_MODEL_FAST", "fast")
+    monkeypatch.setattr(main, "AsyncGroq", lambda **kw: groq)
+    asyncio.run(main.classify_articles(articles))
+    return groq
+
+
+def test_classify_tags_ia_articles_with_the_full_model(monkeypatch):
     art = _article("EDF publie un modèle de fondation", "Le Monde IA")
-    assert asyncio.run(main._classify_one(groq, "fast", "full", art))
+    groq = _classify([art], {"articles": [
+        {"id": 0, "category": "Business / Industrie", "sentiment": "Neutre", "country": "France",
+         "summary": "EDF publie un modèle.", "layers": ["energie", "modeles"], "cross_layer": True,
+         "scarcity": "aucune"}]}, monkeypatch)
     assert groq.calls[0]["model"] == "full"
-    assert groq.calls[0]["max_tokens"] == 350
     assert (art.layers, art.cross_layer, art.scarcity) == (["energie", "modeles"], True, "aucune")
+    assert (art.category, art.country, art.summary) == ("Business / Industrie", "France", "EDF publie un modèle.")
 
 
-def test_classify_one_leaves_other_domains_on_the_fast_model():
-    groq = _FakeGroq({"category": "Conflits / Guerres", "sentiment": "Negatif", "country": "Soudan",
-                      "layers": ["energie"], "cross_layer": True})
+def test_classify_leaves_other_domains_on_the_fast_model(monkeypatch):
     art = _article("Offensive au Soudan", "AP")
     art.domain = "politique_evenements"
-    asyncio.run(main._classify_one(groq, "fast", "full", art))
+    groq = _classify([art], {"articles": [
+        {"id": 0, "category": "Conflits / Guerres", "sentiment": "Negatif", "country": "Soudan",
+         "layers": ["energie"], "cross_layer": True}]}, monkeypatch)
     assert groq.calls[0]["model"] == "fast"
     assert (art.layers, art.cross_layer) == ([], False)
+
+
+def test_classify_sends_20_articles_per_call(monkeypatch):
+    arts = [_article(f"OpenAI news {i}", "Src") for i in range(25)]
+    groq = _classify(arts, {"articles": [{"id": i, "sentiment": "Positif"} for i in range(20)]}, monkeypatch)
+    assert len(groq.calls) == 2
+    # The fake answers ids 0-19 each time: the second call's 5 articles are all found
+    assert all(a.sentiment == "Positif" for a in arts)
+
+
+def test_classify_batch_falls_back_for_missing_ids():
+    arts = [_article("A", "S"), _article("B", "S")]
+    groq = _FakeGroq({"articles": [{"id": 1, "category": "Business / Industrie", "sentiment": "Positif"}]})
+    oks = asyncio.run(main._classify_batch(groq, "full", "ia", arts))
+    assert oks == [False, True]
+    assert (arts[0].sentiment, arts[0].country) == ("Neutre", "Global")
+    assert arts[1].category == "Business / Industrie"
 
 
 def test_cake_counts_html_lists_layers_top_down():
