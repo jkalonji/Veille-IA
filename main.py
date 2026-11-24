@@ -529,38 +529,39 @@ def _save_topics(client, rows: list[dict]) -> None:
             logging.warning(f"Topics update failed for {r['url']}: {e}")
 
 
-async def refresh_stories(domain: str, new_articles: list["Article"], client, groq_client, model: str) -> None:
-    """Tag this run's articles with topics, rebuild the domain's stories over the
-    window, save them, and flag the run's articles hot from them."""
+async def refresh_stories(
+    domain: str, new_articles: list["Article"], client, groq_client, model: str
+) -> list["Article"]:
+    """Drop the articles already stored, tag the others with topics, rebuild the
+    domain's stories over the window, save them, and flag the new articles hot
+    from them. Returns the new articles: only those go on to classification,
+    saving and Telegram (a rerun or an undated feed entry must not repost)."""
     rows = _fetch_window_articles(client, domain)
     window_ok = rows is not None
     window = {r["url"]: r for r in sorted(rows or [], key=_published_day, reverse=True)}
     known = Counter(t for r in window.values() for t in (r.get("topics") or []))
 
-    # An article fetched again keeps the topics an earlier run gave it
-    todo = []
-    for a in new_articles:
-        prev = (window.get(a.url) or {}).get("topics")
-        if prev:
-            a.topics = prev
-        else:
-            todo.append(a)
-    if todo:
+    stored = len(new_articles)
+    new_articles = [a for a in new_articles if a.url not in window]
+    if stored > len(new_articles):
+        logging.info(f"Stories [{domain}]: {stored - len(new_articles)} articles already stored, skipped")
+    if new_articles:
         extracted = await extract_topics(
-            [{"title": a.title, "description": a.description} for a in todo], known, groq_client, model, domain
+            [{"title": a.title, "description": a.description} for a in new_articles], known, groq_client, model, domain
         )
-        for a, topics in zip(todo, extracted):
+        for a, topics in zip(new_articles, extracted):
             a.topics = topics
     for a in new_articles:
         window[a.url] = {"url": a.url, "title": a.title, "source": a.source, "published": a.published, "topics": a.topics}
     if not window_ok:
-        return  # topics are tagged; stories wait for a run that can read the whole window
+        return new_articles  # topics are tagged; stories wait for a run that can read the whole window
 
     existing = _fetch_existing_stories(client, domain)
     stories = build_story_candidates(list(window.values()), set(existing))
     stories = await review_stories(stories, groq_client, model, domain)
     ids = _save_stories(client, domain, stories, existing)
     _apply_story_flags(new_articles, stories, ids)
+    return new_articles
 
 
 BACKFILL_MAX_ARTICLES = 500  # per run, ~80k Groq tokens: leaves the daily collection its share of the 200k/day quota
@@ -1299,6 +1300,8 @@ def save_to_supabase(articles: list[Article], client=None) -> None:
     if client is None:
         logging.warning("SUPABASE_URL or SUPABASE_KEY not set — skipping Supabase save")
         return
+    if not articles:
+        return
 
     rows = [
         {
@@ -1610,8 +1613,9 @@ async def main():
     groq_client_for_topics = AsyncGroq(api_key=os.environ["GROQ_API_KEY"])
     model_full = (os.environ.get("GROQ_MODEL") or "openai/gpt-oss-120b").strip("'\"").strip()
     supabase_client = _get_supabase_client()
+    articles = []
     for domain, domain_articles in by_domain.items():
-        await refresh_stories(domain, domain_articles, supabase_client, groq_client_for_topics, model_full)
+        articles += await refresh_stories(domain, domain_articles, supabase_client, groq_client_for_topics, model_full)
     logging.info(f"{sum(1 for a in articles if a.hot_topic)} articles tagged hot via stories")
 
     # 3. Classify with Groq

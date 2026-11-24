@@ -44,3 +44,28 @@ def test_failed_window_read_leaves_stories_untouched(monkeypatch):
 
     assert db.tables["stories"] == before
     assert all(a.topics == ["Gemini 4"] for a in arts)  # topics are still tagged
+
+
+def test_stored_articles_are_skipped(monkeypatch):
+    db = FakeSupabase()
+    db.tables["articles"] = [{"url": "https://old/1", "title": "Old", "source": "A", "domain": "ia",
+                              "published": "2026-11-24", "topics": ["GPT-6"]}]
+    sent_to_groq = []
+
+    async def fake_topics(items, *args, **kwargs):
+        sent_to_groq.extend(i["title"] for i in items)
+        return [["GPT-6"] for _ in items]
+
+    async def no_review(stories, *args, **kwargs):
+        return stories
+
+    monkeypatch.setattr(main, "extract_topics", fake_topics)
+    monkeypatch.setattr(main, "review_stories", no_review)
+    monkeypatch.setattr(main, "_fetch_existing_stories", lambda client, domain: {})
+    old = main.Article(title="Old", url="https://old/1", source="A", country="US", published="2026-11-24")
+    new = main.Article(title="New", url="https://new/2", source="B", country="US", published="2026-11-24")
+
+    kept = asyncio.run(main.refresh_stories("ia", [old, new], db, None, "m"))
+
+    assert kept == [new]
+    assert sent_to_groq == ["New"]
