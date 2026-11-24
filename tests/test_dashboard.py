@@ -36,3 +36,13 @@ def test_hot_card_escapes_title_url_and_source():
     assert {t for t, _ in tags} <= {"div", "a", "span"}  # <News> stayed text
     link = next(a for t, a in tags if t == "a")
     assert link["href"] == ART["url"] and "onmouseover" not in link
+
+
+def test_dedupe_never_merges_across_days():
+    arts = [
+        {"url": "u1", "title": "OpenAI model launch", "source": "A", "published": "2026-10-01"},
+        {"url": "u2", "title": "OpenAI model launch", "source": "B", "published": "2026-11-10"},
+        {"url": "u3", "title": "OpenAI model launch today", "source": "C", "published": "2026-11-10"},
+    ]
+    out = dashboard._deduplicate_articles(arts)
+    assert [(a["url"], a["source_count"]) for a in out] == [("u1", 1), ("u2", 2)]
